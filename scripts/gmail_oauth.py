@@ -12,6 +12,8 @@ OAUTH_KEYS = GMAIL_MCP_DIR / "gcp-oauth.keys.json"
 CREDENTIALS = GMAIL_MCP_DIR / "credentials.json"
 
 SCOPES = [
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
@@ -19,13 +21,13 @@ SCOPES = [
 
 def main():
     try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-not-found,import-untyped]
     except ImportError:
         print("Installing google-auth-oauthlib...")
         import subprocess, sys
         subprocess.check_call([sys.executable, "-m", "pip", "install",
                                "google-auth-oauthlib"])
-        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-not-found,import-untyped]
 
     if not OAUTH_KEYS.exists():
         print(f"ERROR: {OAUTH_KEYS} not found")

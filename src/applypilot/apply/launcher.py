@@ -1568,6 +1568,7 @@ def acquire_job(target_url: str | None = None,
                   AND j.application_url IS NOT NULL
                   AND j.application_url != ''
                   AND (j.eligibility IS NULL OR j.eligibility = 'eligible')
+                  AND (j.state IS NULL OR j.state != 'parked_awaiting_email')
                   {max_score_filter}
                   AND {site_filter}
                   AND {url_filter}
@@ -1581,7 +1582,11 @@ def acquire_job(target_url: str | None = None,
                         AND j2.url != j.url
                         AND j2.apply_status IN ('applied', 'in_progress', 'needs_human')
                   )
-                ORDER BY j.fit_score DESC, j.discovered_at DESC, j.url
+                ORDER BY
+                    CASE WHEN j.state = 'queued_resume' THEN 0 ELSE 1 END,
+                    j.fit_score DESC,
+                    j.discovered_at DESC,
+                    j.url
                 LIMIT 100
             """, (min_score, *company_excl_params, *age_params)).fetchall()
 
@@ -2003,6 +2008,22 @@ def run_job(job: dict, port: int, worker_id: int = 0,
             logger.debug("dry_run gate injection failed; falling back to prompt-only",
                          exc_info=True)
 
+    # Tier 0/1/2 Playwright Deterministic Engine (Zero/Low AI usage)
+    # Attempt to apply deterministically before spawning Claude Code subprocess.
+    if not extra_context:
+        try:
+            from applypilot.apply.playwright_engine import run_playwright_tier_engine
+            tier_status, tier_duration_ms, screening_qs = run_playwright_tier_engine(
+                job=job,
+                port=port,
+                worker_id=worker_id,
+                dry_run=dry_run,
+            )
+            if tier_status in ("applied", "parked_awaiting_email"):
+                return tier_status, tier_duration_ms, screening_qs
+        except Exception as e:
+            logger.debug("[W%d] Playwright tier engine fallback: %s", worker_id, e)
+
     # Wipe stale resume / cover-letter / MCP-config copies from the previous
     # job BEFORE build_prompt writes the fresh files. Earlier this wipe sat
     # AFTER build_prompt and silently deleted the resume the agent was
@@ -2170,6 +2191,9 @@ def run_job(job: dict, port: int, worker_id: int = 0,
                 line = line.strip()
                 if not line:
                     continue
+                # Enforce execution timeout limit to prevent hanging worker threads
+                if (time.time() - start) > 300:
+                    raise subprocess.TimeoutExpired(cmd, 300)
                 # Check for user takeover between output lines
                 tev = _takeover_events.get(worker_id)
                 if tev and tev.is_set():

@@ -9,7 +9,7 @@ from pathlib import Path
 APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
 
 # Core paths
-DB_PATH = APP_DIR / "applypilot.db"
+DB_PATH = Path(os.environ.get("APPLYPILOT_DB_PATH", APP_DIR / "applypilot.db"))
 PROFILE_PATH = APP_DIR / "profile.json"
 RESUME_PATH = APP_DIR / "resume.txt"
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"

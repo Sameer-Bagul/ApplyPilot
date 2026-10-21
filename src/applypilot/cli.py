@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -251,7 +252,6 @@ def apply(
         if not ats_sessions:
             console.print("[dim]No saved ATS sessions.[/dim]")
             return
-        from rich.table import Table
         t = Table(title="Saved ATS Sessions", show_header=True, header_style="bold cyan")
         t.add_column("ATS")
         t.add_column("Cookies")
@@ -604,12 +604,23 @@ def track(
     dry_run: bool = typer.Option(False, "--dry-run", help="Fetch + classify but don't write DB/files."),
     relabel: bool = typer.Option(False, "--relabel", help="Apply 'ap-track' label to all emails already in the DB (backfill)."),
     remap_stubs: bool = typer.Option(False, "--remap-stubs", help="Re-match emails under multi-company stubs to correct per-company jobs."),
+    poll_hitl: bool = typer.Option(False, "--poll-hitl", help="Poll Gmail for user replies to pending HITL email questions."),
 ) -> None:
-    """Track application responses from Gmail."""
+    """Track application responses from Gmail and sync HITL email replies."""
     _bootstrap()
 
     from applypilot.config import check_tier
     check_tier(2, "application tracking")
+
+    if poll_hitl:
+        from applypilot.hitl.email_reply_parser import sync_email_hitl_replies
+        console.print("[dim]Polling Gmail for user replies to pending HITL questions...[/dim]")
+        hitl_res = sync_email_hitl_replies()
+        if hitl_res.get("resolved_tickets"):
+            console.print(f"[green]Resolved {len(hitl_res['resolved_tickets'])} HITL tickets: {hitl_res['requeued_jobs']}[/green]")
+        else:
+            console.print("[dim]No new HITL replies found.[/dim]")
+        return
 
     if setup:
         import asyncio
@@ -659,13 +670,62 @@ def track(
 
 
 @app.command()
-def dashboard() -> None:
+def learn(
+    trace_file: Optional[Path] = typer.Option(None, "--trace-file", "-f", help="Path to apply_trace.jsonl"),
+) -> None:
+    """Analyze apply telemetry traces and promote verified selectors to Tier 0 cache."""
+    _bootstrap()
+    from applypilot.learning.pattern_compiler import promote_successful_traces
+
+    console.print("[bold blue]Pattern Compiler (Stage 7 Learning)[/bold blue]")
+    result = promote_successful_traces(trace_log_path=trace_file)
+    console.print(
+        f"  [green]Processed {result['total_processed']} traces, "
+        f"promoted {result['promoted_count']} verified selectors into Tier 0 cache.[/green]"
+    )
+    if result.get("by_ats"):
+        for ats, count in result["by_ats"].items():
+            console.print(f"  • {ats}: {count} selectors promoted")
+
+
+@app.command()
+def mcp() -> None:
+    """Start the ApplyPilot FastMCP server over stdio transport."""
+    _bootstrap()
+    from applypilot.mcp_server import run_server
+
+    run_server()
+
+
+@app.command()
+def dashboard(
+    serve: bool = typer.Option(False, "--serve", "-s", help="Serve dashboard over HTTP (useful for Docker/remote)."),
+    port: int = typer.Option(8080, "--port", "-p", help="HTTP port when serving."),
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host address to bind when serving."),
+) -> None:
     """Generate and open the HTML dashboard in your browser."""
     _bootstrap()
 
-    from applypilot.view import open_dashboard
+    from applypilot.view import generate_dashboard, open_dashboard
 
-    open_dashboard()
+    if serve:
+        import functools
+        import http.server
+        import socketserver
+
+        path = generate_dashboard()
+        console.print(f"[bold green]Dashboard generated:[/bold green] {path}")
+        console.print(f"[bold cyan]Serving at http://{host}:{port}/dashboard.html[/bold cyan]")
+        console.print("[dim]Press Ctrl+C to stop.[/dim]")
+
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(path.parent))
+        with socketserver.TCPServer((host, port), handler) as httpd:
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                console.print("\n[dim]Dashboard server stopped.[/dim]")
+    else:
+        open_dashboard()
 
 
 # `applypilot human-review` was deleted in plan 5 of the apply UX overhaul.

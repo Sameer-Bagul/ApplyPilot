@@ -37,6 +37,19 @@ applypilot apply         # autonomous browser-driven submission
 applypilot track         # scan Gmail for responses and surface action items
 ```
 
+### Or with Docker (Zero Host Dependencies)
+
+Run everything inside Docker with bundled Playwright Chromium, background worker pool, and live web dashboard:
+
+```bash
+docker compose build
+docker compose run --rm applypilot init
+docker compose run --rm applypilot run
+docker compose up -d worker tracker dashboard
+```
+*Live dashboard available at `http://localhost:8080/dashboard.html`.*  
+See the full [Docker End-to-End Guide](docker/README.md).
+
 ---
 
 ## Two Paths

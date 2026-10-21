@@ -114,6 +114,7 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     _local.connections[path] = conn
     return conn
@@ -246,24 +247,101 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS qa_knowledge (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            question_text   TEXT NOT NULL,
-            question_key    TEXT NOT NULL,
-            answer_text     TEXT NOT NULL,
-            answer_source   TEXT NOT NULL,
-            field_type      TEXT,
-            options_json    TEXT,
-            ats_slug        TEXT,
-            job_url         TEXT,
-            outcome         TEXT DEFAULT 'unknown',
-            created_at      TEXT NOT NULL,
-            updated_at      TEXT,
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_text      TEXT NOT NULL,
+            question_key       TEXT NOT NULL,
+            canonical_question TEXT,
+            question_hash      TEXT,
+            embedding_blob     BLOB,
+            answer_text        TEXT NOT NULL,
+            answer_source      TEXT NOT NULL,
+            source             TEXT DEFAULT 'seed',
+            field_type         TEXT,
+            options_json       TEXT,
+            option_synonyms    TEXT,
+            category           TEXT,
+            ats_slug           TEXT,
+            job_url            TEXT,
+            use_count          INTEGER DEFAULT 0,
+            outcome            TEXT DEFAULT 'unknown',
+            created_at         TEXT NOT NULL,
+            updated_at         TEXT,
             UNIQUE(question_key, answer_text)
         )
     """)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_qa_key ON qa_knowledge(question_key)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_qa_hash ON qa_knowledge(question_hash)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_qa_canonical ON qa_knowledge(canonical_question)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ats_selector_cache (
+            selector_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ats_type             TEXT NOT NULL,
+            domain_pattern       TEXT NOT NULL,
+            step_signature       TEXT,
+            css_or_aria_selector TEXT NOT NULL,
+            action_type          TEXT NOT NULL,
+            target_key           TEXT NOT NULL,
+            success_count        INTEGER DEFAULT 0,
+            failure_count        INTEGER DEFAULT 0,
+            last_verified_at     TEXT,
+            created_at           TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asc_ats_domain ON ats_selector_cache(ats_type, domain_pattern)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asc_target_key ON ats_selector_cache(target_key)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS hitl_tickets (
+            ticket_id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_url                   TEXT NOT NULL REFERENCES jobs(url) ON DELETE CASCADE,
+            gmail_thread_id           TEXT,
+            gmail_message_id          TEXT,
+            status                    TEXT NOT NULL DEFAULT 'sent',
+            unanswered_questions_json TEXT NOT NULL,
+            dom_checkpoint_json       TEXT,
+            created_at                TEXT NOT NULL,
+            resolved_at               TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_hitl_job_url ON hitl_tickets(job_url)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_hitl_status ON hitl_tickets(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_hitl_gmail_thread ON hitl_tickets(gmail_thread_id)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ats_session_vault (
+            vault_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            ats_type             TEXT NOT NULL,
+            company_domain       TEXT NOT NULL,
+            storage_state_path   TEXT,
+            account_email        TEXT,
+            last_login_at        TEXT,
+            session_valid        INTEGER DEFAULT 1,
+            created_at           TEXT NOT NULL,
+            updated_at           TEXT,
+            UNIQUE(ats_type, company_domain)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asv_ats_domain ON ats_session_vault(ats_type, company_domain)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pattern_rules (
+            rule_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_name            TEXT NOT NULL UNIQUE,
+            label_regex          TEXT NOT NULL,
+            field_type           TEXT,
+            transform_expression TEXT,
+            confidence           REAL DEFAULT 1.0,
+            hit_count            INTEGER DEFAULT 0,
+            created_at           TEXT NOT NULL
+        )
+    """)
     commit_with_retry(conn)
 
     # Run migrations for any columns added after initial schema
@@ -427,9 +505,109 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_jst_at ON job_state_transitions(at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state)")
 
+    # Ensure qa_knowledge has all extended columns
+    changed_qa = ensure_qa_columns(conn)
+    changed.extend([f"qa:{c}" for c in changed_qa])
+
+    # Ensure auxiliary tables and indexes exist
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ats_selector_cache (
+            selector_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ats_type             TEXT NOT NULL,
+            domain_pattern       TEXT NOT NULL,
+            step_signature       TEXT,
+            css_or_aria_selector TEXT NOT NULL,
+            action_type          TEXT NOT NULL,
+            target_key           TEXT NOT NULL,
+            success_count        INTEGER DEFAULT 0,
+            failure_count        INTEGER DEFAULT 0,
+            last_verified_at     TEXT,
+            created_at           TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asc_ats_domain ON ats_selector_cache(ats_type, domain_pattern)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asc_target_key ON ats_selector_cache(target_key)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS hitl_tickets (
+            ticket_id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_url                   TEXT NOT NULL REFERENCES jobs(url) ON DELETE CASCADE,
+            gmail_thread_id           TEXT,
+            gmail_message_id          TEXT,
+            status                    TEXT NOT NULL DEFAULT 'sent',
+            unanswered_questions_json TEXT NOT NULL,
+            dom_checkpoint_json       TEXT,
+            created_at                TEXT NOT NULL,
+            resolved_at               TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_hitl_job_url ON hitl_tickets(job_url)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_hitl_status ON hitl_tickets(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_hitl_gmail_thread ON hitl_tickets(gmail_thread_id)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ats_session_vault (
+            vault_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            ats_type             TEXT NOT NULL,
+            company_domain       TEXT NOT NULL,
+            storage_state_path   TEXT,
+            account_email        TEXT,
+            last_login_at        TEXT,
+            session_valid        INTEGER DEFAULT 1,
+            created_at           TEXT NOT NULL,
+            updated_at           TEXT,
+            UNIQUE(ats_type, company_domain)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_asv_ats_domain ON ats_session_vault(ats_type, company_domain)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pattern_rules (
+            rule_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_name            TEXT NOT NULL UNIQUE,
+            label_regex          TEXT NOT NULL,
+            field_type           TEXT,
+            transform_expression TEXT,
+            confidence           REAL DEFAULT 1.0,
+            hit_count            INTEGER DEFAULT 0,
+            created_at           TEXT NOT NULL
+        )
+    """)
+
     if changed:
         commit_with_retry(conn)
 
+    return changed
+
+
+_QA_COLUMNS: dict[str, str] = {
+    "canonical_question": "TEXT",
+    "question_hash": "TEXT",
+    "embedding_blob": "BLOB",
+    "source": "TEXT DEFAULT 'seed'",
+    "option_synonyms": "TEXT",
+    "category": "TEXT",
+    "use_count": "INTEGER DEFAULT 0",
+}
+
+
+def ensure_qa_columns(conn: sqlite3.Connection | None = None) -> list[str]:
+    """Ensure all columns exist in the qa_knowledge table."""
+    if conn is None:
+        conn = get_connection()
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='qa_knowledge'"
+    ).fetchone()
+    if not table_exists:
+        return []
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(qa_knowledge)").fetchall()}
+    changed = []
+    for col, dtype in _QA_COLUMNS.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE qa_knowledge ADD COLUMN {col} {dtype}")
+            changed.append(col)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_qa_hash ON qa_knowledge(question_hash)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_qa_canonical ON qa_knowledge(canonical_question)")
     return changed
 
 
@@ -485,6 +663,7 @@ VALID_STATES: frozenset[str] = frozenset({
     "cover_writing", "cover_failed",
     "ready_to_apply", "applying", "applied",
     "apply_failed", "needs_human", "manual_only",
+    "parked_awaiting_email", "queued_resume",
     "responded", "interview", "offer",
     "rejected", "ghosted", "archived",
 })
@@ -501,10 +680,12 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     "tailored":       frozenset({"cover_writing", "ready_to_apply", "archived"}),
     "cover_writing":  frozenset({"ready_to_apply", "cover_failed"}),
     "cover_failed":   frozenset({"cover_writing", "ready_to_apply", "archived"}),
-    "ready_to_apply": frozenset({"applying", "manual_only", "archived"}),
-    "applying":       frozenset({"applied", "apply_failed", "needs_human", "ready_to_apply"}),
+    "ready_to_apply": frozenset({"applying", "manual_only", "archived", "parked_awaiting_email"}),
+    "applying":       frozenset({"applied", "apply_failed", "needs_human", "ready_to_apply", "parked_awaiting_email"}),
     "apply_failed":   frozenset({"applying", "manual_only", "archived"}),
-    "needs_human":    frozenset({"applying", "applied", "manual_only", "archived"}),
+    "needs_human":    frozenset({"applying", "applied", "manual_only", "archived", "parked_awaiting_email"}),
+    "parked_awaiting_email": frozenset({"queued_resume", "apply_failed", "archived"}),
+    "queued_resume":  frozenset({"applying", "ready_to_apply", "archived"}),
     "manual_only":    frozenset({"applied", "archived"}),
     "applied":        frozenset({"responded", "ghosted", "rejected", "archived"}),
     "responded":      frozenset({"interview", "rejected", "ghosted"}),
@@ -2005,27 +2186,47 @@ def store_qa(question: str, answer: str, source: str = "agent",
              options_json: str | None = None,
              ats_slug: str | None = None,
              job_url: str | None = None,
-             conn: sqlite3.Connection | None = None) -> int | None:
+             conn: sqlite3.Connection | None = None,
+             canonical_question: str | None = None,
+             question_hash: str | None = None,
+             option_synonyms: list[str] | str | None = None,
+             category: str | None = None,
+             embedding_blob: bytes | None = None) -> int | None:
     """Store a Q&A pair in the knowledge base (upsert by question_key + answer).
 
     Returns:
         The row ID of the inserted/existing row, or None on failure.
     """
+    import json as _json
     if conn is None:
         conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     key = question_key(question)
+    q_hash = question_hash or hashlib.sha256((canonical_question or question).strip().lower().encode("utf-8")).hexdigest()
+    synonyms_str = _json.dumps(option_synonyms) if isinstance(option_synonyms, list) else option_synonyms
+
     try:
         conn.execute(
             "INSERT INTO qa_knowledge "
-            "(question_text, question_key, answer_text, answer_source, "
-            " field_type, options_json, ats_slug, job_url, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "(question_text, question_key, canonical_question, question_hash, "
+            " embedding_blob, answer_text, answer_source, source, "
+            " field_type, options_json, option_synonyms, category, "
+            " ats_slug, job_url, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(question_key, answer_text) DO UPDATE SET "
-            "  updated_at = ?, ats_slug = COALESCE(excluded.ats_slug, ats_slug)",
-            (question, key, answer, source,
-             field_type, options_json, ats_slug, job_url, now,
-             now),
+            "  updated_at = excluded.created_at, "
+            "  ats_slug = COALESCE(excluded.ats_slug, qa_knowledge.ats_slug), "
+            "  canonical_question = COALESCE(excluded.canonical_question, qa_knowledge.canonical_question), "
+            "  question_hash = COALESCE(excluded.question_hash, qa_knowledge.question_hash), "
+            "  embedding_blob = COALESCE(excluded.embedding_blob, qa_knowledge.embedding_blob), "
+            "  source = COALESCE(excluded.source, qa_knowledge.source), "
+            "  option_synonyms = COALESCE(excluded.option_synonyms, qa_knowledge.option_synonyms), "
+            "  category = COALESCE(excluded.category, qa_knowledge.category), "
+            "  use_count = qa_knowledge.use_count + 1",
+            (question, key, canonical_question, q_hash,
+             embedding_blob, answer, source, source,
+             field_type, options_json, synonyms_str, category,
+             ats_slug, job_url, now),
         )
         commit_with_retry(conn)
         row = conn.execute(
@@ -2226,3 +2427,325 @@ def export_qa_yaml(conn: sqlite3.Connection | None = None) -> str:
         lines.append(f"    - text: \"{qa['answer_text']}\"{outcome_tag}")
     lines.append("")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Auxiliary Tables CRUD: ats_selector_cache, hitl_tickets, ats_session_vault, pattern_rules
+# ---------------------------------------------------------------------------
+
+def lookup_qa_by_hash(question_hash: str, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Find known answers for a canonical question hash."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM qa_knowledge WHERE question_hash = ? "
+        "ORDER BY CASE outcome "
+        "  WHEN 'accepted' THEN 1 "
+        "  WHEN 'unknown' THEN 2 "
+        "  WHEN 'rejected' THEN 3 "
+        "  ELSE 4 END, "
+        "use_count DESC, updated_at DESC NULLS LAST",
+        (question_hash,),
+    ).fetchall()
+    if not rows:
+        return []
+    columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
+        "id", "question_text", "question_key", "answer_text", "answer_source",
+        "field_type", "options_json", "ats_slug", "job_url", "outcome",
+        "created_at", "updated_at", "canonical_question", "question_hash",
+        "embedding_blob", "source", "option_synonyms", "category", "use_count"
+    ]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def store_selector(ats_type: str, domain_pattern: str, css_or_aria_selector: str,
+                   action_type: str, target_key: str, step_signature: str | None = None,
+                   conn: sqlite3.Connection | None = None) -> int:
+    """Store or update a learned selector in ats_selector_cache."""
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    existing = conn.execute(
+        "SELECT selector_id FROM ats_selector_cache "
+        "WHERE ats_type = ? AND domain_pattern = ? AND target_key = ? AND css_or_aria_selector = ?",
+        (ats_type, domain_pattern, target_key, css_or_aria_selector),
+    ).fetchone()
+    if existing:
+        selector_id = existing[0]
+        conn.execute(
+            "UPDATE ats_selector_cache SET step_signature = COALESCE(?, step_signature), "
+            "action_type = ?, last_verified_at = ? WHERE selector_id = ?",
+            (step_signature, action_type, now, selector_id),
+        )
+        commit_with_retry(conn)
+        return selector_id
+
+    cursor = conn.execute(
+        "INSERT INTO ats_selector_cache "
+        "(ats_type, domain_pattern, step_signature, css_or_aria_selector, action_type, target_key, created_at, last_verified_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (ats_type, domain_pattern, step_signature, css_or_aria_selector, action_type, target_key, now, now),
+    )
+    commit_with_retry(conn)
+    return cursor.lastrowid
+
+
+def get_selectors_for_domain(ats_type: str, domain_pattern: str | None = None,
+                             conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Retrieve selectors for an ATS domain pattern, ordered by reliability."""
+    if conn is None:
+        conn = get_connection()
+    if domain_pattern:
+        rows = conn.execute(
+            "SELECT * FROM ats_selector_cache "
+            "WHERE ats_type = ? AND ("
+            "  domain_pattern = ? "
+            "  OR domain_pattern = '*' "
+            "  OR ? LIKE REPLACE(domain_pattern, '*', '%') "
+            "  OR ? LIKE '%' || REPLACE(domain_pattern, '*.', '') || '%'"
+            ") "
+            "ORDER BY (success_count - failure_count) DESC, success_count DESC",
+            (ats_type, domain_pattern, domain_pattern, domain_pattern),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM ats_selector_cache WHERE ats_type = ? "
+            "ORDER BY (success_count - failure_count) DESC, success_count DESC",
+            (ats_type,),
+        ).fetchall()
+    if not rows:
+        return []
+    columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
+        "selector_id", "ats_type", "domain_pattern", "step_signature",
+        "css_or_aria_selector", "action_type", "target_key",
+        "success_count", "failure_count", "last_verified_at", "created_at"
+    ]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def record_selector_result(selector_id: int, success: bool,
+                           conn: sqlite3.Connection | None = None) -> None:
+    """Record a success or failure outcome for a selector to enable self-healing."""
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    if success:
+        conn.execute(
+            "UPDATE ats_selector_cache SET success_count = success_count + 1, "
+            "last_verified_at = ? WHERE selector_id = ?",
+            (now, selector_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE ats_selector_cache SET failure_count = failure_count + 1, "
+            "last_verified_at = ? WHERE selector_id = ?",
+            (now, selector_id),
+        )
+    commit_with_retry(conn)
+
+
+def create_hitl_ticket(job_url: str, unanswered_questions: list[dict],
+                       dom_checkpoint: dict | None = None,
+                       gmail_thread_id: str | None = None,
+                       gmail_message_id: str | None = None,
+                       conn: sqlite3.Connection | None = None) -> int:
+    """Create a new HITL ticket for batched unanswered questions."""
+    import json as _json
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    q_json = _json.dumps(unanswered_questions, default=str)
+    cp_json = _json.dumps(dom_checkpoint, default=str) if dom_checkpoint else None
+    cursor = conn.execute(
+        "INSERT INTO hitl_tickets "
+        "(job_url, gmail_thread_id, gmail_message_id, status, unanswered_questions_json, dom_checkpoint_json, created_at) "
+        "VALUES (?, ?, ?, 'sent', ?, ?, ?)",
+        (job_url, gmail_thread_id, gmail_message_id, q_json, cp_json, now),
+    )
+    commit_with_retry(conn)
+    return cursor.lastrowid
+
+
+def get_hitl_ticket(ticket_id: int, conn: sqlite3.Connection | None = None) -> dict | None:
+    """Retrieve a HITL ticket by ID."""
+    import json as _json
+    if conn is None:
+        conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM hitl_tickets WHERE ticket_id = ?", (ticket_id,)
+    ).fetchone()
+    if not row:
+        return None
+    columns = row.keys() if isinstance(row, sqlite3.Row) else [
+        "ticket_id", "job_url", "gmail_thread_id", "gmail_message_id",
+        "status", "unanswered_questions_json", "dom_checkpoint_json",
+        "created_at", "resolved_at"
+    ]
+    data = dict(zip(columns, row))
+    if data.get("unanswered_questions_json"):
+        try:
+            data["unanswered_questions"] = _json.loads(data["unanswered_questions_json"])
+        except Exception:
+            data["unanswered_questions"] = []
+    if data.get("dom_checkpoint_json"):
+        try:
+            data["dom_checkpoint"] = _json.loads(data["dom_checkpoint_json"])
+        except Exception:
+            data["dom_checkpoint"] = {}
+    return data
+
+
+def get_pending_hitl_tickets(conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Retrieve all pending HITL tickets (status == 'sent')."""
+    import json as _json
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM hitl_tickets WHERE status = 'sent' ORDER BY created_at ASC"
+    ).fetchall()
+    if not rows:
+        return []
+    columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
+        "ticket_id", "job_url", "gmail_thread_id", "gmail_message_id",
+        "status", "unanswered_questions_json", "dom_checkpoint_json",
+        "created_at", "resolved_at"
+    ]
+    results = []
+    for row in rows:
+        d = dict(zip(columns, row))
+        if d.get("unanswered_questions_json"):
+            try:
+                d["unanswered_questions"] = _json.loads(d["unanswered_questions_json"])
+            except Exception:
+                d["unanswered_questions"] = []
+        if d.get("dom_checkpoint_json"):
+            try:
+                d["dom_checkpoint"] = _json.loads(d["dom_checkpoint_json"])
+            except Exception:
+                d["dom_checkpoint"] = {}
+        results.append(d)
+    return results
+
+
+def resolve_hitl_ticket(ticket_id: int, status: str = "resolved",
+                        conn: sqlite3.Connection | None = None) -> bool:
+    """Mark a HITL ticket as resolved/replied."""
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE hitl_tickets SET status = ?, resolved_at = ? WHERE ticket_id = ?",
+        (status, now, ticket_id),
+    )
+    commit_with_retry(conn)
+    return True
+
+
+def save_session_vault(ats_type: str, company_domain: str, storage_state_path: str,
+                       account_email: str | None = None,
+                       conn: sqlite3.Connection | None = None) -> int:
+    """Save or update authenticated session state for an ATS domain."""
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO ats_session_vault "
+        "(ats_type, company_domain, storage_state_path, account_email, last_login_at, session_valid, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, 1, ?, ?) "
+        "ON CONFLICT(ats_type, company_domain) DO UPDATE SET "
+        "  storage_state_path = excluded.storage_state_path, "
+        "  account_email = COALESCE(excluded.account_email, ats_session_vault.account_email), "
+        "  last_login_at = excluded.last_login_at, "
+        "  session_valid = 1, "
+        "  updated_at = excluded.updated_at",
+        (ats_type, company_domain, storage_state_path, account_email, now, now, now),
+    )
+    commit_with_retry(conn)
+    row = conn.execute(
+        "SELECT vault_id FROM ats_session_vault WHERE ats_type = ? AND company_domain = ?",
+        (ats_type, company_domain),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def get_session_vault(ats_type: str, company_domain: str,
+                      conn: sqlite3.Connection | None = None) -> dict | None:
+    """Get active session vault entry for an ATS and company."""
+    if conn is None:
+        conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM ats_session_vault WHERE ats_type = ? AND company_domain = ? AND session_valid = 1",
+        (ats_type, company_domain),
+    ).fetchone()
+    if not row:
+        return None
+    columns = row.keys() if isinstance(row, sqlite3.Row) else [
+        "vault_id", "ats_type", "company_domain", "storage_state_path",
+        "account_email", "last_login_at", "session_valid", "created_at", "updated_at"
+    ]
+    return dict(zip(columns, row))
+
+
+def clear_session_vault(ats_type: str, company_domain: str,
+                        conn: sqlite3.Connection | None = None) -> bool:
+    """Invalidate session vault for an ATS domain."""
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE ats_session_vault SET session_valid = 0, updated_at = ? "
+        "WHERE ats_type = ? AND company_domain = ?",
+        (now, ats_type, company_domain),
+    )
+    commit_with_retry(conn)
+    return True
+
+
+def store_pattern_rule(rule_name: str, label_regex: str, field_type: str | None = None,
+                       transform_expression: str | None = None, confidence: float = 1.0,
+                       conn: sqlite3.Connection | None = None) -> int:
+    """Store or update a learned heuristic/regex rule."""
+    if conn is None:
+        conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO pattern_rules "
+        "(rule_name, label_regex, field_type, transform_expression, confidence, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(rule_name) DO UPDATE SET "
+        "  label_regex = excluded.label_regex, "
+        "  field_type = excluded.field_type, "
+        "  transform_expression = excluded.transform_expression, "
+        "  confidence = excluded.confidence",
+        (rule_name, label_regex, field_type, transform_expression, confidence, now),
+    )
+    commit_with_retry(conn)
+    row = conn.execute("SELECT rule_id FROM pattern_rules WHERE rule_name = ?", (rule_name,)).fetchone()
+    return row[0] if row else 0
+
+
+def get_pattern_rules(conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Retrieve all learned pattern rules sorted by confidence DESC."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM pattern_rules ORDER BY confidence DESC, hit_count DESC"
+    ).fetchall()
+    if not rows:
+        return []
+    columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
+        "rule_id", "rule_name", "label_regex", "field_type",
+        "transform_expression", "confidence", "hit_count", "created_at"
+    ]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def increment_pattern_rule_hit(rule_id: int, conn: sqlite3.Connection | None = None) -> None:
+    """Increment hit count for a pattern rule."""
+    if conn is None:
+        conn = get_connection()
+    conn.execute(
+        "UPDATE pattern_rules SET hit_count = hit_count + 1 WHERE rule_id = ?",
+        (rule_id,),
+    )
+    commit_with_retry(conn)

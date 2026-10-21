@@ -336,6 +336,12 @@ def _worker_loop_body(
                         save_ats_session(profile_dir, ats_slug)
                     break
 
+                elif result == "parked_awaiting_email":
+                    release_lock(job["url"])
+                    add_event(f"[W{worker_id}] Parked (awaiting email HITL): {(job.get('title') or '')[:30]}")
+                    update_state(worker_id, status="idle", last_action="parked awaiting email")
+                    break
+
                 elif result == "takeover":
                     # User clicked "Take Over" in the extension popup.
                     # The Claude proc was already killed by the takeover handler.
@@ -396,8 +402,21 @@ def _worker_loop_body(
                         nh_url = nh_url.strip()
                         nh_detail = nh_detail.strip()
 
-                    # --- Screening Q&A: interactive TUI answers + relaunch ---
+                    # --- Screening Q&A: non-blocking email HITL parking ---
                     if nh_reason == "screening_questions" and screening_qs:
+                        try:
+                            from applypilot.hitl.email_notifier import dispatch_hitl_email_and_park
+                            ticket_id = dispatch_hitl_email_and_park(
+                                job=job,
+                                unanswered_questions=screening_qs,
+                            )
+                            add_event(f"[W{worker_id}] Parked job (HITL ticket #{ticket_id} dispatched): {(job.get('title') or '')[:30]}")
+                            release_lock(job["url"])
+                            update_state(worker_id, status="idle", last_action=f"parked (ticket #{ticket_id})")
+                            break
+                        except Exception as e:
+                            logger.debug("Failed dispatching email HITL: %s; falling back to interactive Q&A", e)
+
                         add_event(f"[W{worker_id}] Q&A: {len(screening_qs)} question(s) — waiting for answers")
                         update_state(worker_id, status="waiting_answer",
                                      last_action=f"Q&A: {len(screening_qs)} question(s)")

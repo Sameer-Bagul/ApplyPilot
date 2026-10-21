@@ -1,0 +1,96 @@
+name: applypilot
+
+services:
+  # Primary CLI utility service for ad-hoc commands (e.g. run, init, status, learn)
+  applypilot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: applypilot:latest
+    container_name: applypilot-cli
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - APPLYPILOT_HEADLESS=true
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - applypilot_home:/home/applypilot/.applypilot
+      - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - .:/home/applypilot/data:ro
+    command: ["status"]
+
+  # Autonomous parallel apply worker daemon
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: applypilot:latest
+    container_name: applypilot-worker
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - APPLYPILOT_HEADLESS=true
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - applypilot_home:/home/applypilot/.applypilot
+      - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - .:/home/applypilot/data:ro
+    command: ["apply", "--workers", "2"]
+
+  # Asynchronous Email HITL reply tracker daemon
+  tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: applypilot:latest
+    container_name: applypilot-tracker
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - applypilot_home:/home/applypilot/.applypilot
+      - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - .:/home/applypilot/data:ro
+    command: ["track", "--poll-hitl", "--interval", "60"]
+
+  # Live HTML Dashboard server
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: applypilot:latest
+    container_name: applypilot-dashboard
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - applypilot_home:/home/applypilot/.applypilot
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "8080"]
+
+  # FastMCP server for AI agent integrations (e.g. Claude Desktop, IDE, Cursor)
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: applypilot:latest
+    container_name: applypilot-mcp
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    volumes:
+      - applypilot_home:/home/applypilot/.applypilot
+      - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - .:/home/applypilot/data:ro
+    command: ["mcp"]
+
+volumes:
+  applypilot_home:
+    name: applypilot_home_data
+  applypilot_gmail:
+    name: applypilot_gmail_creds
