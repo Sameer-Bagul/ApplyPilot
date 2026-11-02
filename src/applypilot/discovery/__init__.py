@@ -47,6 +47,14 @@ from applypilot.discovery.lead_extractor import (
     extract_evidence_snippet,
     parse_social_post,
 )
+from applypilot.discovery.bangalore_map_harvester import (
+    enrich_startup_website_emails,
+    fetch_bangalore_map_raw,
+    fetch_company_deep_profile,
+    generate_linkedin_connection_note,
+    import_bangalore_startups_to_watchlist,
+    parse_bangalore_map_rsc,
+)
 from applypilot.discovery.linkedin_guest import scrape_linkedin_guest_jobs
 from applypilot.discovery.omni_orchestrator import run_omni_channel_discovery
 from applypilot.discovery.reddit_scraper import (
@@ -96,4 +104,11 @@ __all__ = [
     "parse_social_post",
     "run_omni_channel_discovery",
     "run_smart_extract",
+    # Bangalore Startup Map
+    "fetch_bangalore_map_raw",
+    "parse_bangalore_map_rsc",
+    "fetch_company_deep_profile",
+    "generate_linkedin_connection_note",
+    "enrich_startup_website_emails",
+    "import_bangalore_startups_to_watchlist",
 ]

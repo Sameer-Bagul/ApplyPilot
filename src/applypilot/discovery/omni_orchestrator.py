@@ -14,20 +14,20 @@ import sqlite3
 from typing import Any
 
 from applypilot import config
-from applypilot.career_resolver.ats_feeds import poll_watchlist
-from applypilot.career_resolver.resolver import resolve_company_ats
+from applypilot.discovery.ats_direct_feeds import poll_watchlist
+from applypilot.discovery.company_resolver import resolve_company_ats
 from applypilot.database import (
     get_career_watchlist,
     get_connection,
     store_recruiter_lead,
 )
-from applypilot.social_discovery.dork_searcher import run_social_dorks
-from applypilot.social_discovery.extractor import (
+from applypilot.discovery.social_dorker import run_social_dorks
+from applypilot.discovery.lead_extractor import (
     classify_execution_route,
     parse_social_post,
 )
-from applypilot.social_discovery.hn_scraper import scrape_hn_hiring_posts
-from applypilot.social_discovery.reddit_scraper import scrape_reddit_hiring_posts
+from applypilot.discovery.hackernews_harvester import scrape_hn_hiring_posts
+from applypilot.discovery.reddit_scraper import scrape_reddit_hiring_posts
 
 logger = logging.getLogger(__name__)
 

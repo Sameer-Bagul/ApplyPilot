@@ -270,12 +270,52 @@ def fetch_ats_otp_code(company_domain: str = "",
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
+def import_bangalore_startup_map(
+    sectors: list[str] = ["AI", "SaaS", "Deeptech", "Fintech"],
+    only_hiring: bool = True,
+    limit: int = 50,
+) -> dict:
+    """Scrape startups, open jobs, founder LinkedIn profiles, and emails from bangalorestartupmap.com into VIP Watchlist."""
+    from applypilot.discovery.bangalore_map_harvester import import_bangalore_startups_to_watchlist
+    conn = _get_db()
+    return import_bangalore_startups_to_watchlist(
+        sectors=sectors,
+        only_hiring=only_hiring,
+        limit=limit,
+        conn=conn,
+    )
+
+
+@mcp.tool()
+def harvest_global_career_pages(
+    sources: list[str] = ["open_apply_jobs", "commoncrawl", "crtsh"],
+    limit: int = 100,
+) -> dict:
+    """Harvest ATS tenant career portals from Common Crawl CDX, open-apply-jobs, and crt.sh into career_watchlist."""
+    from applypilot.discovery.cdx_harvester import (
+        bootstrap_from_open_apply_jobs,
+        harvest_crtsh_career_subdomains,
+        sync_slugs_to_watchlist,
+    )
+    conn = _get_db()
+    results: dict[str, Any] = {}
+    if "open_apply_jobs" in sources:
+        slugs = bootstrap_from_open_apply_jobs(limit_per_ats=limit)
+        sync_slugs_to_watchlist(slugs, conn=conn)
+        results["open_apply_jobs_portals"] = sum(len(v) for v in slugs.values())
+    if "crtsh" in sources:
+        subdomains = harvest_crtsh_career_subdomains(limit=limit)
+        results["crtsh_subdomains"] = len(subdomains)
+    return results
+
+
+@mcp.tool()
 def discover_all_channels(
     sources: list[str] = ["reddit", "dorks", "watchlist"],
     max_age_hours: int = 24,
 ) -> dict:
     """Discover fresh hiring posts across Reddit, social dorks, and direct ATS feeds."""
-    from applypilot.social_discovery.orchestrator import run_omni_channel_discovery
+    from applypilot.discovery.omni_orchestrator import run_omni_channel_discovery
     conn = _get_db()
     return run_omni_channel_discovery(sources=sources, conn=conn)
 

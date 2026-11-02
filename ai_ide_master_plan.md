@@ -1,21 +1,23 @@
 # AI IDE Master Implementation Plan (`AGENTS.md` / `PLAN.md`)
-**Base Repository to Fork:** [ibarrajo/ApplyPilot](https://github.com/ibarrajo/ApplyPilot) (built on [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot))  
-**Core Stack:** Python 3.11+, SQLite (`applypilot.db` + FTS5), [Playwright MCP](https://github.com/microsoft/playwright-mcp), Gmail OAuth (`scripts/gmail_oauth.py`), FastMCP, [JobSpy](https://github.com/speedyapply/JobSpy), and optional [JobsPipe MCP](https://github.com/jobspipe/mcp) / [Hermes Agent](https://github.com/nousresearch/hermes-agent) integration.
+
+**Base Repository to Fork:** [ibarrajo/ApplyPilot](https://github.com/ibarrajo/ApplyPilot) (built on [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot))
+
+**Core Stack:** Python 3.11+, SQLite (`applypilot.db` + FTS5), [Playwright MCP](https://github.com/microsoft/playwright-mcp), Gmail OAuth (`scripts/gmail_oauth.py`), FastMCP, [JobSpy](https://github.com/speedyapply/JobSpy), and external MCP integrations ([JobsPipe MCP](https://github.com/jobspipe/mcp), [DuckDuckGo MCP](https://github.com/nickclyde/duckduckgo-mcp-server), [Brave Search MCP](https://github.com/brave/brave-search-mcp-server), [Exa MCP](https://github.com/exa-labs/exa-mcp-server), [Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server), [Google Maps MCP](https://github.com/cablate/mcp-google-map), [Google Workspace MCP](https://github.com/taylorwilsdon/google_workspace_mcp), [Hunter MCP](https://github.com/hunter-io/hunter-mcp), and [Hermes Agent](https://github.com/nousresearch/hermes-agent)).
 
 ## System Objective & Architecture
 
 You are an autonomous AI coding agent tasked with upgrading our fork of [ibarrajo/ApplyPilot](https://github.com/ibarrajo/ApplyPilot) into a **Dual-Track, Self-Evolving Job Acquisition System & MCP Server**:
 
-1. **Part 1 — Daily Omni-Channel Discovery (`social_discovery/` + `career_resolver/`):**
-   - Scrapes fresh hiring posts daily from **Reddit** (`.json` feeds), **LinkedIn Posts**, **X (Twitter)**, and **Threads** (via time-filtered search engine dorks — **NEVER** use logged-in LinkedIn/X session cookies).
-   - Monitors **Official Company Career Sites** ([Greenhouse Job Board API](https://www.greenhouse.com/api), [Lever Postings API](https://github.com/lever/postings-api), Ashby, Workday, and a custom company watchlist) plus [JobsPipe MCP](https://jobspipe.dev/mcp-server) / [JobSpy](https://github.com/speedyapply/JobSpy).
-   - Uses a **Zero-Token Regex & Entity Classifier** to extract published HR/founder emails and ATS links, and uses a **Career Site Resolver** to find the official `/careers` portal when a post only mentions a company name.
-   - Classifies every opportunity into one of three execution routes: `EMAIL_ONLY`, `PORTAL_ONLY`, or `DUAL_ATTACK` (both portal application and direct HR email).
+1. **Part 1 — Daily Omni-Channel Discovery, VIP 500 Watchlist & 100% Internet Career Harvester (`social_discovery/` + `career_resolver/`):**
+   * **VIP Top-500 & Bangalore Startup Map Importer (`bangalore_map_harvester.py`):** Scrapes all 1,085+ startups and 6,405+ open jobs from [Bangalore Startup Map (`bangalorestartupmap.com`)](https://www.bangalorestartupmap.com/) via its Next.js RSC stream (`self.__next_f.push(...)`) and `/company/[slug]` endpoints, extracting company names, sectors, funding stages, areas, open job links, and **founder names + personal LinkedIn URLs**, then enriches their HR/founder emails and sets `priority_tier = 1` (VIP Watchlist).
+   * **100% Internet Career Page Harvester (`cdx_harvester.py`):** Queries the [Common Crawl CDX API](https://huggingface.co/datasets/edwarddgao/open-apply-jobs) (`index.commoncrawl.org`), Certificate Transparency logs (`crt.sh`), and the Hugging Face [edwarddgao/open-apply-jobs](https://huggingface.co/datasets/edwarddgao/open-apply-jobs) dataset to index every public ATS tenant (`greenhouse`, `lever`, `ashby`, `workday`, `workable`, `smartrecruiters`, `bamboohr`, `breezy`, `recruitee`) and custom `/careers` pages with JSON-LD `JobPosting` schema (`priority_tier = 2`).
+   * **Daily Social Hiring Post Radar (`reddit_scraper.py` + `dork_searcher.py`):** Scrapes fresh hiring posts daily from **Reddit** (`.json` feeds), **LinkedIn Posts**, **X (Twitter)**, and **Threads** via 24-hour time-filtered search engine dorks ([Brave Search MCP](https://github.com/brave/brave-search-mcp-server) / [Exa MCP](https://github.com/exa-labs/exa-mcp-server) / [DuckDuckGo MCP](https://github.com/nickclyde/duckduckgo-mcp-server) — **NEVER** use logged-in LinkedIn/X session cookies).
+   * **Zero-Token Regex Classifier & Career Site Resolver (`extractor.py` + `resolver.py`):** Extracts published HR/founder emails and ATS links, resolves official `/careers` portals using DuckDuckGo / Firecrawl when only a company name is given, and assigns every opportunity an execution route: `EMAIL_ONLY`, `PORTAL_ONLY`, or `DUAL_ATTACK`.
 
 2. **Part 2 — Dual-Track Execution + Shared Email HITL + Self-Learning Brain (`outreach/`, `apply/`, `hitl/`, `learning/`):**
-   - **Track A (HR & Founder Cold Mailer):** Drafts or auto-sends hyper-tailored emails citing the exact social post URL, answers any post-specific questions using `qa_knowledge_base`, and attaches the tailored resume PDF generated by Stage 4 (`tailor`).
-   - **Track B (Portal Form Auto-Applier):** Uses [Playwright MCP](https://github.com/microsoft/playwright-mcp) and a **5-Tier Zero-Token Cache** (`ats_selector_cache` + `qa_knowledge_base` + `pattern_rules`) to fill company career forms while minimizing LLM token usage by 80–95%.
-   - **Shared Asynchronous Email HITL Loop:** Whenever **either** Track A (email drafter) or Track B (portal form filler) encounters a question outside the scope of `profile.json` and `qa_knowledge_base`, it parks the job, sends an email (`[ApplyPilot HITL #AP-XXXX]`) to the user via `scripts/gmail_oauth.py`, parses the user's inline email reply, permanently saves the new Q&A pair into `qa_knowledge_base`, and automatically resumes execution.
+   * **Track A (HR & Founder Cold Mailer + LinkedIn Note Generator):** Drafts or auto-sends hyper-tailored emails citing the exact social post URL or funding/startup context, answers any post-specific questions using `qa_knowledge_base`, attaches the tailored resume PDF generated by Stage 4 (`tailor`), and generates a 280-character copy-paste LinkedIn connection note for discovered founder/recruiter LinkedIn URLs.
+   * **Track B (Portal Form Auto-Applier):** Uses [Playwright MCP](https://github.com/microsoft/playwright-mcp) and a **5-Tier Zero-Token Cache** (`ats_selector_cache` + `qa_knowledge_base` + `pattern_rules`) to fill company career forms while reducing LLM token usage by 80–95%.
+   * **Shared Asynchronous Email HITL Loop:** Whenever **either** Track A (email drafter) or Track B (portal form filler) encounters a question outside the scope of `profile.json` and `qa_knowledge_base`, it parks the job, sends an email (`[ApplyPilot HITL #AP-XXXX]`) to the user via `scripts/gmail_oauth.py`, parses the user's inline email reply, permanently saves the new Q&A pair into `qa_knowledge_base`, and automatically resumes execution.
 
 ## Repository Directory & Thin-Hook Rules
 
@@ -23,31 +25,32 @@ You are an autonomous AI coding agent tasked with upgrading our fork of [ibarraj
 
 ```text
 src/applypilot/
-├── learning/                  # [NEW] Zero-token selector cache, FTS5 Q&A matcher & post-run rule synthesizer
+├── learning/                        # [NEW] Zero-token selector cache, FTS5 Q&A matcher & post-run rule synthesizer
 │   ├── __init__.py
-│   ├── migrations.py          # Adds new SQLite tables to ~/.applypilot/applypilot.db
-│   ├── canonical_matcher.py   # Normalizes questions, runs FTS5 + rapidfuzz dropdown matching (0 tokens)
-│   ├── tier0_replay.py        # Replays verified Playwright selectors from ats_selector_cache (0 tokens)
-│   └── trace_analyzer.py      # Post-run compiler (`applypilot learn`) promoting LLM actions to Tier 0/2
-├── social_discovery/          # [NEW - Part 1A] Daily social post & HR email harvester
+│   ├── migrations.py                # Adds new SQLite tables to ~/.applypilot/applypilot.db
+│   ├── canonical_matcher.py         # Normalizes questions, runs FTS5 + rapidfuzz dropdown matching (0 tokens)
+│   ├── tier0_replay.py              # Replays verified Playwright selectors from ats_selector_cache (0 tokens)
+│   └── trace_analyzer.py            # Post-run compiler (`applypilot learn`) promoting LLM actions to Tier 0/2
+├── social_discovery/                # [NEW - Part 1A] Daily social post & HR email harvester
 │   ├── __init__.py
-│   ├── reddit_scraper.py      # Zero-token Reddit .json / RSS hiring post fetcher
-│   ├── dork_searcher.py       # Time-bounded (past 24h) search dorks for LinkedIn Posts, X, Threads
-│   └── extractor.py           # Zero-token regex email extractor, domain verifier & route classifier
-├── career_resolver/           # [NEW - Part 1B] Direct company career site monitor & ATS resolver
+│   ├── reddit_scraper.py            # Zero-token Reddit .json / RSS hiring post fetcher
+│   ├── dork_searcher.py             # Time-bounded (past 24h) search dorks for LinkedIn Posts, X, Threads
+│   └── extractor.py                 # Zero-token regex email extractor, domain verifier & route classifier
+├── career_resolver/                 # [NEW - Part 1B] VIP 500, Bangalore Startup Map & 100% Internet Career Harvester
 │   ├── __init__.py
-│   ├── ats_feeds.py           # Direct JSON pollers for Greenhouse, Lever, and Ashby public boards
-│   ├── cdx_harvester.py       # [NEW] 4-Layer Internet Harvester: Common Crawl CDX, open-apply-jobs, crt.sh, JSON-LD
-│   └── resolver.py            # Resolves company name -> official /careers page -> underlying ATS URL
-├── outreach/                  # [NEW - Part 2A] Automated HR & Founder Cold Mailer
+│   ├── bangalore_map_harvester.py   # Scrapes bangalorestartupmap.com RSC payloads + founder LinkedIn + HR emails
+│   ├── cdx_harvester.py             # Common Crawl CDX + crt.sh + open-apply-jobs + JSON-LD JobPosting harvester
+│   ├── ats_feeds.py                 # High-concurrency async JSON pollers for Greenhouse, Lever, Ashby, Workable
+│   └── resolver.py                  # Resolves company name -> official /careers page -> underlying ATS URL
+├── outreach/                        # [NEW - Part 2A] Automated HR & Founder Cold Mailer + LinkedIn Notes
 │   ├── __init__.py
-│   └── mailer.py              # Drafts/sends tailored HR emails with Resume PDF + DUAL_ATTACK delay logic
-├── hitl/                      # [NEW - Shared HITL] Asynchronous Gmail Q&A loop & OTP interceptor
+│   └── mailer.py                    # Drafts/sends tailored HR emails with Resume PDF + LinkedIn note generator
+├── hitl/                            # [NEW - Shared HITL] Asynchronous Gmail Q&A loop & OTP interceptor
 │   ├── __init__.py
-│   ├── email_notifier.py      # Sends [ApplyPilot HITL #AP-XXXX] emails when a question is unknown
-│   ├── email_reply_parser.py  # Polls Gmail replies, updates qa_knowledge_base, and unparks jobs
-│   └── otp_interceptor.py     # Auto-extracts 6-digit ATS verification codes from Gmail inbox
-└── mcp_server.py              # [NEW] FastMCP server exposing all tools to Claude Code / Hermes Agent
+│   ├── email_notifier.py            # Sends [ApplyPilot HITL #AP-XXXX] emails when a question is unknown
+│   ├── email_reply_parser.py        # Polls Gmail replies, updates qa_knowledge_base, and unparks jobs
+│   └── otp_interceptor.py           # Auto-extracts 6-digit ATS verification codes from Gmail inbox
+└── mcp_server.py                    # [NEW] FastMCP server exposing all tools to Claude Code / Hermes Agent
 ```
 
 ## Phase-by-Phase Prompts to Feed Your AI IDE
@@ -57,219 +60,150 @@ Copy and paste each phase below into your AI IDE sequentially. Verify the test c
 ### Phase 1: Database Migrations & Thin-Hook Scaffolding
 
 **Prompt to paste into AI IDE:**
+
 > Inspect the existing codebase in `src/applypilot/` and `scripts/gmail_oauth.py`. Create the package `src/applypilot/learning/migrations.py` with an idempotent `run_migrations(db_path)` function that connects to `~/.applypilot/applypilot.db` and creates the following tables if they do not exist:
+>
 > 1. `ats_selector_cache` (`cache_id TEXT PRIMARY KEY`, `ats_type TEXT`, `domain_pattern TEXT`, `page_step_signature TEXT`, `canonical_field_id TEXT`, `field_type TEXT`, `playwright_locator TEXT`, `action_type TEXT`, `transform_rule TEXT`, `success_count INTEGER DEFAULT 1`, `failure_count INTEGER DEFAULT 0`, `confidence_score REAL DEFAULT 1.0`, `last_verified_at TIMESTAMP`).
 > 2. `hitl_tickets` (`ticket_id TEXT PRIMARY KEY`, `job_id TEXT`, `lead_id TEXT`, `company TEXT`, `role_title TEXT`, `job_url TEXT`, `ats_type TEXT`, `blocker_type TEXT`, `questions_json TEXT`, `dom_checkpoint_json TEXT`, `gmail_thread_id TEXT`, `gmail_message_id TEXT`, `status TEXT DEFAULT 'pending_email_reply'`, `created_at TIMESTAMP`, `resolved_at TIMESTAMP`).
 > 3. `ats_session_vault` (`vault_id TEXT PRIMARY KEY`, `ats_type TEXT`, `tenant_domain TEXT`, `login_email TEXT`, `encrypted_password TEXT`, `storage_state_path TEXT`, `session_valid_until TIMESTAMP`, `UNIQUE(ats_type, tenant_domain)`).
 > 4. `pattern_rules` (`rule_id TEXT PRIMARY KEY`, `canonical_field_id TEXT`, `regex_trigger TEXT`, `python_transform_expr TEXT`, `sample_input TEXT`, `sample_output TEXT`, `hit_count INTEGER DEFAULT 0`).
-> 5. `recruiter_leads` (`lead_id TEXT PRIMARY KEY`, `job_id TEXT`, `company_name TEXT`, `company_domain TEXT`, `role_title TEXT`, `contact_email TEXT`, `contact_type TEXT`, `source_platform TEXT`, `source_post_url TEXT`, `evidence_snippet TEXT`, `special_instructions_json TEXT`, `execution_route TEXT`, `outreach_status TEXT DEFAULT 'queued'`, `gmail_draft_id TEXT`, `gmail_thread_id TEXT`, `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`, `UNIQUE(contact_email, role_title)`).
-> 6. `career_watchlist` (`company_id TEXT PRIMARY KEY`, `company_name TEXT`, `official_domain TEXT`, `careers_page_url TEXT`, `ats_provider TEXT`, `ats_board_token TEXT`, `last_checked_at TIMESTAMP`, `last_content_hash TEXT`).
+> 5. `recruiter_leads` (`lead_id TEXT PRIMARY KEY`, `job_id TEXT`, `company_name TEXT`, `company_domain TEXT`, `role_title TEXT`, `contact_name TEXT`, `contact_email TEXT`, `contact_linkedin_url TEXT`, `contact_type TEXT`, `source_platform TEXT`, `source_post_url TEXT`, `evidence_snippet TEXT`, `special_instructions_json TEXT`, `linkedin_connection_note TEXT`, `execution_route TEXT`, `outreach_status TEXT DEFAULT 'queued'`, `gmail_draft_id TEXT`, `gmail_thread_id TEXT`, `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`, `UNIQUE(contact_email, role_title)`).
+> 6. `career_watchlist` (`company_id TEXT PRIMARY KEY`, `company_name TEXT NOT NULL`, `slug TEXT`, `priority_tier INTEGER DEFAULT 2`, `is_vip INTEGER DEFAULT 0`, `stage TEXT`, `sector TEXT`, `area TEXT`, `location TEXT`, `team_size TEXT`, `total_funding TEXT`, `official_domain TEXT`, `careers_page_url TEXT`, `ats_provider TEXT`, `ats_board_token TEXT`, `founders_json TEXT`, `hr_contacts_json TEXT`, `open_roles_count INTEGER DEFAULT 0`, `last_checked_at TIMESTAMP`, `last_content_hash TEXT`).
 > 7. Also create an SQLite FTS5 virtual table `qa_fts` indexing the existing Q&A knowledge base table so we can perform zero-token lexical lookups.
+>
 > Wire `run_migrations()` to run automatically on CLI startup in `src/applypilot/cli.py`.
 
 **Verification Command:**
 `uv run applypilot --help` and check `sqlite3 ~/.applypilot/applypilot.db ".tables"` to confirm all 6 new tables and `qa_fts` exist.
 
-### Phase 2: Part 1 — Daily Social Discovery, Career Site Resolver & 4-Layer Internet Harvester (`social_discovery/` & `career_resolver/`)
+### Phase 2: Part 1 — VIP 500, `bangalorestartupmap.com` Scraper, 100% Internet Career Harvester & Social Discovery
 
 **Prompt to paste into AI IDE:**
+
 > Implement Part 1 of our architecture inside `src/applypilot/social_discovery/` and `src/applypilot/career_resolver/`:
-> 1. **`reddit_scraper.py`**: Fetch new posts from configurable subreddits (`r/forhire`, `r/RemoteJS`, `r/developersIndia`, `r/golang`, `r/aijobs`) using public `.json` endpoints (`https://www.reddit.com/r/{sub}/new.json?limit=100`) with a custom User-Agent. Filter for `[Hiring]` or hiring keywords.
-> 2. **`dork_searcher.py`**: Query public search APIs (support DuckDuckGo HTML/API with modern `ddgs` browser-emulated TLS fingerprinting, Brave Search API, or Exa API from `config.toml`) using 24-hour time-filtered dorks (`site:linkedin.com/posts`, `site:x.com`, `site:threads.net`) combined with role keywords and hiring intent phrases. Strictly enforce a Zero-Cookie Policy: never log into LinkedIn, X, or Threads.
-> 3. **`extractor.py` (Zero-Token Classifier)**: Write a pure-Python deterministic parser that extracts all `mailto:` links, standard and obfuscated email addresses (`[at]`, `(at)`), and known ATS URLs (`boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `myworkdayjobs.com`). Reject generic no-reply/support addresses. Classify valid emails into `founder`, `recruiter`, `hiring_manager`, or `careers_inbox`, and capture the verbatim 2-sentence `evidence_snippet` around the email.
-> 4. **`ats_feeds.py` & `resolver.py`**: Poll public JSON endpoints for companies in `career_watchlist` (`https://boards-api.greenhouse.io/v1/boards/{token}/jobs` and `https://api.lever.co/v0/postings/{token}?mode=json`). When a social post mentions a company hiring without an ATS URL, search `"<Company Name>" official site careers OR jobs`, find the `/careers` URL, and resolve any embedded ATS link.
-> 5. **`cdx_harvester.py` (4-Layer Internet-Wide Career Harvester)**:
->    - **Layer 1 (Common Crawl CDX)**: Query `index.commoncrawl.org` across `boards.greenhouse.io/*`, `jobs.lever.co/*`, `jobs.ashbyhq.com/*`, and extract unique tenant slugs into `career_watchlist`.
->    - **Layer 2 (Certificate Transparency)**: Query `crt.sh` logs for `careers.%.com` and `jobs.%.com` to detect new corporate career portals in real time.
->    - **Layer 3 (Open-Source Daily Parquet Dumps)**: Bootstrap from `edwarddgao/open-apply-jobs` (81M+ jobs across 50k+ companies) via Hugging Face Serverless Datasets API / PyArrow to seed target openings and ATS slugs with 0 tokens.
->    - **Layer 4 (Sitemap & JSON-LD Extractor)**: Parse custom company `/careers` pages for `<script type="application/ld+json">` `JobPosting` schema markup, extracting fully structured jobs with zero LLM tokens and zero Playwright overhead.
-> 6. **Routing Logic**: Insert discovered jobs into `jobs` and `recruiter_leads`, assigning `execution_route` as:
->    - `EMAIL_ONLY` (has verified HR/founder email, no portal form)
->    - `PORTAL_ONLY` (has ATS/career form URL, no HR email)
->    - `DUAL_ATTACK` (has both an official portal form URL and a verified HR/founder email)
-> 7. Register CLI command `applypilot discover-all` in `src/applypilot/cli.py`.
+>
+> 1. **`bangalore_map_harvester.py` (VIP Startup Map Importer & Contact Enricher)**:
+>    * Fetch `https://www.bangalorestartupmap.com/` and `https://www.bangalorestartupmap.com/?hiring=1` via `httpx`, parsing the Next.js React Server Components (`<script>self.__next_f.push(...)</script>`) stream to extract all 1,085+ startups (`name`, `slug`, `stage`, `tagline`, `sector`, `area`, `location`, `founded`, `open_roles`).
+>    * Concurrently fetch `https://www.bangalorestartupmap.com/company/{slug}` (with polite rate-limiting / 10x async concurrency) for startups matching target sectors (`AI`, `SaaS`, `Deeptech`, `Fintech`, `Healthtech`, `Consumer`) or with `open_roles > 0`, extracting `description`, `team_size`, `total_funding`, `careers_url` (`View open jobs`), and the `founders` array (`[{"name": ..., "linkedin": ...}]`).
+>    * **Zero-Login Contact & Email Enrichment**: For each imported startup:
+>      1. Resolve its official website domain and crawl `/careers`, `/about`, and `/contact` via `httpx` to regex-extract any published `careers@`, `hr@`, `talent@`, or founder emails.
+>      2. Run public search dorks (`site:linkedin.com/in/ "<Company Name>" ("HR" OR "Talent Acquisition" OR "Recruiter")` and `site:linkedin.com/posts "<Company Name>" ("hiring" OR "@")`) via DuckDuckGo / Brave / Exa to capture HR LinkedIn profile URLs and published emails.
+>      3. Store the startup in `career_watchlist` with `priority_tier = 1` and `is_vip = 1`, and populate `recruiter_leads` with discovered founder/HR emails and LinkedIn URLs.
+>    * Register CLI command `applypilot import-blr-map --sectors AI,SaaS,Deeptech,Fintech --only-hiring`.
+>
+> 2. **`cdx_harvester.py` (100% Internet Career Page & ATS Indexer)**:
+>    * Query the Common Crawl CDX API (`http://index.commoncrawl.org/CC-MAIN-latest-index?url={pattern}&output=json`) for all major ATS host patterns (`boards.greenhouse.io/*`, `jobs.lever.co/*`, `jobs.ashbyhq.com/*`, `*.myworkdayjobs.com/*`, `apply.workable.com/*`, `*.bamboohr.com/careers/*`, `*.breezy.hr/*`, `*.recruitee.com/*`) and union with the Hugging Face `edwarddgao/open-apply-jobs` tenant list.
+>    * Query Certificate Transparency logs (`https://crt.sh/?q=careers.%25&output=json`) for newly registered `careers.*` and `jobs.*` subdomains.
+>    * For custom company domains without a known ATS, fetch `/sitemap.xml` and `/careers`, check `ETag` / `last_content_hash`, and parse embedded `<script type="application/ld+json">` blocks where `"@type" == "JobPosting"` (zero LLM tokens).
+>    * Store discovered portals in `career_watchlist` (`priority_tier = 2`, or `priority_tier = 1` if in the user's `vip_companies.yaml` top-500 list).
+>
+> 3. **`reddit_scraper.py` & `dork_searcher.py` (Daily Social Hiring Post Radar)**:
+>    * Fetch new posts from `r/forhire`, `r/RemoteJS`, `r/developersIndia`, `r/golang`, `r/Bangalorestartups`, and `r/aijobs` using public `.json` endpoints (`https://www.reddit.com/r/{sub}/new.json?limit=100`).
+>    * Query public search APIs (DuckDuckGo for company/career lookups; Brave Search / Exa with 24-hour freshness filters for social posts) using dorks (`site:linkedin.com/posts`, `site:x.com`, `site:threads.net`) combined with role keywords and `"we are hiring" OR "send your resume" OR "@"`. Strictly enforce a Zero-Cookie Policy: never log into LinkedIn, X, or Threads.
+>
+> 4. **`extractor.py`, `ats_feeds.py` & `resolver.py`**:
+>    * Extract `mailto:` links, standard/obfuscated emails, and ATS links using zero-token regex.
+>    * Poll public JSON APIs for Greenhouse, Lever, and Ashby with 32-way `httpx` concurrency (checking `priority_tier = 1` VIP companies every 6 hours and `priority_tier = 2` daily).
+>    * Insert matched jobs into `jobs` and `recruiter_leads`, assigning `execution_route` as `EMAIL_ONLY`, `PORTAL_ONLY`, or `DUAL_ATTACK`.
+>    * Register CLI command `applypilot discover-all` in `src/applypilot/cli.py`.
 
 **Verification Command:**
-`uv run applypilot discover-all --dry-run` — verify that Reddit posts, search dorks, and Greenhouse/Lever feeds populate `jobs` and `recruiter_leads` with accurate `execution_route` labels and zero LLM tokens spent on regex extraction.
+`uv run applypilot import-blr-map --limit 20` and `uv run applypilot discover-all --dry-run` — verify that startups from `bangalorestartupmap.com` (with founder LinkedIn links, open roles, and enriched emails), Reddit posts, and ATS feeds populate `career_watchlist`, `jobs`, and `recruiter_leads`.
 
 ### Phase 3: Shared Asynchronous Email HITL Loop (`hitl/`)
 
 **Prompt to paste into AI IDE:**
+
 > Implement the shared Email Human-in-the-Loop (HITL) system in `src/applypilot/hitl/` using the existing Gmail OAuth credentials in `scripts/gmail_oauth.py`:
+>
 > 1. **`email_notifier.py`**: Create `park_and_notify_user(job_id, lead_id, company, role_title, job_url, blocker_type, unknown_questions, dom_checkpoint)`. It must:
->    - Create a record in `hitl_tickets` with a short unique ID (`#AP-XXXX`).
->    - Send a clean plain-text + HTML email to the user's configured Gmail address with Subject `[ApplyPilot HITL #AP-XXXX] Action Required: {len(unknown_questions)} Missing Answer(s) for {role_title} at {company}`.
->    - Format each unknown question as a numbered item (`Q1`, `Q2`) showing field type, options (if select/radio), and an inline reply template (`A1: <your answer>`).
->    - Mark the job status as `parked_hitl` in `jobs` (or `recruiter_leads`).
+>    * Create a record in `hitl_tickets` with a short unique ID (`#AP-XXXX`).
+>    * Send a clean plain-text + HTML email to the user's configured Gmail address with Subject `[ApplyPilot HITL #AP-XXXX] Action Required: {len(unknown_questions)} Missing Answer(s) for {role_title} at {company}`.
+>    * Format each unknown question as a numbered item (`Q1`, `Q2`) showing field type, options (if select/radio), and an inline reply template (`A1: <your answer>`).
+>    * Mark the job status as `parked_hitl` in `jobs` (or `recruiter_leads`).
 > 2. **`email_reply_parser.py`**: Create `poll_hitl_replies()` and hook it into `applypilot track`. It must:
->    - Search Gmail for unread replies matching `subject:"[ApplyPilot HITL #AP-"`.
->    - Strip quoted email history and parse `A1:`, `A2:` (or single-line direct replies if only 1 question was asked) using deterministic regex first, falling back to a lightweight LLM call only if free-form text was used.
->    - Insert the newly learned answer(s) into `qa_knowledge_base` (and sync `qa_fts`).
->    - Update `hitl_tickets.status = 'resolved'` and flip the parked job/lead back to `queued` so the next worker run completes it automatically.
+>    * Search Gmail for unread replies matching `subject:"[ApplyPilot HITL #AP-"`.
+>    * Strip quoted email history and parse `A1:`, `A2:` (or single-line direct replies if only 1 question was asked) using deterministic regex first, falling back to a lightweight LLM call only if free-form text was used.
+>    * Insert the newly learned answer(s) into `qa_knowledge_base` (and sync `qa_fts`).
+>    * Update `hitl_tickets.status = 'resolved'` and flip the parked job/lead back to `queued` so the next worker run completes it automatically.
 > 3. **`otp_interceptor.py`**: Create `wait_for_ats_otp(sender_domain, timeout_sec=90)` that polls Gmail every 5 seconds when an ATS portal (like Workday or iCIMS) sends a 6-digit email verification code during registration, returning the code directly to the Playwright worker without parking the job.
 
 **Verification Command:**
-Run `uv run python -m applypilot.hitl.test_roundtrip` (create a small test script that triggers a mock `#AP-TEST` email to your inbox, reply to it in Gmail, and run `uv run applypilot track` to confirm the answer is saved to `qa_knowledge_base` and the ticket resolves).
+Run `uv run python -m applypilot.hitl.test_roundtrip` to verify that a mock `#AP-TEST` email is sent, replied to in Gmail, parsed into `qa_knowledge_base`, and resolved.
 
-### Phase 4: Part 2A — Automated HR & Founder Cold Mailer (`outreach/`)
+### Phase 4: Part 2A — Automated HR & Founder Cold Mailer + LinkedIn Note Generator (`outreach/`)
 
 **Prompt to paste into AI IDE:**
+
 > Build the Track A execution engine in `src/applypilot/outreach/mailer.py` and register `applypilot outreach` in `src/applypilot/cli.py`:
+>
 > 1. Query `recruiter_leads` where `outreach_status = 'queued'` and the associated job meets the minimum fit score in `config.toml`, and ensure Stage 4 (`tailor`) has generated the tailored resume PDF for that role.
-> 2. Inspect the source post text (`evidence_snippet` and full post body) for any required instructions (e.g., required subject line format or specific questions like notice period, current CTC, portfolio link, or location).
-> 3. Query `qa_knowledge_base` (via `canonical_matcher.py`) to retrieve verified answers for every detail requested in the post.
+> 2. Inspect the source post text (`evidence_snippet` and full post body) or startup profile (`stage`, `total_funding`, `tagline` from `career_watchlist`) for any required instructions (e.g., required subject line format or specific questions like notice period, current CTC, portfolio link, or location).
+> 3. Query `qa_knowledge_base` (via `canonical_matcher.py`) to retrieve verified answers for every detail requested.
 > 4. **HITL Guardrail**: If the post asks for a specific fact not found in `profile.json` or `qa_knowledge_base` (confidence < 0.85), do NOT hallucinate—call `park_and_notify_user()` from Phase 3 and pause the lead.
-> 5. **Email Composition & Attachment**: Draft a concise, natural email referencing the exact `source_post_url` and `source_platform`, incorporating the verified answers, and attach the tailored Resume PDF.
+> 5. **Email Composition, Attachment & LinkedIn Note**:
+>    * Draft a concise, natural email referencing the exact `source_post_url` (or recent funding/product milestone from `bangalorestartupmap.com`), incorporating verified answers, and attach the tailored Resume PDF.
+>    * If `contact_linkedin_url` is present (e.g., a founder or HR profile from `bangalorestartupmap.com` or search dorks), also generate a crisp 280-character personalized LinkedIn connection note and store it in `recruiter_leads.linkedin_connection_note` (and include a 1-click LinkedIn profile link + copyable note in the user's daily digest email).
 > 6. **Execution Modes**:
->    - If `outreach_mode = "draft"` (default safety mode): Create a Gmail Draft via `scripts/gmail_oauth.py` and include it in a daily summary email to the user.
->    - If `outreach_mode = "auto_send"` (for fit score >= threshold): Send the email directly via Gmail API and update `outreach_status = 'sent'`.
->    - If `execution_route == "DUAL_ATTACK"`: Wait until Track B (`apply`) has submitted the portal form first, then send the HR email referencing that the formal portal application was also completed.
+>    * If `outreach_mode = "draft"` (default safety mode): Create a Gmail Draft via `scripts/gmail_oauth.py` and include it in a daily summary email to the user.
+>    * If `outreach_mode = "auto_send"` (for fit score >= threshold): Verify the email domain/MX record first, send the email directly via Gmail API, and update `outreach_status = 'sent'`.
+>    * If `execution_route == "DUAL_ATTACK"`: Wait until Track B (`apply`) has submitted the portal form first, then send the HR/founder email referencing that the formal portal application was also completed.
 
 **Verification Command:**
-`uv run applypilot outreach --mode draft --limit 2` — verify that Gmail Drafts are created with the tailored PDF attached and cite the exact social post URL.
+`uv run applypilot outreach --mode draft --limit 2` — verify that Gmail Drafts are created with the tailored PDF attached and that `linkedin_connection_note` is populated for leads with founder/HR LinkedIn URLs.
 
 ### Phase 5: Part 2B — 5-Tier Zero-Token Portal Form Engine (`learning/` + `apply/`)
 
 **Prompt to paste into AI IDE:**
+
 > Upgrade the portal form-filling stage (`src/applypilot/apply/`) with the 5-Tier Zero-Token Resolution Engine in `src/applypilot/learning/`:
+>
 > 1. **`canonical_matcher.py` (Tier 1 & Tier 2 — 0 Tokens)**:
->    - Normalize form field labels (lowercase, strip punctuation/stopwords).
->    - Query `qa_fts` and `profile.json` for exact/synonym matches.
->    - For `<select>` and radio options, use `rapidfuzz.process.extractOne` (`score_cutoff=88`) to match the user's stored answer against the portal's dropdown options (e.g., matching `"Yes"` to `"Yes, I am authorized to work"` with zero LLM tokens).
->    - Execute any matching transform rules from `pattern_rules` (e.g., converting years of experience to months, or formatting phone/date strings).
+>    * Normalize form field labels (lowercase, strip punctuation/stopwords).
+>    * Query `qa_fts` and `profile.json` for exact/synonym matches.
+>    * For `<select>` and radio options, use `rapidfuzz.process.extractOne` (`score_cutoff=88`) to match the user's stored answer against the portal's dropdown options with zero LLM tokens.
+>    * Execute any matching transform rules from `pattern_rules` (e.g., converting years of experience to months, or formatting phone/date strings).
 > 2. **`tier0_replay.py` (Tier 0 — 0 Tokens)**:
->    - Before invoking the LLM on any ATS page (`greenhouse`, `lever`, `ashby`, `workday`, `smartrecruiters`), compute the `page_step_signature` from the visible form input IDs/labels and query `ats_selector_cache` where `confidence_score >= 0.8`.
->    - Execute all cached Playwright locators (`fill`, `select_option`, `check`, `set_input_files`) directly. If a locator fails validation, increment `failure_count` and fall through to Tier 3 ONLY for the unmapped or failed fields.
+>    * Before invoking the LLM on any ATS page (`greenhouse`, `lever`, `ashby`, `workday`, `smartrecruiters`), compute the `page_step_signature` from the visible form input IDs/labels and query `ats_selector_cache` where `confidence_score >= 0.8`.
+>    * Execute all cached Playwright locators (`fill`, `select_option`, `check`, `set_input_files`) directly. If a locator fails validation, increment `failure_count` and fall through to Tier 3 ONLY for the unmapped or failed fields.
 > 3. **Pruned Accessibility-Tree Fallback (Tier 3) & Email HITL (Tier 4)**:
->    - When novel fields remain, pass ONLY the pruned accessibility tree of unmapped form controls (never raw HTML/CSS) to the LLM.
->    - If the LLM returns `confidence < 0.85` or flags a sensitive/unanswered question, immediately invoke `park_and_notify_user()` (Tier 4), save `dom_checkpoint_json`, and close the tab cleanly.
+>    * When novel fields remain, pass ONLY the pruned accessibility tree of unmapped form controls (never raw HTML/CSS) to the LLM.
+>    * If the LLM returns `confidence < 0.85` or flags a sensitive/unanswered question, immediately invoke `park_and_notify_user()` (Tier 4), save `dom_checkpoint_json`, and close the tab cleanly.
 > 4. **`trace_analyzer.py` (`applypilot learn` — Post-Run Compiler)**:
->    - Log every successful Tier 3 LLM action and Tier 4 HITL resolution to `~/.applypilot/logs/apply_trace.jsonl`.
->    - Implement `applypilot learn` to read `apply_trace.jsonl` after each run and promote verified selectors into `ats_selector_cache` (Tier 0) and new Q&A mappings into `qa_knowledge_base` (Tier 1) so future runs on that ATS cost zero tokens.
+>    * Log every successful Tier 3 LLM action and Tier 4 HITL resolution to `~/.applypilot/logs/apply_trace.jsonl`.
+>    * Implement `applypilot learn` to read `apply_trace.jsonl` after each run and promote verified selectors into `ats_selector_cache` (Tier 0) and new Q&A mappings into `qa_knowledge_base` (Tier 1) so future runs on that ATS cost zero tokens.
 
 **Verification Command:**
 Run `uv run applypilot apply --limit 1` on a Greenhouse or Lever job, then run `uv run applypilot learn`, and run `applypilot apply` on a second job from the same ATS—confirm in the logs that standard fields execute via `Tier 0 Cache Hit (0 tokens)`.
 
-### Phase 6: FastMCP Server (`mcp_server.py`) & Daily Autonomous Orchestrator
+### Phase 6: FastMCP Server (`mcp_server.py`), External MCP Ecosystem & Daily Autonomous Orchestrator
 
 **Prompt to paste into AI IDE:**
+
 > Create `src/applypilot/mcp_server.py` using `FastMCP("applypilot-mcp")` and register `applypilot mcp` and `applypilot run-daily` in `src/applypilot/cli.py`:
-> 1. Expose the following MCP tools:
->    - `discover_all_channels(sources: list[str], max_age_hours: int = 24)`
->    - `resolve_company_career_portal(company_name: str)`
->    - `score_and_tailor_queue(min_score: int = 75)`
->    - `execute_hr_outreach(mode: str = "draft", limit: int = 10)`
->    - `execute_portal_applications(limit: int = 10, headless: bool = True)`
->    - `query_candidate_memory(question_text: str, field_type: str, options: list[str] | None = None)`
->    - `trigger_email_hitl(job_id: str, unknown_questions: list[dict])`
->    - `sync_email_replies_and_unpark()`
->    - `run_post_execution_learner()`
-> 2. Implement `applypilot run-daily` which executes the full pipeline in order:
+>
+> 1. Expose the following MCP tools in `applypilot-mcp`:
+>    * `import_bangalore_startup_map(sectors: list[str], only_hiring: bool = True)`
+>    * `harvest_global_career_pages(sources: list[str] = ["commoncrawl", "crtsh", "open_apply_jobs"])`
+>    * `discover_all_channels(sources: list[str], max_age_hours: int = 24, vip_only: bool = False)`
+>    * `resolve_company_career_portal(company_name: str)`
+>    * `score_and_tailor_queue(min_score: int = 75)`
+>    * `execute_hr_outreach(mode: str = "draft", limit: int = 10)`
+>    * `execute_portal_applications(limit: int = 10, headless: bool = True)`
+>    * `query_candidate_memory(question_text: str, field_type: str, options: list[str] | None = None)`
+>    * `trigger_email_hitl(job_id: str, unknown_questions: list[dict])`
+>    * `sync_email_replies_and_unpark()`
+>    * `run_post_execution_learner()`
+> 2. Generate a ready-to-use `mcp_config.json` in the repository root that wires `applypilot-mcp` alongside:
+>    * `@playwright/mcp` ([Playwright MCP](https://github.com/microsoft/playwright-mcp)) for ATS browser form filling
+>    * `jobspipe` (`https://mcp.jobspipe.dev/mcp` — [JobsPipe MCP](https://github.com/jobspipe/mcp)) for 30+ job boards & ATS feeds
+>    * `duckduckgo-mcp-server` ([DuckDuckGo MCP](https://github.com/nickclyde/duckduckgo-mcp-server)) for $0 company/career URL lookups
+>    * `brave-search` ([Brave Search MCP](https://github.com/brave/brave-search-mcp-server)) & `exa` ([Exa MCP](https://github.com/exa-labs/exa-mcp-server)) for 24h LinkedIn/X/Threads hiring post dorks
+>    * `firecrawl-mcp` ([Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server)) for mapping custom JS career portals
+>    * `mcp-google-map` ([Google Maps MCP](https://github.com/cablate/mcp-google-map)) for office commute checks & discovering local tech companies by city/hub
+>    * `google_workspace_mcp` ([Google Workspace MCP](https://github.com/taylorwilsdon/google_workspace_mcp)) for Gmail, live Google Sheets application tracking, and Google Calendar interview slot checks
+> 3. Implement `applypilot run-daily` which executes the full pipeline in order:
 >    `sync_email_replies_and_unpark()` -> `discover_all_channels()` -> `score_and_tailor_queue()` -> `execute_portal_applications()` -> `execute_hr_outreach()` -> `run_post_execution_learner()`.
 
 **Verification Command:**
 Run `uv run applypilot mcp` to verify the MCP server starts cleanly over stdio, and test `uv run applypilot run-daily --dry-run`.
-
----
-
-## 360-Degree Omni-Channel MCP Ecosystem & Master Configuration
-
-Connecting Google Maps, Google Workspace (Gmail, Sheets, Calendar, Drive), and Search/Job MCPs turns ApplyPilot into a 360-degree autonomous job acquisition engine.
-
-### 1. The 5 Functional MCP Categories
-
-| Category | MCP Server | Key Capabilities & Pipeline Role |
-| :--- | :--- | :--- |
-| **1. Job Discovery & ATS Feeds** | **`applypilot-mcp`** (Custom)<br>**`freehire`** / **`jobspipe`**<br>**`jobspy-mcp`** | • Core SQLite DB, 5-Tier Zero-Token Cache & learning engine.<br>• Streams 47,000+ normalized active IT jobs across 30+ ATS boards.<br>• On-demand queries across LinkedIn, Indeed, Glassdoor, and Naukri. |
-| **2. Search, Social Dorks & Crawlers** | **`duckduckgo`** (`ddgs`)<br>**`brave-search`**<br>**`exa`**<br>**`firecrawl`**<br>**`reddit`** | • $0 company research and `/careers` URL resolution.<br>• 24h fresh dorks (`freshness="pd"`) for LinkedIn and X hiring posts.<br>• Semantic neural search for stealth startups & hiring founders.<br>• Maps bespoke company career websites into clean Markdown URLs.<br>• Harvester for r/forhire, r/developersIndia, and monthly hiring threads. |
-| **3. Google Maps & Location Intelligence** | **`google-maps`** (`cablate/mcp-google-map`)<br>**`google-maps-scraper`** | • **Hidden Tech Hub Discovery**: Searches Google Maps for software firms & AI startups in Pune, Bengaluru, Hyderabad, Gurgaon, or Mumbai, grabbing domains for companies that never advertise on job boards.<br>• **Commute & Location Guardrail**: Computes exact transit/driving times for hybrid and onsite job openings against user preferences. |
-| **4. Google Workspace Productivity** | **`google-workspace`** (`taylorwilsdon/google_workspace_mcp`) | • **Live Google Sheets Mirror**: Appends every submitted application and cold email to a mobile-accessible Google Sheet.<br>• **Interview Calendar Assistant**: Checks free Google Calendar slots when an HR reply or interview invite is detected in Gmail. |
-| **5. Verification, Proof & Automation** | **`hunter-io`**<br>**`github-mcp`**<br>**`playwright-mcp`** | • Pre-flight SMTP/MX email verification to guarantee zero bounce rates on cold outreach.<br>• Injects real project repositories, commits, and PR evidence into cold emails.<br>• Microsoft accessibility-tree browser automation to fill multi-page ATS forms. |
-
----
-
-### 2. Google Maps "Hidden Tech Hub" Discovery Architecture
-
-Most software development firms, agencies, and funded startups maintain an active Google Business profile with their official domain and contact details—long before they purchase expensive LinkedIn Job postings.
-
-```
- [ "Software Company in Hinjewadi, Pune" ]
-                     │
-                     ▼
-             [ Google Maps MCP ]
-     (Extracts Company Name + Website Domain)
-                     │
-                     ▼
-         [ cdx_harvester & resolver ]
-    (Inspects /careers or embeds ATS slug)
-                     │
-                     ▼
-         [ ApplyPilot Watchlist DB ]
-  (Discovers private openings ahead of competitors)
-```
-
----
-
-### 3. Master MCP Configuration Block (`mcp_config.json` / Claude Desktop / Hermes Agent / AI IDE)
-
-```json
-{
-  "mcpServers": {
-    "applypilot": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "applypilot", "mcp"],
-      "env": {}
-    },
-    "freehire": {
-      "serverUrl": "https://freehire.me/api/v1/mcp"
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-playwright"]
-    },
-    "brave-search": {
-      "command": "npx",
-      "args": ["-y", "@brave/brave-search-mcp-server"],
-      "env": {
-        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
-      }
-    },
-    "firecrawl": {
-      "command": "npx",
-      "args": ["-y", "firecrawl-mcp"],
-      "env": {
-        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
-      }
-    },
-    "google-maps": {
-      "command": "npx",
-      "args": ["-y", "@cablate/mcp-google-map"],
-      "env": {
-        "GOOGLE_MAPS_API_KEY": "${GOOGLE_MAPS_API_KEY}"
-      }
-    },
-    "google-workspace": {
-      "command": "uvx",
-      "args": ["workspace-mcp"],
-      "env": {
-        "GOOGLE_WORKSPACE_CREDENTIALS": "${GOOGLE_WORKSPACE_CREDENTIALS}"
-      }
-    },
-    "exa": {
-      "command": "npx",
-      "args": ["-y", "exa-mcp-server"],
-      "env": {
-        "EXA_API_KEY": "${EXA_API_KEY}"
-      }
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
-    }
-  }
-}
-```
-

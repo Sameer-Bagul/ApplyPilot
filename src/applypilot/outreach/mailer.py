@@ -312,6 +312,30 @@ def run_hr_outreach(
         # Extract special instructions and questions
         instructions = extract_special_instructions(evidence)
 
+        # Generate LinkedIn connection note if contact LinkedIn URL is present
+        contact_li = lead.get("contact_linkedin_url")
+        li_note = lead.get("linkedin_connection_note")
+        if contact_li and not li_note:
+            from applypilot.discovery.bangalore_map_harvester import generate_linkedin_connection_note
+            li_note = generate_linkedin_connection_note(
+                founder_name=lead.get("contact_name") or "Founder",
+                startup_name=company,
+                sector=None,
+                tagline=evidence,
+            )
+            conn.execute(
+                "UPDATE recruiter_leads SET linkedin_connection_note = ? WHERE lead_id = ?",
+                (li_note, lead_id),
+            )
+            conn.commit()
+
+        if to_email and to_email.endswith("@connect.linkedin.com"):
+            # LinkedIn connection lead — note is ready for 1-click copying
+            update_recruiter_lead_status(lead_id=lead_id, status="note_ready", conn=conn)
+            processed += 1
+            drafted += 1
+            continue
+
         # Check if instructions require missing information -> HITL guardrail
         missing_questions = []
         if instructions.get("needs_salary") and not profile.get("expected_salary"):

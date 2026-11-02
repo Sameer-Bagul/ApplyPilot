@@ -15,8 +15,8 @@ import urllib.request
 from typing import Any
 from urllib.parse import urlparse
 
-from applypilot.social_discovery.dork_searcher import search_duckduckgo_html
-from applypilot.social_discovery.extractor import KNOWN_ATS_DOMAINS, extract_ats_urls
+from applypilot.discovery.social_dorker import search_duckduckgo_html
+from applypilot.discovery.lead_extractor import KNOWN_ATS_DOMAINS, extract_ats_urls
 
 logger = logging.getLogger(__name__)
 

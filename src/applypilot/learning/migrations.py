@@ -181,12 +181,15 @@ def run_migrations(db_path: Path | str | None = None) -> sqlite3.Connection:
             company_name              TEXT,
             company_domain            TEXT,
             role_title                TEXT,
+            contact_name              TEXT,
             contact_email             TEXT,
+            contact_linkedin_url      TEXT,
             contact_type              TEXT,
             source_platform           TEXT,
             source_post_url           TEXT,
             evidence_snippet          TEXT,
             special_instructions_json TEXT,
+            linkedin_connection_note  TEXT,
             execution_route           TEXT,
             outreach_status           TEXT DEFAULT 'queued',
             gmail_draft_id            TEXT,
@@ -199,20 +202,52 @@ def run_migrations(db_path: Path | str | None = None) -> sqlite3.Connection:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_outreach_status ON recruiter_leads(outreach_status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_execution_route ON recruiter_leads(execution_route)")
 
+    # Forward migration for recruiter_leads
+    _add_column_if_missing(conn, "recruiter_leads", "contact_name", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "contact_linkedin_url", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "linkedin_connection_note", "TEXT")
+
     # 6. career_watchlist
     conn.execute("""
         CREATE TABLE IF NOT EXISTS career_watchlist (
             company_id         TEXT PRIMARY KEY,
-            company_name       TEXT,
+            company_name       TEXT NOT NULL,
+            slug               TEXT,
+            priority_tier      INTEGER DEFAULT 2,
+            is_vip             INTEGER DEFAULT 0,
+            stage              TEXT,
+            sector             TEXT,
+            area               TEXT,
+            location           TEXT,
+            team_size          TEXT,
+            total_funding      TEXT,
             official_domain    TEXT,
             careers_page_url   TEXT,
             ats_provider       TEXT,
             ats_board_token    TEXT,
+            founders_json      TEXT,
+            hr_contacts_json   TEXT,
+            open_roles_count   INTEGER DEFAULT 0,
             last_checked_at    TIMESTAMP,
             last_content_hash  TEXT
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_domain ON career_watchlist(official_domain)")
+
+    # Forward migration for career_watchlist
+    _add_column_if_missing(conn, "career_watchlist", "slug", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "priority_tier", "INTEGER DEFAULT 2")
+    _add_column_if_missing(conn, "career_watchlist", "is_vip", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "career_watchlist", "stage", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "sector", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "area", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "location", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "team_size", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "total_funding", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "founders_json", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "hr_contacts_json", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "open_roles_count", "INTEGER DEFAULT 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_priority ON career_watchlist(priority_tier, is_vip)")
 
     # Ensure jobs table has execution_route
     if "jobs" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:

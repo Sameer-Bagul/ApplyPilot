@@ -362,7 +362,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
         from applypilot.learning.migrations import run_migrations
         run_migrations(path)
     except Exception as e:
-        logger.debug("Automatic migration run notice: %s", e)
+        _log.debug("Automatic migration run notice: %s", e)
 
     return conn
 
@@ -2773,6 +2773,9 @@ def store_recruiter_lead(
     company_name: str | None = None,
     company_domain: str | None = None,
     job_id: str | None = None,
+    contact_name: str | None = None,
+    contact_linkedin_url: str | None = None,
+    linkedin_connection_note: str | None = None,
     contact_type: str = "recruiter",
     source_platform: str | None = None,
     source_post_url: str | None = None,
@@ -2793,13 +2796,17 @@ def store_recruiter_lead(
         """
         INSERT INTO recruiter_leads (
             lead_id, job_id, company_name, company_domain, role_title,
+            contact_name, contact_linkedin_url, linkedin_connection_note,
             contact_email, contact_type, source_platform, source_post_url,
             evidence_snippet, special_instructions_json, execution_route,
             outreach_status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(contact_email, role_title) DO UPDATE SET
             company_name = COALESCE(excluded.company_name, recruiter_leads.company_name),
             company_domain = COALESCE(excluded.company_domain, recruiter_leads.company_domain),
+            contact_name = COALESCE(excluded.contact_name, recruiter_leads.contact_name),
+            contact_linkedin_url = COALESCE(excluded.contact_linkedin_url, recruiter_leads.contact_linkedin_url),
+            linkedin_connection_note = COALESCE(excluded.linkedin_connection_note, recruiter_leads.linkedin_connection_note),
             source_platform = COALESCE(excluded.source_platform, recruiter_leads.source_platform),
             source_post_url = COALESCE(excluded.source_post_url, recruiter_leads.source_post_url),
             evidence_snippet = COALESCE(excluded.evidence_snippet, recruiter_leads.evidence_snippet),
@@ -2808,6 +2815,7 @@ def store_recruiter_lead(
         """,
         (
             lid, job_id, company_name, company_domain, role_title,
+            contact_name, contact_linkedin_url, linkedin_connection_note,
             contact_email, contact_type, source_platform, source_post_url,
             evidence_snippet, special_instructions_json, execution_route,
             outreach_status, now,
@@ -2847,6 +2855,7 @@ def get_recruiter_leads(
         return []
     columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
         "lead_id", "job_id", "company_name", "company_domain", "role_title",
+        "contact_name", "contact_linkedin_url", "linkedin_connection_note",
         "contact_email", "contact_type", "source_platform", "source_post_url",
         "evidence_snippet", "special_instructions_json", "execution_route",
         "outreach_status", "gmail_draft_id", "gmail_thread_id", "created_at"
@@ -2884,6 +2893,18 @@ def upsert_career_watchlist(
     careers_page_url: str | None = None,
     ats_provider: str | None = None,
     ats_board_token: str | None = None,
+    slug: str | None = None,
+    priority_tier: int = 2,
+    is_vip: int = 0,
+    stage: str | None = None,
+    sector: str | None = None,
+    area: str | None = None,
+    location: str | None = None,
+    team_size: str | None = None,
+    total_funding: str | None = None,
+    founders_json: str | None = None,
+    hr_contacts_json: str | None = None,
+    open_roles_count: int = 0,
     company_id: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> str:
@@ -2896,33 +2917,68 @@ def upsert_career_watchlist(
     conn.execute(
         """
         INSERT INTO career_watchlist (
-            company_id, company_name, official_domain, careers_page_url,
-            ats_provider, ats_board_token, last_checked_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            company_id, company_name, slug, priority_tier, is_vip,
+            stage, sector, area, location, team_size, total_funding,
+            official_domain, careers_page_url, ats_provider, ats_board_token,
+            founders_json, hr_contacts_json, open_roles_count, last_checked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(company_id) DO UPDATE SET
             company_name = excluded.company_name,
+            slug = COALESCE(excluded.slug, career_watchlist.slug),
+            priority_tier = excluded.priority_tier,
+            is_vip = excluded.is_vip,
+            stage = COALESCE(excluded.stage, career_watchlist.stage),
+            sector = COALESCE(excluded.sector, career_watchlist.sector),
+            area = COALESCE(excluded.area, career_watchlist.area),
+            location = COALESCE(excluded.location, career_watchlist.location),
+            team_size = COALESCE(excluded.team_size, career_watchlist.team_size),
+            total_funding = COALESCE(excluded.total_funding, career_watchlist.total_funding),
             official_domain = COALESCE(excluded.official_domain, career_watchlist.official_domain),
             careers_page_url = COALESCE(excluded.careers_page_url, career_watchlist.careers_page_url),
             ats_provider = COALESCE(excluded.ats_provider, career_watchlist.ats_provider),
             ats_board_token = COALESCE(excluded.ats_board_token, career_watchlist.ats_board_token),
+            founders_json = COALESCE(excluded.founders_json, career_watchlist.founders_json),
+            hr_contacts_json = COALESCE(excluded.hr_contacts_json, career_watchlist.hr_contacts_json),
+            open_roles_count = excluded.open_roles_count,
             last_checked_at = excluded.last_checked_at
         """,
-        (cid, company_name, official_domain, careers_page_url, ats_provider, ats_board_token, now),
+        (
+            cid, company_name, slug, priority_tier, is_vip,
+            stage, sector, area, location, team_size, total_funding,
+            official_domain, careers_page_url, ats_provider, ats_board_token,
+            founders_json, hr_contacts_json, open_roles_count, now,
+        ),
     )
     commit_with_retry(conn)
     return cid
 
 
-def get_career_watchlist(conn: sqlite3.Connection | None = None) -> list[dict]:
-    """Retrieve all companies on the career watchlist."""
+def get_career_watchlist(
+    priority_tier: int | None = None,
+    is_vip: int | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict]:
+    """Retrieve companies on the career watchlist, optionally filtered by priority or VIP status."""
     if conn is None:
         conn = get_connection()
-    rows = conn.execute("SELECT * FROM career_watchlist ORDER BY company_name ASC").fetchall()
+    query = "SELECT * FROM career_watchlist WHERE 1=1"
+    params: list[Any] = []
+    if priority_tier is not None:
+        query += " AND priority_tier = ?"
+        params.append(priority_tier)
+    if is_vip is not None:
+        query += " AND is_vip = ?"
+        params.append(is_vip)
+    query += " ORDER BY is_vip DESC, priority_tier ASC, company_name ASC"
+    rows = conn.execute(query, params).fetchall()
     if not rows:
         return []
     columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
-        "company_id", "company_name", "official_domain", "careers_page_url",
-        "ats_provider", "ats_board_token", "last_checked_at", "last_content_hash"
+        "company_id", "company_name", "slug", "priority_tier", "is_vip",
+        "stage", "sector", "area", "location", "team_size", "total_funding",
+        "official_domain", "careers_page_url", "ats_provider", "ats_board_token",
+        "founders_json", "hr_contacts_json", "open_roles_count",
+        "last_checked_at", "last_content_hash"
     ]
     return [dict(zip(columns, row)) for row in rows]
 

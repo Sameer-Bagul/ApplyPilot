@@ -214,6 +214,77 @@ def discover_all(
         console.print("[dim](Dry run mode: no changes were committed to database)[/dim]")
 
 
+@app.command("import-blr-map")
+def import_blr_map(
+    sectors: Optional[str] = typer.Option(
+        None, "--sectors", "-s",
+        help="Comma-separated sectors to filter (e.g. AI,SaaS,Deeptech,Fintech,Healthtech).",
+    ),
+    only_hiring: bool = typer.Option(
+        False, "--only-hiring", help="Only import startups with open roles on the map.",
+    ),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum startups to import."),
+    no_deep: bool = typer.Option(
+        False, "--no-deep", help="Skip crawling individual /company/[slug] profile pages.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview extracted startups, roles, and contacts without saving.",
+    ),
+) -> None:
+    """Import startups from Bangalore Startup Map into VIP Top-500 Watchlist and recruiter leads."""
+    _bootstrap()
+    from applypilot.discovery.bangalore_map_harvester import import_bangalore_startups_to_watchlist
+    console.print("[bold blue]Importing startups from Bangalore Startup Map (bangalorestartupmap.com)...[/bold blue]")
+    sector_list = [s.strip() for s in sectors.split(",")] if sectors else None
+    summary = import_bangalore_startups_to_watchlist(
+        sectors=sector_list,
+        only_hiring=only_hiring,
+        limit=limit,
+        fetch_deep=not no_deep,
+        dry_run=dry_run,
+    )
+    console.print(f"[bold green]Import complete![/bold green] Status: {summary.get('status')}")
+    console.print(f"  • Total startups on map: {summary.get('total_startups_on_map', 0)}")
+    console.print(f"  • Matching criteria: {summary.get('matching_startups_found', 0)}")
+    console.print(f"  • Imported to VIP Watchlist: {summary.get('imported_companies', 0)}")
+    console.print(f"  • Open Roles Indexed: {summary.get('open_roles_indexed', 0)}")
+    console.print(f"  • Recruiter/Founder Leads Created: {summary.get('recruiter_leads_created', 0)}")
+    if dry_run:
+        console.print("[dim](Dry run mode: no changes committed to database)[/dim]")
+
+
+@app.command("harvest-cdx")
+def harvest_cdx(
+    sources: Optional[list[str]] = typer.Option(
+        None, "--source", "-s",
+        help="CDX sources: open_apply_jobs, commoncrawl, crtsh. Default: all.",
+    ),
+    limit: int = typer.Option(100, "--limit", "-l", help="Max portals to index per source."),
+    sync_db: bool = typer.Option(True, "--sync/--no-sync", help="Sync discovered portals to career_watchlist."),
+) -> None:
+    """Harvest ATS career portals from Common Crawl CDX, open-apply-jobs, and crt.sh."""
+    _bootstrap()
+    from applypilot.discovery.cdx_harvester import (
+        bootstrap_from_open_apply_jobs,
+        harvest_crtsh_career_subdomains,
+        sync_slugs_to_watchlist,
+    )
+    console.print("[bold blue]Starting Internet Career Page & ATS Harvester...[/bold blue]")
+    src_set = set(sources) if sources else {"open_apply_jobs", "commoncrawl", "crtsh"}
+    total_found = 0
+    if "open_apply_jobs" in src_set:
+        hf_slugs = bootstrap_from_open_apply_jobs(limit_per_ats=limit)
+        console.print(f"  • open-apply-jobs Hugging Face: {sum(len(v) for v in hf_slugs.values())} portals")
+        if sync_db:
+            sync_slugs_to_watchlist(hf_slugs)
+            total_found += sum(len(v) for v in hf_slugs.values())
+    if "crtsh" in src_set:
+        subdomains = harvest_crtsh_career_subdomains(limit=limit)
+        console.print(f"  • crt.sh Career Subdomains: {len(subdomains)} subdomains")
+        total_found += len(subdomains)
+    console.print(f"[bold green]Harvesting completed![/bold green] Total portals: {total_found}")
+
+
 @app.command("outreach")
 def outreach(
     mode: str = typer.Option("draft", "--mode", "-m", help="Execution mode: draft (creates Gmail Drafts) or auto_send."),
