@@ -163,3 +163,69 @@ Run `uv run applypilot apply --limit 1` on a Greenhouse or Lever job, then run `
 
 **Verification Command:**
 Run `uv run applypilot mcp` to verify the MCP server starts cleanly over stdio, and test `uv run applypilot run-daily --dry-run`.
+
+---
+
+## Lean 5-Server MCP Architecture & Search Cascade Configuration
+
+To prevent prompt token bloat while maximizing omni-channel discovery and automation, ApplyPilot operates on a **Lean 5-Server MCP Architecture** coupled with a **2-Stage Search Engine Cascade**:
+
+### 1. Two-Stage Search Engine Cascade
+1. **Tier 1 — DuckDuckGo (`ddgs` / DuckDuckGo MCP) ($0 / Unlimited Quota)**:
+   - Handles 100% of employer `/careers` URL resolution, company domain discovery, and initial tech-stack checks.
+   - Saves paid API credits for deep scanning.
+2. **Tier 2 — Brave Search MCP (Fresh Social Dorks)**:
+   - Targeted specifically for fresh (past 24h: `freshness="pd"`) social hiring announcements:
+     - `site:linkedin.com/posts ("we are hiring" OR "hiring") ("email" OR "@")`
+     - `site:x.com ("we are hiring" OR "hiring a") ("email" OR "apply")`
+   - High real-time recall on social networks where standard search indexes lag.
+3. **Tier 3 — Firecrawl MCP (Custom Career Site Crawler)**:
+   - For bespoke employer websites that do not use standard ATS platforms (Greenhouse, Lever, Ashby), `firecrawl_map` crawls `company.com/careers` and extracts all direct application links without launching a full Playwright session.
+
+### 2. High-Value MCP Servers in the Pipeline
+
+| MCP Server | Role in ApplyPilot | Strategic Benefit |
+| :--- | :--- | :--- |
+| **`applypilot-mcp`** | Core Engine | Controls local SQLite DB (`applypilot.db`), 5-Tier Zero-Token Cache, Email HITL loop, and Cold Mailer. |
+| **`freehire`** / **`jobspipe`** | Job Feed Streamer | Streams 47,000+ active IT jobs, structured salaries, and ATS links (Workday, Greenhouse, Ashby, iCIMS). |
+| **`playwright-mcp`** | Browser Automation | Navigates multi-step ATS portal forms, fills inputs, and uploads tailored resumes. |
+| **`brave-search`** | Time-Bounded Dorking | Executes past-24h social hiring dorks across LinkedIn, X, and Threads. |
+| **`firecrawl`** | Custom Career Site Mapper | Scrapes and maps non-standard corporate `/careers` pages into clean Markdown and URLs. |
+| **`hunter`** *(Optional)* | Email Verifier | Verifies that extracted founder/recruiter emails are deliverable before dispatch, preventing hard bounces. |
+| **`github-mcp`** *(Optional)* | Portfolio Evidence | Pulls verified technical proof from your GitHub repositories into cold outreach pitches. |
+
+### 3. Lean MCP Configuration Block (`mcp_config.json` / Claude Desktop / Hermes Agent)
+
+```json
+{
+  "mcpServers": {
+    "applypilot": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "applypilot", "mcp"],
+      "env": {}
+    },
+    "freehire": {
+      "serverUrl": "https://freehire.me/api/v1/mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-playwright"]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@brave/brave-search-mcp-server"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    }
+  }
+}
+```
+

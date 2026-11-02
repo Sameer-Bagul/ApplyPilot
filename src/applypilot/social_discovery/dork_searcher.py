@@ -40,7 +40,25 @@ _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like G
 
 
 def search_duckduckgo_html(query: str, max_results: int = 15, timeout: float = 10.0) -> list[dict[str, str]]:
-    """Execute search query using DuckDuckGo HTML endpoint without JavaScript or cookies."""
+    """Execute search query using ddgs library with fallback to DuckDuckGo HTML endpoint."""
+    # 1. Try modern ddgs client (handles TLS fingerprints and anti-bot challenges)
+    try:
+        from ddgs import DDGS
+        with DDGS(timeout=int(timeout)) as ddgs_client:
+            raw_hits = list(ddgs_client.text(query, max_results=max_results))
+            if raw_hits:
+                results: list[dict[str, str]] = []
+                for h in raw_hits:
+                    results.append({
+                        "title": h.get("title", ""),
+                        "snippet": h.get("body", ""),
+                        "url": h.get("href", ""),
+                    })
+                return results
+    except Exception as e:
+        logger.debug("ddgs client notice, trying raw HTML fallback: %s", e)
+
+    # 2. Raw HTML fallback
     encoded_query = urllib.parse.urlencode({"q": query, "df": "d"})  # df=d means past day
     url = f"https://html.duckduckgo.com/html/?{encoded_query}"
 
