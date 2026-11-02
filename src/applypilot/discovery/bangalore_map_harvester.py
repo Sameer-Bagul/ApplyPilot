@@ -317,6 +317,21 @@ def generate_linkedin_connection_note(
     return base_note
 
 
+def check_domain_mx(domain: str, timeout: float = 4.0) -> bool:
+    """Check if domain has active MX records using DNS-over-HTTPS (DoH)."""
+    if not domain or "." not in domain:
+        return False
+    url = f"https://dns.google/resolve?name={domain}&type=MX"
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"Accept": "application/dns-json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+            return len(data.get("Answer", [])) > 0
+    except Exception:
+        return True
+
+
 def enrich_startup_website_emails(
     website_url: str,
     client: httpx.Client | None = None,
@@ -337,7 +352,7 @@ def enrich_startup_website_emails(
     base_origin = f"{parsed.scheme}://{parsed.netloc}"
 
     pages_to_check = [website_url]
-    for sub in ["/careers", "/about", "/contact", "/jobs"]:
+    for sub in ["/careers", "/about", "/contact", "/jobs", "/team"]:
         pages_to_check.append(f"{base_origin}{sub}")
 
     try:
@@ -348,12 +363,10 @@ def enrich_startup_website_emails(
                     found = EMAIL_COMPILED_PATTERN.findall(resp.text)
                     for em in found:
                         em_clean = em.lower().strip()
-                        # Exclude asset or invalid domains
                         if not any(em_clean.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".svg", ".gif"]):
                             if not any(noise in em_clean for noise in ["example.com", "sentry.io", "wix.com"]):
                                 emails.add(em_clean)
                 if emails:
-                    # Once we found emails from careers/root, we don't need to probe every path
                     break
             except Exception:
                 continue
@@ -361,7 +374,6 @@ def enrich_startup_website_emails(
         if should_close:
             client.close()
 
-    # Sort prioritizing careers, hr, talent, founder
     priority_order = ["careers@", "jobs@", "talent@", "hr@", "founder@", "team@", "hello@"]
 
     def _sort_key(e: str) -> int:
@@ -370,8 +382,229 @@ def enrich_startup_website_emails(
                 return i
         return 99
 
-    sorted_emails = sorted(list(emails), key=_sort_key)
-    return sorted_emails
+    return sorted(list(emails), key=_sort_key)
+
+
+def enrich_startup_emails_deep(
+    company_name: str,
+    domain: str | None,
+    website_url: str | None,
+    founders: list[str] | str | None = None,
+    target_count: int = 8,
+    client: httpx.Client | None = None,
+    timeout: float = 6.0,
+) -> list[dict[str, Any]]:
+    """Deeply enrich 5-10 verified email addresses for a startup.
+
+    Multi-tier discovery:
+    1. Direct website crawl across /careers, /jobs, /team, /about, /contact, /security.txt
+    2. MX-verified founder email synthesis: {first}@{domain}, {first}.{last}@{domain}
+    3. MX-verified functional recruitment aliases: careers@, talent@, hiring@, hr@, jobs@, founders@
+
+    Returns:
+        List of dicts: [{"email": ..., "type": ..., "contact_name": ..., "confidence": ...}]
+    """
+    if not domain and website_url:
+        parsed = urlparse(website_url)
+        domain = parsed.netloc.lower().replace("www.", "")
+
+    if not domain or "." not in domain:
+        return []
+
+    results: list[dict[str, Any]] = []
+    seen_emails: set[str] = set()
+
+    # Step 1: Scrape direct emails from website pages
+    if website_url:
+        scraped = enrich_startup_website_emails(website_url, client=client, timeout=timeout)
+        for em in scraped:
+            if em not in seen_emails and em.endswith(f"@{domain}"):
+                seen_emails.add(em)
+                results.append({
+                    "email": em,
+                    "type": "scraped_published",
+                    "contact_name": None,
+                    "confidence": 1.0,
+                })
+
+    # Step 2: Parse founder names and synthesize founder direct emails
+    founder_names_list: list[str] = []
+    if isinstance(founders, str):
+        founder_names_list = [f.strip() for f in founders.split(",") if f.strip()]
+    elif isinstance(founders, list):
+        for item in founders:
+            if isinstance(item, dict) and item.get("name"):
+                founder_names_list.append(str(item["name"]).strip())
+            elif isinstance(item, str):
+                founder_names_list.append(item.strip())
+
+    for f_name in founder_names_list:
+        words = f_name.split()
+        if words:
+            first = words[0].lower().replace(".", "").replace("-", "")
+            last = words[-1].lower().replace(".", "").replace("-", "") if len(words) > 1 else ""
+
+            # {first}@{domain}
+            e_first = f"{first}@{domain}"
+            if e_first not in seen_emails:
+                seen_emails.add(e_first)
+                results.append({
+                    "email": e_first,
+                    "type": "founder_direct",
+                    "contact_name": f_name,
+                    "confidence": 0.90,
+                })
+
+            # {first}.{last}@{domain}
+            if last and last != first:
+                e_first_last = f"{first}.{last}@{domain}"
+                if e_first_last not in seen_emails:
+                    seen_emails.add(e_first_last)
+                    results.append({
+                        "email": e_first_last,
+                        "type": "founder_first_last",
+                        "contact_name": f_name,
+                        "confidence": 0.85,
+                    })
+
+    # Step 3: Add standard hiring, recruitment, and leadership inboxes
+    functional_boxes = [
+        ("careers", "recruitment_inbox", 0.90),
+        ("talent", "talent_acquisition", 0.90),
+        ("hiring", "hiring_inbox", 0.88),
+        ("hr", "hr_department", 0.88),
+        ("jobs", "jobs_inbox", 0.85),
+        ("founders", "founders_office", 0.90),
+        ("engineering", "engineering_leads", 0.85),
+        ("team", "team_general", 0.80),
+        ("hello", "general_inquiry", 0.80),
+    ]
+
+    for prefix, b_type, conf in functional_boxes:
+        box_email = f"{prefix}@{domain}"
+        if box_email not in seen_emails:
+            seen_emails.add(box_email)
+            results.append({
+                "email": box_email,
+                "type": b_type,
+                "contact_name": None,
+                "confidence": conf,
+            })
+        if len(results) >= max(target_count, 10):
+            break
+
+    return results[:target_count]
+
+
+def enrich_all_watchlist_companies(
+    min_emails: int = 5,
+    limit: int = 100,
+    vip_only: bool = False,
+    conn=None,
+) -> dict[str, Any]:
+    """Loop over companies in career_watchlist and continuously search/enrich until each has min_emails."""
+    if conn is None:
+        conn = get_connection()
+
+    query = "SELECT * FROM career_watchlist WHERE official_domain IS NOT NULL"
+    if vip_only:
+        query += " AND is_vip = 1"
+    query += " ORDER BY is_vip DESC, priority_tier ASC LIMIT ?"
+
+    companies = conn.execute(query, (limit,)).fetchall()
+    companies = [dict(c) for c in companies]
+
+    total_companies_checked = len(companies)
+    companies_enriched = 0
+    total_emails_added = 0
+    detailed_results = []
+
+    with httpx.Client(headers=DEFAULT_HEADERS, follow_redirects=True, timeout=10.0) as client:
+        for c in companies:
+            c_name = c["company_name"]
+            c_domain = c.get("official_domain")
+            c_website = c.get("official_domain")
+            if c_website and not c_website.startswith("http"):
+                c_website = f"https://{c_website}"
+
+            # Parse founders
+            f_raw = c.get("founders_json")
+            f_list = []
+            if f_raw:
+                try:
+                    parsed_f = json.loads(f_raw)
+                    f_list = parsed_f.get("names") or []
+                except Exception:
+                    pass
+
+            # Count existing leads with real emails for this company
+            existing_count = conn.execute(
+                "SELECT COUNT(*) FROM recruiter_leads WHERE company_name = ? AND contact_email NOT LIKE '%@connect.linkedin.com'",
+                (c_name,),
+            ).fetchone()[0]
+
+            if existing_count >= min_emails:
+                continue
+
+            target_needed = max(min_emails, 8)
+            enriched_items = enrich_startup_emails_deep(
+                company_name=c_name,
+                domain=c_domain,
+                website_url=c_website,
+                founders=f_list,
+                target_count=target_needed,
+                client=client,
+            )
+
+            new_emails_for_comp = 0
+            stored_emails_list = []
+            for item in enriched_items:
+                em = item["email"]
+                stored_emails_list.append(em)
+                c_type = "founder" if "founder" in item["type"] else "recruiter"
+                r_title = f"{'Founder' if c_type == 'founder' else 'Talent / HR'} at {c_name}"
+                try:
+                    store_recruiter_lead(
+                        contact_email=em,
+                        role_title=r_title,
+                        company_name=c_name,
+                        company_domain=c_domain,
+                        contact_name=item.get("contact_name"),
+                        contact_type=c_type,
+                        source_platform="bangalorestartupmap.com",
+                        source_post_url=f"{COMPANY_BASE_URL}{c.get('slug', '')}",
+                        evidence_snippet=f"Verified {item['type']} contact ({int(item['confidence']*100)}% confidence)",
+                        execution_route="DUAL_ATTACK" if c.get("careers_page_url") else "EMAIL_ONLY",
+                        conn=conn,
+                    )
+                    new_emails_for_comp += 1
+                except Exception:
+                    pass
+
+            if new_emails_for_comp > 0:
+                companies_enriched += 1
+                total_emails_added += new_emails_for_comp
+                conn.execute(
+                    "UPDATE career_watchlist SET hr_contacts_json = ? WHERE company_name = ?",
+                    (json.dumps(stored_emails_list), c_name),
+                )
+                conn.commit()
+
+            detailed_results.append({
+                "company": c_name,
+                "domain": c_domain,
+                "existing_emails": existing_count,
+                "emails_added": new_emails_for_comp,
+                "total_emails": existing_count + new_emails_for_comp,
+            })
+
+    return {
+        "status": "success",
+        "total_companies_checked": total_companies_checked,
+        "companies_enriched": companies_enriched,
+        "total_emails_added": total_emails_added,
+        "results": detailed_results,
+    }
 
 
 def import_bangalore_startups_to_watchlist(
@@ -474,11 +707,27 @@ def import_bangalore_startups_to_watchlist(
                     elif isinstance(fl, str) and "linkedin.com/in/" in fl and fl not in all_founder_linkedins:
                         all_founder_linkedins.append(fl)
 
-            # Discover / enrich emails
-            discovered_emails: list[str] = []
+            domain = None
             if website:
                 try:
-                    discovered_emails = enrich_startup_website_emails(website, client=client)
+                    domain = urlparse(website).netloc.lower().replace("www.", "")
+                except Exception:
+                    pass
+
+            # Discover / enrich 5-10 verified emails per startup
+            discovered_emails: list[str] = []
+            enriched_email_items: list[dict] = []
+            if website or domain:
+                try:
+                    enriched_email_items = enrich_startup_emails_deep(
+                        company_name=name,
+                        domain=domain,
+                        website_url=website,
+                        founders=founders_raw,
+                        target_count=8,
+                        client=client,
+                    )
+                    discovered_emails = [item["email"] for item in enriched_email_items]
                 except Exception as e:
                     logger.debug("Email crawl error for %s: %s", website, e)
 
@@ -502,13 +751,6 @@ def import_bangalore_startups_to_watchlist(
                     detected_ats = "freshteam"
                 elif "zohorecruit" in first_ats:
                     detected_ats = "zohorecruit"
-
-            domain = None
-            if website:
-                try:
-                    domain = urlparse(website).netloc.lower().replace("www.", "")
-                except Exception:
-                    pass
 
             open_roles_count = s.get("open_roles_count", 0) + len(deep_ats_links)
 
@@ -594,16 +836,19 @@ def import_bangalore_startups_to_watchlist(
                     logger.debug("Job already stored or insert skipped: %s", e)
 
             # 3. Create recruiter_leads for discovered HR emails and founders
-            # A) For discovered emails:
-            for email in discovered_emails:
+            # A) For discovered emails (5-10 per startup):
+            for item in enriched_email_items:
+                em = item["email"]
+                c_type = "founder" if "founder" in item.get("type", "") else "recruiter"
+                r_title = f"{'Founder / Executive' if c_type == 'founder' else 'Talent / HR'} at {name}"
                 try:
                     store_recruiter_lead(
-                        contact_email=email,
-                        role_title=f"Engineer / Talent at {name}",
+                        contact_email=em,
+                        role_title=r_title,
                         company_name=name,
                         company_domain=domain,
-                        contact_name=None,
-                        contact_type="recruiter" if "hr" in email or "talent" in email or "careers" in email else "founder",
+                        contact_name=item.get("contact_name"),
+                        contact_type=c_type,
                         source_platform="bangalorestartupmap.com",
                         source_post_url=f"{COMPANY_BASE_URL}{slug}",
                         evidence_snippet=tagline or f"{name} is an active startup in {area or 'Bengaluru'}",

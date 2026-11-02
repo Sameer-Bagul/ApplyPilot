@@ -285,6 +285,27 @@ def harvest_cdx(
     console.print(f"[bold green]Harvesting completed![/bold green] Total portals: {total_found}")
 
 
+@app.command("enrich-leads")
+def enrich_leads(
+    min_emails: int = typer.Option(5, "--min-emails", "-m", help="Target minimum emails per company (e.g. 5 to 10)."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum companies to process."),
+    vip_only: bool = typer.Option(True, "--vip-only/--all", help="Process only VIP Top-Watchlist companies."),
+) -> None:
+    """Loop across watchlist companies and deeply enrich 5-10 verified emails per company."""
+    _bootstrap()
+    from applypilot.discovery.bangalore_map_harvester import enrich_all_watchlist_companies
+    console.print(f"[bold blue]Deeply enriching company leads (target: {min_emails} emails/startup, limit: {limit})...[/bold blue]")
+    summary = enrich_all_watchlist_companies(
+        min_emails=min_emails,
+        limit=limit,
+        vip_only=vip_only,
+    )
+    console.print(f"[bold green]Enrichment complete![/bold green]")
+    console.print(f"  • Companies Checked: {summary['total_companies_checked']}")
+    console.print(f"  • Companies Enriched with new emails: {summary['companies_enriched']}")
+    console.print(f"  • Total Emails Added to Leads: {summary['total_emails_added']}")
+
+
 @app.command("outreach")
 def outreach(
     mode: str = typer.Option("draft", "--mode", "-m", help="Execution mode: draft (creates Gmail Drafts) or auto_send."),
