@@ -188,8 +188,10 @@ def fetch_company_deep_profile(
         "profile_url": url,
         "website": None,
         "ats_links": [],
+        "roles_with_titles": [],
         "company_linkedin": None,
         "founder_linkedins": [],
+        "founder_records": [],
         "careers_url": None,
     }
 
@@ -211,9 +213,21 @@ def fetch_company_deep_profile(
             except Exception:
                 pass
 
+        # Extract roles with exact titles from data-umami-event-role
+        import html as html_lib
+        role_matches = re.findall(r'href="([^"]+)"[^>]*data-umami-event-role="([^"]+)"', html)
+        seen_ats = set()
+        for r_url, r_title in role_matches:
+            clean_title = html_lib.unescape(r_title).strip()
+            clean_r_url = r_url.split("?")[0] if "google.com" not in r_url else r_url
+            if clean_r_url not in seen_ats:
+                seen_ats.add(clean_r_url)
+                result["roles_with_titles"].append({"url": r_url, "title": clean_title})
+                if ATS_URL_PATTERN.search(r_url):
+                    result["ats_links"].append(r_url)
+
         # Extract external links
         hrefs = re.findall(r'href="([^"]+)"', html)
-        seen_ats = set()
         seen_founder_li = set()
 
         for href in hrefs:
@@ -234,6 +248,21 @@ def fetch_company_deep_profile(
                 if clean_li not in seen_founder_li:
                     seen_founder_li.add(clean_li)
                     result["founder_linkedins"].append(clean_li)
+
+            # Founder Google search links -> parse founder names
+            if "google.com/search?q=" in href and "linkedin" in href.lower():
+                import urllib.parse
+                try:
+                    parsed_q = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("q", [])
+                    if parsed_q:
+                        words = parsed_q[0].split()
+                        name_words = [w for w in words if w.lower() not in ["linkedin", slug.lower(), "bangalore", "careers", "jobs"]]
+                        if name_words:
+                            f_name = " ".join(name_words)
+                            li_search = f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote_plus(f_name + ' ' + slug)}"
+                            result["founder_records"].append({"name": f_name, "url": li_search})
+                except Exception:
+                    pass
 
             # Direct careers page
             if any(k in href.lower() for k in ["/careers", "/jobs", "careers.", "jobs."]) and "google.com" not in href:
@@ -531,14 +560,16 @@ def import_bangalore_startups_to_watchlist(
             imported_companies += 1
 
             # 2. Store open roles into jobs table
+            url_to_title = {r["url"]: r["title"] for r in deep.get("roles_with_titles", [])}
             for ats_url in deep_ats_links:
-                role_title = f"Open Role at {name}"
-                # If ATS URL has a role title slug, format it nicely
-                parsed_path = urlparse(ats_url).path.strip("/").split("/")
-                if len(parsed_path) >= 2:
-                    potential_slug = parsed_path[-1].replace("-", " ").replace("_", " ").title()
-                    if len(potential_slug) > 3 and not potential_slug.isdigit():
+                role_title = url_to_title.get(ats_url)
+                if not role_title:
+                    parsed_path = urlparse(ats_url).path.strip("/").split("/")
+                    potential_slug = parsed_path[-1].replace("-", " ").replace("_", " ").title() if len(parsed_path) >= 2 else ""
+                    if len(potential_slug) > 3 and not re.match(r"^[0-9a-fA-F-]+$", potential_slug):
                         role_title = potential_slug
+                    else:
+                        role_title = f"Software Engineer / Open Role at {name}"
 
                 try:
                     route = "DUAL_ATTACK" if discovered_emails or all_founder_linkedins else "PORTAL_ONLY"
@@ -562,7 +593,7 @@ def import_bangalore_startups_to_watchlist(
                 except Exception as e:
                     logger.debug("Job already stored or insert skipped: %s", e)
 
-            # 3. Create recruiter_leads for discovered HR emails and founder LinkedIn profiles
+            # 3. Create recruiter_leads for discovered HR emails and founders
             # A) For discovered emails:
             for email in discovered_emails:
                 try:
@@ -583,33 +614,44 @@ def import_bangalore_startups_to_watchlist(
                 except Exception as e:
                     logger.debug("Lead store skipped: %s", e)
 
-            # B) For discovered founder LinkedIn URLs:
-            for founder_li in all_founder_linkedins:
-                # Deduce founder name from founders_raw or URL
-                founder_display_name = founders_raw if isinstance(founders_raw, str) else "Founder"
-                if "," in str(founder_display_name):
-                    founder_display_name = str(founder_display_name).split(",")[0].strip()
+            # B) For discovered founders (from deep.get("founder_records") or founders_raw or all_founder_linkedins):
+            founders_to_process = []
+            if deep.get("founder_records"):
+                for fr in deep["founder_records"]:
+                    founders_to_process.append((fr["name"], fr["url"]))
+            elif all_founder_linkedins:
+                for fl in all_founder_linkedins:
+                    founders_to_process.append((founders_raw or "Founder", fl))
+            elif founders_raw:
+                import urllib.parse
+                for f_name in str(founders_raw).split(","):
+                    f_clean = f_name.strip()
+                    if f_clean:
+                        search_url = f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote_plus(f_clean + ' ' + name)}"
+                        founders_to_process.append((f_clean, search_url))
 
+            for f_display_name, f_li in founders_to_process:
+                clean_name = f_display_name.strip()
                 note = generate_linkedin_connection_note(
-                    founder_name=founder_display_name,
+                    founder_name=clean_name,
                     startup_name=name,
                     sector=sector,
                     tagline=tagline,
                 )
 
-                dummy_email = f"linkedin-{slug}-{hash(founder_li) % 10000}@connect.linkedin.com"
+                dummy_email = f"linkedin-{slug}-{abs(hash(clean_name + f_li)) % 100000}@connect.linkedin.com"
                 try:
                     store_recruiter_lead(
                         contact_email=dummy_email,
                         role_title=f"Founder / Leadership at {name}",
                         company_name=name,
                         company_domain=domain,
-                        contact_name=founder_display_name,
-                        contact_linkedin_url=founder_li,
+                        contact_name=clean_name,
+                        contact_linkedin_url=f_li,
                         linkedin_connection_note=note,
                         contact_type="founder",
                         source_platform="bangalorestartupmap.com",
-                        source_post_url=founder_li,
+                        source_post_url=f_li,
                         evidence_snippet=f"Founder of {name} ({stage or 'Funded'}, {sector or 'Tech'}). {tagline or ''}",
                         execution_route="DUAL_ATTACK" if primary_careers_url else "EMAIL_ONLY",
                         conn=conn,
