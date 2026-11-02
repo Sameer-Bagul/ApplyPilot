@@ -37,6 +37,7 @@ dependencies = [
     "google-auth-oauthlib>=1.0.0",
     "duckduckgo-search>=8.1.1",
     "ddgs>=9.16.1",
+    "pyarrow>=26.0.0",
 ]
 
 [project.optional-dependencies]

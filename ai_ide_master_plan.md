@@ -37,6 +37,7 @@ src/applypilot/
 ├── career_resolver/           # [NEW - Part 1B] Direct company career site monitor & ATS resolver
 │   ├── __init__.py
 │   ├── ats_feeds.py           # Direct JSON pollers for Greenhouse, Lever, and Ashby public boards
+│   ├── cdx_harvester.py       # [NEW] 4-Layer Internet Harvester: Common Crawl CDX, open-apply-jobs, crt.sh, JSON-LD
 │   └── resolver.py            # Resolves company name -> official /careers page -> underlying ATS URL
 ├── outreach/                  # [NEW - Part 2A] Automated HR & Founder Cold Mailer
 │   ├── __init__.py
@@ -69,19 +70,24 @@ Copy and paste each phase below into your AI IDE sequentially. Verify the test c
 **Verification Command:**
 `uv run applypilot --help` and check `sqlite3 ~/.applypilot/applypilot.db ".tables"` to confirm all 6 new tables and `qa_fts` exist.
 
-### Phase 2: Part 1 — Daily Social Discovery & Career Site Resolver (`social_discovery/` & `career_resolver/`)
+### Phase 2: Part 1 — Daily Social Discovery, Career Site Resolver & 4-Layer Internet Harvester (`social_discovery/` & `career_resolver/`)
 
 **Prompt to paste into AI IDE:**
 > Implement Part 1 of our architecture inside `src/applypilot/social_discovery/` and `src/applypilot/career_resolver/`:
 > 1. **`reddit_scraper.py`**: Fetch new posts from configurable subreddits (`r/forhire`, `r/RemoteJS`, `r/developersIndia`, `r/golang`, `r/aijobs`) using public `.json` endpoints (`https://www.reddit.com/r/{sub}/new.json?limit=100`) with a custom User-Agent. Filter for `[Hiring]` or hiring keywords.
-> 2. **`dork_searcher.py`**: Query public search APIs (support DuckDuckGo HTML/API, Brave Search API, or Exa API from `config.toml`) using 24-hour time-filtered dorks (`site:linkedin.com/posts`, `site:x.com`, `site:threads.net`) combined with role keywords from `config.toml` and hiring intent phrases (`"we are hiring"`, `"send your resume"`, `"email"`, `"apply"`). Strictly enforce a Zero-Cookie Policy: never log into LinkedIn, X, or Threads.
+> 2. **`dork_searcher.py`**: Query public search APIs (support DuckDuckGo HTML/API with modern `ddgs` browser-emulated TLS fingerprinting, Brave Search API, or Exa API from `config.toml`) using 24-hour time-filtered dorks (`site:linkedin.com/posts`, `site:x.com`, `site:threads.net`) combined with role keywords and hiring intent phrases. Strictly enforce a Zero-Cookie Policy: never log into LinkedIn, X, or Threads.
 > 3. **`extractor.py` (Zero-Token Classifier)**: Write a pure-Python deterministic parser that extracts all `mailto:` links, standard and obfuscated email addresses (`[at]`, `(at)`), and known ATS URLs (`boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, `myworkdayjobs.com`). Reject generic no-reply/support addresses. Classify valid emails into `founder`, `recruiter`, `hiring_manager`, or `careers_inbox`, and capture the verbatim 2-sentence `evidence_snippet` around the email.
 > 4. **`ats_feeds.py` & `resolver.py`**: Poll public JSON endpoints for companies in `career_watchlist` (`https://boards-api.greenhouse.io/v1/boards/{token}/jobs` and `https://api.lever.co/v0/postings/{token}?mode=json`). When a social post mentions a company hiring without an ATS URL, search `"<Company Name>" official site careers OR jobs`, find the `/careers` URL, and resolve any embedded ATS link.
-> 5. **Routing Logic**: Insert discovered jobs into `jobs` and `recruiter_leads`, assigning `execution_route` as:
+> 5. **`cdx_harvester.py` (4-Layer Internet-Wide Career Harvester)**:
+>    - **Layer 1 (Common Crawl CDX)**: Query `index.commoncrawl.org` across `boards.greenhouse.io/*`, `jobs.lever.co/*`, `jobs.ashbyhq.com/*`, and extract unique tenant slugs into `career_watchlist`.
+>    - **Layer 2 (Certificate Transparency)**: Query `crt.sh` logs for `careers.%.com` and `jobs.%.com` to detect new corporate career portals in real time.
+>    - **Layer 3 (Open-Source Daily Parquet Dumps)**: Bootstrap from `edwarddgao/open-apply-jobs` (81M+ jobs across 50k+ companies) via Hugging Face Serverless Datasets API / PyArrow to seed target openings and ATS slugs with 0 tokens.
+>    - **Layer 4 (Sitemap & JSON-LD Extractor)**: Parse custom company `/careers` pages for `<script type="application/ld+json">` `JobPosting` schema markup, extracting fully structured jobs with zero LLM tokens and zero Playwright overhead.
+> 6. **Routing Logic**: Insert discovered jobs into `jobs` and `recruiter_leads`, assigning `execution_route` as:
 >    - `EMAIL_ONLY` (has verified HR/founder email, no portal form)
 >    - `PORTAL_ONLY` (has ATS/career form URL, no HR email)
 >    - `DUAL_ATTACK` (has both an official portal form URL and a verified HR/founder email)
-> 6. Register CLI command `applypilot discover-all` in `src/applypilot/cli.py`.
+> 7. Register CLI command `applypilot discover-all` in `src/applypilot/cli.py`.
 
 **Verification Command:**
 `uv run applypilot discover-all --dry-run` — verify that Reddit posts, search dorks, and Greenhouse/Lever feeds populate `jobs` and `recruiter_leads` with accurate `execution_route` labels and zero LLM tokens spent on regex extraction.
