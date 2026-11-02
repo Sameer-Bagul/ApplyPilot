@@ -306,6 +306,88 @@ def enrich_leads(
     console.print(f"  • Total Emails Added to Leads: {summary['total_emails_added']}")
 
 
+@app.command("import-yc")
+def import_yc(
+    india_only: bool = typer.Option(True, "--india-only/--global", help="Filter for YC startups in India/Bengaluru."),
+    remote: bool = typer.Option(False, "--remote/--no-remote", help="Filter for YC startups hiring remotely."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum YC startups to import."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis (5-10 emails/startup)."),
+) -> None:
+    """Import launched and hiring Y Combinator startups into VIP Watchlist and recruiter leads."""
+    _bootstrap()
+    from applypilot.discovery.yc_harvester import fetch_yc_startups, ingest_yc_startups_to_db
+    console.print(f"[bold blue]Importing Y Combinator startups (india_only={india_only}, remote={remote}, limit={limit})...[/bold blue]")
+    cos = fetch_yc_startups(india_only=india_only, remote_only=remote, hiring_only=True, limit=limit)
+    stats = ingest_yc_startups_to_db(cos, enrich_emails=enrich)
+    console.print("[bold green]YC import completed![/bold green]")
+    console.print(f"  • Startups Ingested: {stats['startups_ingested']}")
+    console.print(f"  • Domains Verified: {stats['domains_verified']}")
+    console.print(f"  • Emails Enriched: {stats['emails_enriched']}")
+    console.print(f"  • Recruiter/Founder Leads Created: {stats['leads_created']}")
+
+
+@app.command("import-topstartups")
+def import_topstartups(
+    location: str = typer.Option("Bangalore", "--location", "-L", help="Job location filter: Bangalore or Remote."),
+    pages: int = typer.Option(2, "--pages", "-p", help="Number of pages to scrape."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis for discovered startups."),
+) -> None:
+    """Scrape newly funded startups and direct ATS jobs from TopStartups.io."""
+    _bootstrap()
+    from applypilot.discovery.topstartups_harvester import ingest_topstartups_to_db, scrape_topstartups_jobs
+    console.print(f"[bold blue]Scraping TopStartups.io (location={location}, pages={pages})...[/bold blue]")
+    jobs_data = scrape_topstartups_jobs(location=location, max_pages=pages)
+    stats = ingest_topstartups_to_db(jobs_data, enrich_emails=enrich)
+    console.print("[bold green]TopStartups import completed![/bold green]")
+    console.print(f"  • Companies Ingested: {stats['companies_ingested']}")
+    console.print(f"  • Live ATS Jobs Stored: {stats['jobs_stored']}")
+    console.print(f"  • Domains Verified: {stats['domains_verified']}")
+    console.print(f"  • Recruiter Leads Created: {stats['leads_created']}")
+
+
+@app.command("import-blr-arena")
+def import_blr_arena(
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum Bangalore tech companies to import."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis for companies."),
+) -> None:
+    """Import Bangalore tech companies and open jobs from BLR Startup Arena."""
+    _bootstrap()
+    from applypilot.discovery.blr_arena_harvester import fetch_blr_arena_startups, ingest_blr_arena_to_db
+    console.print(f"[bold blue]Importing BLR Startup Arena tech companies (limit={limit})...[/bold blue]")
+    cos = fetch_blr_arena_startups(limit=limit)
+    stats = ingest_blr_arena_to_db(cos, enrich_emails=enrich)
+    console.print("[bold green]BLR Startup Arena import completed![/bold green]")
+    console.print(f"  • Startups Ingested: {stats['startups_ingested']}")
+    console.print(f"  • Domains Verified: {stats['domains_verified']}")
+    console.print(f"  • Emails Enriched: {stats['emails_enriched']}")
+    console.print(f"  • Recruiter Leads Created: {stats['leads_created']}")
+
+
+@app.command("harvest-all-directories")
+def harvest_all_directories(
+    limit: int = typer.Option(30, "--limit", "-l", help="Limit per directory source."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis."),
+) -> None:
+    """Execute omni-directory harvest across Bangalore Map, YC, TopStartups, and BLR Arena."""
+    _bootstrap()
+    from applypilot.discovery.multi_directory_orchestrator import run_omni_startup_harvest
+    console.print("[bold blue]Launching Omni-Directory Startup & Job Harvest across all sources...[/bold blue]")
+    summary = run_omni_startup_harvest(
+        include_bangalore_map=True,
+        include_yc=True,
+        include_topstartups=True,
+        include_blr_arena=True,
+        limit_per_source=limit,
+        enrich_emails=enrich,
+    )
+    console.print("[bold green]Omni-Directory harvest completed![/bold green]")
+    console.print(f"  • Total Startups Ingested: {summary['total_startups_ingested']}")
+    console.print(f"  • Total Live Jobs Stored: {summary['total_jobs_stored']}")
+    console.print(f"  • Total Recruiter/Founder Leads Created: {summary['total_leads_created']}")
+    console.print(f"  • Total Verified Domains: {summary['total_domains_verified']}")
+
+
+
 @app.command("outreach")
 def outreach(
     mode: str = typer.Option("draft", "--mode", "-m", help="Execution mode: draft (creates Gmail Drafts) or auto_send."),

@@ -425,6 +425,65 @@ def run_post_execution_learner() -> dict:
     return analyze_and_promote_traces(conn=conn)
 
 
+@mcp.tool()
+def harvest_yc_startups(
+    india_only: bool = True,
+    remote_only: bool = False,
+    limit: int = 50,
+    enrich_emails: bool = True,
+) -> dict:
+    """Harvest launched and hiring Y Combinator startups and extract founder/recruiter leads."""
+    from applypilot.discovery.yc_harvester import fetch_yc_startups, ingest_yc_startups_to_db
+    conn = _get_db()
+    cos = fetch_yc_startups(india_only=india_only, remote_only=remote_only, hiring_only=True, limit=limit)
+    return ingest_yc_startups_to_db(cos, enrich_emails=enrich_emails, conn=conn)
+
+
+@mcp.tool()
+def harvest_topstartups(
+    location: str = "Bangalore",
+    pages: int = 2,
+    enrich_emails: bool = True,
+) -> dict:
+    """Scrape newly funded VC startups and direct ATS job openings from TopStartups.io."""
+    from applypilot.discovery.topstartups_harvester import ingest_topstartups_to_db, scrape_topstartups_jobs
+    conn = _get_db()
+    jobs_data = scrape_topstartups_jobs(location=location, max_pages=pages)
+    return ingest_topstartups_to_db(jobs_data, enrich_emails=enrich_emails, conn=conn)
+
+
+@mcp.tool()
+def harvest_blr_arena(
+    limit: int = 50,
+    enrich_emails: bool = True,
+) -> dict:
+    """Harvest tech companies, office addresses, and open jobs from BLR Startup Arena."""
+    from applypilot.discovery.blr_arena_harvester import fetch_blr_arena_startups, ingest_blr_arena_to_db
+    conn = _get_db()
+    cos = fetch_blr_arena_startups(limit=limit)
+    return ingest_blr_arena_to_db(cos, enrich_emails=enrich_emails, conn=conn)
+
+
+@mcp.tool()
+def harvest_all_startup_directories(
+    limit_per_source: int = 30,
+    enrich_emails: bool = True,
+) -> dict:
+    """Execute omni-directory harvest across Bangalore Map, YC, TopStartups, and BLR Arena."""
+    from applypilot.discovery.multi_directory_orchestrator import run_omni_startup_harvest
+    conn = _get_db()
+    return run_omni_startup_harvest(
+        include_bangalore_map=True,
+        include_yc=True,
+        include_topstartups=True,
+        include_blr_arena=True,
+        limit_per_source=limit_per_source,
+        enrich_emails=enrich_emails,
+        conn=conn,
+    )
+
+
+
 def run_server():
     """Start the FastMCP stdio server."""
     mcp.run()
