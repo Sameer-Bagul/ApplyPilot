@@ -267,6 +267,7 @@ def park_and_notify_user(
     dom_checkpoint: dict | None = None,
     recipient_email: str | None = None,
     conn: sqlite3.Connection | None = None,
+    mock: bool = False,
 ) -> int:
     """Park an application or lead and dispatch a structured HITL notification email to user.
 
@@ -329,7 +330,10 @@ def park_and_notify_user(
     text_body, html_body = format_hitl_email_body(ticket_id, job_dict, questions, step_info)
 
     to_email = recipient_email or "me"
-    success, msg_id, th_id = send_gmail_api(to_email, subject, text_body, html_body)
+    if not mock:
+        success, msg_id, th_id = send_gmail_api(to_email, subject, text_body, html_body)
+    else:
+        success, msg_id, th_id = True, "mock_msg_hitl", "mock_thread_hitl"
 
     if msg_id or th_id:
         try:

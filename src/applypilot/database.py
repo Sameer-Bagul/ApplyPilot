@@ -112,8 +112,13 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
             pass
 
     conn = sqlite3.connect(path, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    # High-performance SQLite engine tuning:
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")       # 10x-50x faster write throughput in WAL mode
+    conn.execute("PRAGMA cache_size = -64000")        # 64 MB in-memory page cache (default is 2 MB)
+    conn.execute("PRAGMA mmap_size = 268435456")      # 256 MB memory-mapped zero-copy I/O
+    conn.execute("PRAGMA temp_store = MEMORY")        # In-memory temporary tables and sorts
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     _local.connections[path] = conn
@@ -2920,4 +2925,26 @@ def get_career_watchlist(conn: sqlite3.Connection | None = None) -> list[dict]:
         "ats_provider", "ats_board_token", "last_checked_at", "last_content_hash"
     ]
     return [dict(zip(columns, row)) for row in rows]
+
+
+def stream_jobs(
+    conn: sqlite3.Connection | None = None,
+    where_clause: str = "",
+    params: tuple = (),
+    batch_size: int = 100,
+):
+    """Lazy stream yielding batches of jobs without loading the entire DB into RAM."""
+    if conn is None:
+        conn = get_connection()
+    query = "SELECT * FROM jobs"
+    if where_clause:
+        query += f" WHERE {where_clause}"
+    cursor = conn.cursor()
+    cursor.execute(query, params)
+    while True:
+        rows = cursor.fetchmany(batch_size)
+        if not rows:
+            break
+        for row in rows:
+            yield dict(row)
 

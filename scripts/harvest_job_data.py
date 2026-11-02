@@ -22,7 +22,6 @@ from collections import Counter
 from typing import Any
 
 from applypilot import config
-from applypilot.career_resolver.ats_feeds import poll_watchlist
 from applypilot.database import (
     get_career_watchlist,
     get_connection,
@@ -30,18 +29,19 @@ from applypilot.database import (
     store_recruiter_lead,
     upsert_career_watchlist,
 )
-from applypilot.social_discovery.dork_searcher import run_social_dorks
-from applypilot.social_discovery.extractor import (
+from applypilot.discovery import (
     classify_contact_type,
     classify_execution_route,
     extract_ats_urls,
     extract_emails,
     extract_evidence_snippet,
     parse_social_post,
+    poll_watchlist,
+    run_social_dorks,
+    scrape_reddit_hiring_posts,
 )
 from applypilot.social_discovery.hn_scraper import scrape_hn_hiring_posts
 from applypilot.social_discovery.linkedin_scraper import scrape_linkedin_public_jobs
-from applypilot.social_discovery.reddit_scraper import scrape_reddit_hiring_posts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("harvest_job_data")

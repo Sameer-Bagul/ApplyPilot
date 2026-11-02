@@ -196,7 +196,7 @@ def discover_all(
 ) -> None:
     """Discover fresh hiring posts across Reddit, social dorks, and direct ATS boards."""
     _bootstrap()
-    from applypilot.social_discovery.orchestrator import run_omni_channel_discovery
+    from applypilot.discovery import run_omni_channel_discovery
     console.print("[bold blue]Starting Omni-Channel Job & HR Discovery...[/bold blue]")
     summary = run_omni_channel_discovery(
         sources=sources,
