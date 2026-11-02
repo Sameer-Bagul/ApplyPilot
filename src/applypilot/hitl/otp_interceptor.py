@@ -136,3 +136,13 @@ def fetch_ats_otp_code(company_domain: str = "",
         time.sleep(poll_interval)
 
     return {"otp_code": None, "magic_link": None, "sender": None}
+
+
+def wait_for_ats_otp(sender_domain: str | None = None, timeout_sec: int = 90) -> str | None:
+    """Poll Gmail for a 6-digit verification code from an ATS domain."""
+    res = fetch_ats_otp_code(
+        company_domain=sender_domain or "",
+        max_wait_seconds=timeout_sec,
+        poll_interval=5,
+    )
+    return res.get("otp_code")

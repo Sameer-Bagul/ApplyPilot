@@ -353,6 +353,12 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     # Backfill `state` for any jobs still at the default (added 2026-04-24).
     backfill_states(conn)
 
+    try:
+        from applypilot.learning.migrations import run_migrations
+        run_migrations(path)
+    except Exception as e:
+        logger.debug("Automatic migration run notice: %s", e)
+
     return conn
 
 
@@ -432,6 +438,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "enrich_next_retry_at": "TEXT",
     "score_attempts": "INTEGER DEFAULT 0",
     "score_next_retry_at": "TEXT",
+    "execution_route": "TEXT",
 }
 
 
@@ -2749,3 +2756,168 @@ def increment_pattern_rule_hit(rule_id: int, conn: sqlite3.Connection | None = N
         (rule_id,),
     )
     commit_with_retry(conn)
+
+
+# ---------------------------------------------------------------------------
+# Recruiter Leads & Career Watchlist CRUD (Part 1 & Part 2)
+# ---------------------------------------------------------------------------
+
+def store_recruiter_lead(
+    contact_email: str,
+    role_title: str,
+    company_name: str | None = None,
+    company_domain: str | None = None,
+    job_id: str | None = None,
+    contact_type: str = "recruiter",
+    source_platform: str | None = None,
+    source_post_url: str | None = None,
+    evidence_snippet: str | None = None,
+    special_instructions_json: str | None = None,
+    execution_route: str = "EMAIL_ONLY",
+    outreach_status: str = "queued",
+    lead_id: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> str:
+    """Store or update a recruiter lead discovered across social or career platforms."""
+    import uuid
+    if conn is None:
+        conn = get_connection()
+    lid = lead_id or f"lead_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO recruiter_leads (
+            lead_id, job_id, company_name, company_domain, role_title,
+            contact_email, contact_type, source_platform, source_post_url,
+            evidence_snippet, special_instructions_json, execution_route,
+            outreach_status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(contact_email, role_title) DO UPDATE SET
+            company_name = COALESCE(excluded.company_name, recruiter_leads.company_name),
+            company_domain = COALESCE(excluded.company_domain, recruiter_leads.company_domain),
+            source_platform = COALESCE(excluded.source_platform, recruiter_leads.source_platform),
+            source_post_url = COALESCE(excluded.source_post_url, recruiter_leads.source_post_url),
+            evidence_snippet = COALESCE(excluded.evidence_snippet, recruiter_leads.evidence_snippet),
+            special_instructions_json = COALESCE(excluded.special_instructions_json, recruiter_leads.special_instructions_json),
+            execution_route = COALESCE(excluded.execution_route, recruiter_leads.execution_route)
+        """,
+        (
+            lid, job_id, company_name, company_domain, role_title,
+            contact_email, contact_type, source_platform, source_post_url,
+            evidence_snippet, special_instructions_json, execution_route,
+            outreach_status, now,
+        ),
+    )
+    commit_with_retry(conn)
+    row = conn.execute(
+        "SELECT lead_id FROM recruiter_leads WHERE contact_email = ? AND role_title = ?",
+        (contact_email, role_title),
+    ).fetchone()
+    return row[0] if row else lid
+
+
+def get_recruiter_leads(
+    status: str | None = None,
+    execution_route: str | None = None,
+    limit: int | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict]:
+    """Retrieve recruiter leads filtered by outreach status and execution route."""
+    if conn is None:
+        conn = get_connection()
+    query = "SELECT * FROM recruiter_leads WHERE 1=1"
+    params: list[Any] = []
+    if status:
+        query += " AND outreach_status = ?"
+        params.append(status)
+    if execution_route:
+        query += " AND execution_route = ?"
+        params.append(execution_route)
+    query += " ORDER BY created_at DESC"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    if not rows:
+        return []
+    columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
+        "lead_id", "job_id", "company_name", "company_domain", "role_title",
+        "contact_email", "contact_type", "source_platform", "source_post_url",
+        "evidence_snippet", "special_instructions_json", "execution_route",
+        "outreach_status", "gmail_draft_id", "gmail_thread_id", "created_at"
+    ]
+    return [dict(zip(columns, row)) for row in rows]
+
+
+def update_recruiter_lead_status(
+    lead_id: str,
+    status: str,
+    gmail_draft_id: str | None = None,
+    gmail_thread_id: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """Update status and Gmail identifiers for a lead."""
+    if conn is None:
+        conn = get_connection()
+    conn.execute(
+        """
+        UPDATE recruiter_leads
+        SET outreach_status = ?,
+            gmail_draft_id = COALESCE(?, gmail_draft_id),
+            gmail_thread_id = COALESCE(?, gmail_thread_id)
+        WHERE lead_id = ?
+        """,
+        (status, gmail_draft_id, gmail_thread_id, lead_id),
+    )
+    commit_with_retry(conn)
+    return True
+
+
+def upsert_career_watchlist(
+    company_name: str,
+    official_domain: str | None = None,
+    careers_page_url: str | None = None,
+    ats_provider: str | None = None,
+    ats_board_token: str | None = None,
+    company_id: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> str:
+    """Add or update a company career site entry in the watchlist."""
+    import uuid
+    if conn is None:
+        conn = get_connection()
+    cid = company_id or f"comp_{uuid.uuid4().hex[:10]}"
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO career_watchlist (
+            company_id, company_name, official_domain, careers_page_url,
+            ats_provider, ats_board_token, last_checked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(company_id) DO UPDATE SET
+            company_name = excluded.company_name,
+            official_domain = COALESCE(excluded.official_domain, career_watchlist.official_domain),
+            careers_page_url = COALESCE(excluded.careers_page_url, career_watchlist.careers_page_url),
+            ats_provider = COALESCE(excluded.ats_provider, career_watchlist.ats_provider),
+            ats_board_token = COALESCE(excluded.ats_board_token, career_watchlist.ats_board_token),
+            last_checked_at = excluded.last_checked_at
+        """,
+        (cid, company_name, official_domain, careers_page_url, ats_provider, ats_board_token, now),
+    )
+    commit_with_retry(conn)
+    return cid
+
+
+def get_career_watchlist(conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Retrieve all companies on the career watchlist."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute("SELECT * FROM career_watchlist ORDER BY company_name ASC").fetchall()
+    if not rows:
+        return []
+    columns = rows[0].keys() if isinstance(rows[0], sqlite3.Row) else [
+        "company_id", "company_name", "official_domain", "careers_page_url",
+        "ats_provider", "ats_board_token", "last_checked_at", "last_content_hash"
+    ]
+    return [dict(zip(columns, row)) for row in rows]
+

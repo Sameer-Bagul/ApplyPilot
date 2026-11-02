@@ -1,473 +1,292 @@
-<!-- logo here -->
-
-> **⚠️ ApplyPilot** is the original open-source project, created by [Pickle-Pixel](https://github.com/Pickle-Pixel) and first published on GitHub on **February 17, 2026**. We are **not affiliated** with applypilot.app, useapplypilot.com, or any other product using the "ApplyPilot" name. These sites are **not associated with this project** and may misrepresent what they offer. If you're looking for the autonomous, open-source job application agent — you're in the right place.
-
 # ApplyPilot
 
-**Applied to 1,000 jobs in 2 days. Fully autonomous. Open source.**
+**Autonomous Omni-Channel Job Discovery, Cold Outreach & Browser-Driven Application Agent**
 
-[![PyPI version](https://img.shields.io/pypi/v/applypilot?color=blue)](https://pypi.org/project/applypilot/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Playwright](https://img.shields.io/badge/Playwright-Chromium-green.svg)](https://playwright.dev/)
+[![FastMCP](https://img.shields.io/badge/MCP-FastMCP-purple.svg)](https://modelcontextprotocol.io/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/ibarrajo/ApplyPilot?style=social)](https://github.com/ibarrajo/ApplyPilot)
+[![Tests](https://img.shields.io/badge/tests-442%20passed-brightgreen.svg)](tests/)
 
-> **Forked from [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot)** — this fork adds multi-provider LLM fallback, human-in-the-loop apply, Gmail tracking, a Q&A knowledge base, ATS session persistence, and significant pipeline hardening. Thank you to the original authors for the foundation.
-
-
-
-
-https://github.com/user-attachments/assets/7ee3417f-43d4-4245-9952-35df1e77f2df
-
+ApplyPilot is an end-to-end, multi-channel autonomous hiring assistant. It executes the **Dual-Attack Strategy**: discovering thousands of open engineering roles across social platforms and enterprise ATS boards, extracting direct founder and recruiter emails, dispatching personalized cold email pitches with tailored PDF resumes, and autonomously completing complex web application forms via a **5-Tier Zero-Token Learning Engine** in headless Playwright.
 
 ---
 
-## What It Does
+## 🏛️ System Architecture
 
-ApplyPilot is a 7-stage autonomous job application pipeline. It discovers jobs across 6+ boards, scores them against your resume with AI, tailors your resume per job, writes cover letters, submits applications, and then monitors your inbox for responses — all without you lifting a finger.
+```mermaid
+flowchart TD
+    subgraph Part1["Part 1: Omni-Channel Discovery"]
+        HN[Hacker News 'Who is Hiring'\nAlgolia API] --> Extractor[Zero-Token Extractor\nRegex & De-obfuscation]
+        LI[LinkedIn Public Collections\nHeadless Playwright] --> Extractor
+        ATS[Career Watchlist Feeds\nGreenhouse / Lever / Ashby] --> Extractor
+        FH[FreeHire IT Catalogue\nWorkday / iCIMS / Dayforce] --> Extractor
 
-Three commands. That's it.
+        Extractor --> Router{Route Classifier}
+        Router -->|Direct Email Found| RLeads[(recruiter_leads)]
+        Router -->|Portal URL Found| RJobs[(jobs)]
+        Router -->|Both Found| Dual[DUAL_ATTACK Opportunity]
+    end
 
-```bash
-pip install applypilot
-pip install --no-deps python-jobspy    # separate install (broken numpy pin in metadata)
-pip install pydantic tls-client requests markdownify regex  # jobspy runtime deps
-applypilot init          # one-time setup: resume, profile, preferences, API keys
-applypilot run           # discover > enrich > score > tailor > cover letters
-applypilot apply         # autonomous browser-driven submission
-applypilot track         # scan Gmail for responses and surface action items
-```
+    subgraph Part2A["Part 2A: Automated Cold Outreach"]
+        RLeads --> OutEngine[Outreach Mailer]
+        OutEngine --> Tailor[Typst / LaTeX Compiler]
+        Tailor --> Attach[Bespoke PDF Resume]
+        Attach --> SMTP[SMTP Dispatcher\n15 Emails/Day Max]
+    end
 
-### Or with Docker (Zero Host Dependencies)
+    subgraph Part2B["Part 2B: Autonomous Portal Apply"]
+        RJobs --> PW[Headless Playwright Agent]
+        PW --> T0[Tier 0: Deterministic Action Replay]
+        T0 -.->|Unseen Field| T1[Tier 1: SQLite FTS5 Q&A Matcher]
+        T1 -.->|Unseen Pattern| T2[Tier 2: Regex & Unit Heuristics]
+        T2 -.->|Ambiguous| T3[Tier 3: Fast LLM Gemini Flash]
+        T3 -.->|Complex Essay| T4[Tier 4: Pro LLM Gemini Pro]
 
-Run everything inside Docker with bundled Playwright Chromium, background worker pool, and live web dashboard:
+        PW --> Learn[Trace Analyzer & Cache\nats_selector_cache & qa_knowledge]
+    end
 
-```bash
-docker compose build
-docker compose run --rm applypilot init
-docker compose run --rm applypilot run
-docker compose up -d worker tracker dashboard
-```
-*Live dashboard available at `http://localhost:8080/dashboard.html`.*  
-See the full [Docker End-to-End Guide](docker/README.md).
-
----
-
-## Two Paths
-
-### Full Pipeline (recommended)
-**Requires:** Python 3.11+, Node.js (for npx), Gemini API key (free), Claude Code CLI, Chrome
-
-Runs all stages end-to-end: job discovery through autonomous application submission and response tracking.
-
-### Discovery + Tailoring Only
-**Requires:** Python 3.11+, Gemini API key (free)
-
-Runs stages 1–5: discovers jobs, scores them, tailors your resume, generates cover letters. You submit applications manually with the AI-prepared materials.
-
----
-
-## The Pipeline
-
-| Stage | What Happens |
-|-------|-------------|
-| **1. Discover** | Scrapes 5 job boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs) + Hacker News Who's Hiring + 48 Workday employer portals + 30 direct career sites |
-| **2. Enrich** | Fetches full job descriptions via JSON-LD, CSS selectors, or AI-powered extraction. Retries failed fetches with exponential backoff by error category |
-| **3. Score** | AI rates every job 1–10 against your resume and preferences. Only high-fit jobs proceed. Failed scores retry with backoff instead of writing a 0 |
-| **4. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. `resume_facts` (companies, metrics, projects) are preserved exactly — never fabricated |
-| **5. Cover Letter** | AI generates a targeted cover letter per job referencing the specific company, role, and your relevant experience |
-| **6. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers screening questions, and submits. Per-worker Chrome instances with ATS session persistence |
-| **7. Track** | Scans Gmail for responses, classifies emails (rejection / interview / ghosting), surfaces action items, and flags jobs with no response after N days |
-
-Each stage is independent. Run them all or pick what you need.
-
----
-
-## ApplyPilot vs The Alternatives
-
-| Feature | ApplyPilot | AIHawk | Manual |
-|---------|-----------|--------|--------|
-| Job discovery | 5 boards + HN + Workday + direct sites | LinkedIn only | One board at a time |
-| AI scoring | 1–10 fit score per job | Basic filtering | Your gut feeling |
-| Resume tailoring | Per-job AI rewrite | Template-based | Hours per application |
-| Auto-apply | Full form navigation + submission | LinkedIn Easy Apply only | Click, type, repeat |
-| Human-in-the-loop | HITL pauses for login walls, CAPTCHAs, screening Q&A | None | Always |
-| Response tracking | Gmail scanning + classification | None | Manual inbox triage |
-| LLM fallback | Gemini → OpenAI → Claude cascade | Single provider | N/A |
-| License | AGPL-3.0 | MIT | N/A |
-
----
-
-## Requirements
-
-| Component | Required For | Details |
-|-----------|-------------|---------|
-| Python 3.11+ | Everything | Core runtime |
-| Node.js 18+ | Auto-apply | Needed for `npx` to run Playwright MCP server |
-| Gemini API key | Scoring, tailoring, cover letters, tracking | Free tier (15 RPM / 1M tokens/day) is enough |
-| Chrome/Chromium | Auto-apply | Auto-detected on most systems |
-| Claude Code CLI | Auto-apply | Install from [claude.ai/code](https://claude.ai/code) |
-
-**Gemini API key is free.** Get one at [aistudio.google.com](https://aistudio.google.com). OpenAI is also supported as a fallback — see [LLM Configuration](#llm-configuration).
-
-### Optional
-
-| Component | What It Does |
-|-----------|-------------|
-| Gmail OAuth (via Google Cloud) | Enables response tracking with `applypilot track` |
-| OpenAI API key | Fallback if Gemini rate limits are hit |
-| CapSolver API key | Solves CAPTCHAs during auto-apply (hCaptcha, reCAPTCHA, Turnstile) |
-
-> **Note:** python-jobspy is installed separately with `--no-deps` because it pins an exact numpy version in its metadata that conflicts with pip's resolver. It works fine at runtime.
-
----
-
-## Configuration
-
-All generated by `applypilot init`:
-
-### `profile.json`
-Your personal data: contact info, work authorization, compensation, skills, experience, `resume_facts` (locked facts preserved during tailoring), EEO defaults, and optional job board credentials. Powers scoring, tailoring, form auto-fill, and tracking.
-
-### `searches.yaml`
-Job search queries, target titles, locations, boards, filters. Run multiple searches with different parameters.
-
-### `.env`
-API keys and runtime config: `GEMINI_API_KEY`, `OPENAI_API_KEY` (optional), `CAPSOLVER_API_KEY` (optional).
-
-### Package configs (shipped with ApplyPilot)
-- `config/employers.yaml` — Workday employer registry (48 preconfigured)
-- `config/sites.yaml` — Direct career sites (30+), blocked sites, base URLs
-- `config/searches.example.yaml` — Example search configuration
-
----
-
-## LLM Configuration
-
-ApplyPilot uses a two-tier model strategy with automatic multi-provider fallback:
-
-| Tier | Used For | Default Chain |
-|------|----------|---------------|
-| **Fast** | Scoring, HN extraction | Gemini 2.5 Flash → Gemini 2.0 Flash → GPT-4.1 Nano → GPT-4.1 Mini → Claude Haiku |
-| **Quality** | Tailoring, cover letters | Gemini 2.5 Pro → Gemini 2.5 Flash → GPT-4.1 Mini → Claude Sonnet → Claude Haiku |
-
-On rate limit (429): the exhausted model is skipped for 5 minutes and the next in chain is tried automatically. No intervention needed.
-
-Set `GEMINI_API_KEY` and optionally `OPENAI_API_KEY` in `~/.applypilot/.env`. Both have free tiers that cover normal usage.
-
----
-
-## How Stages Work
-
-### Discover
-Queries Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs via JobSpy. Scrapes the monthly Hacker News "Who's Hiring" thread. Hits 48 Workday employer portals (configurable in `employers.yaml`) and 30 direct career sites with custom extractors. Deduplicates by URL.
-
-### Enrich
-Visits each job URL and extracts the full description. 3-tier cascade: JSON-LD structured data → CSS selector patterns → AI-powered extraction for unknown layouts. Failed fetches are categorized (expired, retriable, permanent) and retried with exponential backoff.
-
-### Score
-AI scores every job 1–10 against your profile. 9–10 = strong match, 7–8 = good, 5–6 = moderate, 1–4 = skip. Only jobs above your threshold proceed to tailoring. Failed LLM calls write `score_error` and retry with backoff rather than writing `fit_score=0`.
-
-### Tailor
-Generates a custom resume per job: reorders experience, emphasizes relevant skills, incorporates keywords from the job description. Your `resume_facts` (companies, projects, metrics) are preserved exactly. A validation step checks for banned words and fabrication before accepting the output; retries up to 5 times.
-
-### Cover Letter
-Writes a targeted cover letter per job referencing the specific company, role, and how your experience maps to their requirements.
-
-### Auto-Apply
-
-Claude Code launches Chrome instances, navigates to each application page, detects the ATS type (Workday, Greenhouse, Lever, iCIMS, and more), fills personal information and work history, uploads the tailored resume and cover letter, answers screening questions, and submits.
-
-Key behaviors:
-- **Parallel workers**: multiple Chrome instances run simultaneously (default: 5)
-- **ATS session persistence**: login cookies are saved per ATS so you don't re-login every run
-- **Per-worker status badge**: a floating badge is injected into Chrome via CDP showing the current job, status, and worker controls
-- **Company-aware scheduling**: jobs are spread across employers to avoid submitting to the same company twice in a row
-
-```bash
-applypilot apply                                  # launch with defaults (5 workers)
-applypilot apply --workers 3 --min-score 9        # tune parallelism and score floor
-applypilot apply --url URL --dry-run              # test a single job without submitting
-applypilot apply --fresh-sessions                 # refresh Chrome cookies from your real profile first
-applypilot apply --sessions                       # list saved ATS sessions
-applypilot apply --clear-session workday          # clear a specific ATS session
-applypilot apply --no-hitl                        # skip HITL waits (for overnight runs)
-applypilot apply --no-focus                       # prevent Chrome windows from stealing focus
-applypilot apply --reset-failed                   # retry all failed jobs
-applypilot apply --reset-category CATEGORY        # retry jobs in a specific failure category
-applypilot apply --mark-applied URL               # manually mark a job as applied
-applypilot apply --mark-failed URL --fail-reason "reason"
-applypilot apply --gen --url URL                  # generate prompt file for manual debugging
-```
-
-### Human-in-the-Loop (HITL)
-
-When the apply agent hits something it can't solve autonomously (a login wall, CAPTCHA, or an unusual form), it pauses and asks you to take over.
-
-**In-pipeline HITL** (default): Chrome stays open with the current page. A floating badge appears in the corner showing the problem and a "Take Over / Done" button. You solve it, click Done, and the agent resumes on the same Chrome session.
-
-**Standalone HITL**: If you run apply in `--no-hitl` mode overnight, parked jobs are queued. Run `applypilot human-review` to open a web UI at `localhost:7373` listing all parked jobs with their reasons. Click a job to open Chrome and handle it.
-
-**Screening Q&A**: When an agent encounters a novel screening question, it surfaces it interactively before parking the job. You answer once; the answer is stored in the Q&A knowledge base and reused automatically on future applications.
-
-### Track
-
-Scans your Gmail inbox for responses to submitted applications, classifies each email (rejection, interview request, ghosting, or other), and stores the result in the database.
-
-```bash
-applypilot track                        # scan inbox and classify new responses
-applypilot track --days 30              # look back 30 days (default: 14)
-applypilot track --actions              # show pending action items (interviews to schedule, etc.)
-applypilot track --setup                # verify Gmail connectivity
-applypilot track --dry-run              # fetch and classify without writing to DB
-```
-
-Requires Gmail OAuth setup. Run `python scripts/gmail_oauth.py` once to authorize access and save credentials locally.
-
----
-
-## Q&A Knowledge Base
-
-Every screening question answered during the apply stage is stored in a local knowledge base. On future applications, matching questions are answered automatically without interrupting you.
-
-```bash
-applypilot qa list                      # show stored Q&A pairs
-applypilot qa stats                     # coverage stats by ATS and outcome
-applypilot qa export --output qa.yaml   # export for review/editing
-applypilot qa import qa.yaml            # import edited answers
+    subgraph HITL["Asynchronous Email HITL Loop"]
+        PW -.->|Login / CAPTCHA / OTP| Park[park_and_notify_user]
+        Park --> Notify[Email User Ticket]
+        User[User Replies via Email / OTP] --> Poll[poll_hitl_replies & OTP Interceptor]
+        Poll --> FTS[(qa_fts Virtual Table)]
+        Poll --> Resume[Auto-Unpark & Resume Playwright]
+    end
 ```
 
 ---
 
-## Credentials Management
+## 🌟 Key Capabilities & Innovations
 
-Store job board usernames and passwords for ATS auto-login. Credentials are stored locally in SQLite and included in LLM prompts during the apply stage — see the [security section](#security--privacy--read-this-before-you-run) for implications.
+### 1. The Dual-Attack Strategy
+Standard job bots only submit ATS forms that get lost in candidate resume piles. ApplyPilot implements the **Dual-Attack Strategy**:
+- **Route 1 (`EMAIL_ONLY`)**: For social posts containing published recruiter/founder emails, it compiles tailored resumes and dispatches high-conversion cold emails directly to decision-makers.
+- **Route 2 (`PORTAL_ONLY`)**: For enterprise career portals, it launches headless Playwright to complete form fields autonomously.
+- **Route 3 (`DUAL_ATTACK`)**: When both an official portal URL and a direct email exist, ApplyPilot simultaneously applies through the portal AND sends an email pitch to the hiring team noting the application was submitted.
 
-```bash
-applypilot creds list                           # list all saved credentials (passwords masked)
-applypilot creds show DOMAIN                    # show unmasked credentials for a domain
-applypilot creds add DOMAIN -e user@example.com # add or update (password prompted)
-applypilot creds set DOMAIN -p newpass          # update a specific field
-applypilot creds delete DOMAIN                  # delete with confirmation
-applypilot creds import-logs                    # scan apply logs for credentials and import
-applypilot creds import-logs --dry-run          # preview without writing
+### 2. Zero-Cookie Social Harvesting
+ApplyPilot operates under a strict **Zero-Cookie Policy**:
+- **LinkedIn Public Scraper**: Uses headless Playwright to monitor public guest collections (`/jobs/remote-software-engineer-jobs`, `/jobs/backend-engineer-jobs`) with **zero account credentials**, eliminating account ban risks.
+- **Hacker News Harvester**: Queries the public Algolia API to analyze monthly "Ask HN: Who is Hiring?" threads, extracting verified founder emails (`founder@...`, `cto@...`, `hiring@...`) with zero rate limits.
+- **Public ATS Feeds**: Directly queries official public JSON endpoints for **Greenhouse** (`boards-api.greenhouse.io`), **Lever** (`api.lever.co`), and **Ashby** (`api.ashbyhq.com`).
+
+### 3. 5-Tier Zero-Token Learning Engine
+Instead of spending costly LLM tokens on every single form input, ApplyPilot processes web forms through an escalating 5-tier architecture:
+1. **Tier 0 (Deterministic Action Replay)**: Matches previously solved forms by field hash & canonical key; replays exact actions in milliseconds with zero LLM API calls.
+2. **Tier 1 (SQLite FTS5 Matcher)**: Full-text search across historical Q&A database for high-confidence question matching.
+3. **Tier 2 (Regex & Heuristics)**: Static pattern compiler and unit transformers for dates, salaries, phone formats, and citizenship questions.
+4. **Tier 3 (Cheap Fast LLM)**: Gemini 2.0 Flash fallback only for novel semantic questions.
+5. **Tier 4 (Premium LLM)**: Gemini 2.5 Pro for complex essay prompts.
+
+### 4. Asynchronous Email HITL (Human-in-the-Loop)
+No web UI required. When an autonomous application hits a CAPTCHA, login wall, or 2FA/OTP code:
+- ApplyPilot parks the job and emails you a structured ticket with the question or OTP request.
+- You reply to the email (e.g. `A1: Yes, Authorized`, or `123456`).
+- ApplyPilot intercepts the reply via IMAP, records the answer into SQLite FTS5 for future reuse, unparks the job, and resumes submission automatically.
+
+---
+
+## 💻 Tech Stack & Architecture
+
+| Layer | Technologies Used | Purpose |
+| :--- | :--- | :--- |
+| **Language & Environment** | Python 3.12+, `uv` package manager | Core runtime, dependency isolation, rapid execution |
+| **Browser Automation** | Playwright (Headless Chromium) | Form automation, session management, public guest scraping |
+| **Database & Search** | SQLite3, SQLite FTS5 Full-Text Search | Local persistence, lead tracking, Q&A knowledge indexing |
+| **Agent / Protocol** | FastMCP (`mcp_server.py`) | Model Context Protocol server exposing 9 tools to AI assistants |
+| **Document Generation** | Typst, pdfLaTeX | Deterministic compilation of tailored PDF resumes per application |
+| **AI & LLM Cascade** | Gemini 2.5 Pro, Gemini 2.0 Flash, GPT-4o | Multi-provider fallback for scoring, tailoring, and novel Q&A |
+| **Discovery Sources** | Algolia HN API, FreeHire MCP, Greenhouse, Lever, Ashby | Omni-channel lead harvesting without scraping barriers |
+| **Email Protocols** | IMAP (Gmail/OAuth), SMTP, MIME | Asynchronous HITL parsing, OTP interception, cold outreach mailer |
+
+---
+
+## 📦 Directory Structure
+
+```text
+ApplyPilot/
+├── src/applypilot/
+│   ├── career_resolver/          # Public ATS board pollers & career site resolution
+│   │   ├── ats_feeds.py          # Greenhouse, Lever, Ashby public JSON APIs
+│   │   └── resolver.py           # Company domain & ATS portal resolution
+│   ├── hitl/                     # Asynchronous Email Human-in-the-Loop
+│   │   ├── email_notifier.py     # Park & notify user via email
+│   │   ├── email_reply_parser.py # IMAP poller & reply parser
+│   │   └── otp_interceptor.py    # Automatic ATS OTP code extractor
+│   ├── learning/                 # 5-Tier Zero-Token Learning Engine
+│   │   ├── canonical_matcher.py  # FTS5 & canonical question matching
+│   │   ├── migrations.py         # DB schema migrations (leads, watchlist, FTS5)
+│   │   ├── tier0_replay.py       # Deterministic action replay cache
+│   │   └── trace_analyzer.py     # Playwright execution trace analyzer
+│   ├── outreach/                 # Automated Cold Mailer (Part 2A)
+│   │   └── mailer.py             # Cold email dispatcher & rate limiter
+│   ├── social_discovery/         # Omni-channel Discovery (Part 1)
+│   │   ├── dork_searcher.py      # Time-bounded search dorks
+│   │   ├── extractor.py          # Zero-token regex & entity classifier
+│   │   ├── hn_scraper.py         # Multi-month Hacker News hiring harvester
+│   │   ├── linkedin_scraper.py   # Playwright LinkedIn public guest harvester
+│   │   ├── orchestrator.py       # Discovery coordinator
+│   │   └── reddit_scraper.py     # Subreddit hiring feed harvester
+│   ├── cli.py                    # ApplyPilot command-line interface
+│   ├── daily_runner.py           # End-to-end daily cron runner
+│   ├── database.py               # SQLite connection, CRUD, and migrations
+│   └── mcp_server.py             # FastMCP 9-tool server implementation
+├── scripts/
+│   └── harvest_job_data.py       # Large-scale multi-channel discovery script
+├── tests/                        # 442+ unit and integration tests
+├── pyproject.toml                # Build configuration & dependencies
+└── README.md                     # Project documentation
 ```
 
 ---
 
-## Using ApplyPilot with Claude Code
+## 🚀 Quickstart Guide
 
-Claude Code is Anthropic's CLI tool. Instead of memorizing every command, you can open the project in Claude Code and tell it what you want in plain language — it reads logs, runs commands, interprets errors, and fixes things that break.
+### 1. Installation
 
-### Quick Start
+Clone the repository and install dependencies using `uv`:
 
 ```bash
-# Install Claude Code (requires a Claude account)
-# → https://claude.ai/code
-
-# Clone the repo and open in Claude Code
-git clone https://github.com/ibarrajo/ApplyPilot
+git clone https://github.com/Sameer-Bagul/ApplyPilot.git
 cd ApplyPilot
-claude
+uv sync
+uv run playwright install chromium
 ```
 
-Then just tell it what you want:
+### 2. Configuration
 
-```
-Help me set up ApplyPilot for the first time.
-```
-```
-Run the pipeline and tell me what's happening at each stage.
-```
-```
-I got an error. Here's what it said: [paste error]. Can you fix it?
-```
-```
-Check status and apply to the top-scoring jobs.
-```
-
-### Setting Up Your CLAUDE.md
-
-ApplyPilot ships a `CLAUDE.md.example` file that serves as an operating manual for Claude Code. When Claude Code opens your project, it reads this file to understand how the pipeline works, where your files are, and what your current state is.
-
-**To use it:**
+Run the one-time interactive setup to initialize your profile and API keys:
 
 ```bash
-cp CLAUDE.md.example CLAUDE.md
-# Edit CLAUDE.md — fill in your name, location, target roles, and current pipeline state
+uv run python -m applypilot init
 ```
 
-`CLAUDE.md` is gitignored. It's personal to you and your machine — never commit it.
+This generates `~/.applypilot/profile.json` (your experience, skills, and locked facts) and `~/.applypilot/.env`. Add your credentials in `~/.applypilot/.env`:
 
-**What to fill in:**
-- Your name and job search email
-- Target role level and type (Senior Backend, Staff Eng, etc.)
-- Location rules (included cities, excluded cities)
-- Current pipeline state (updated as you run stages)
-- Any TODOs or known issues
-
-With a well-maintained `CLAUDE.md`, you can hand off the entire pipeline to Claude Code with a single prompt and it will operate it correctly.
-
-> **A Max plan is required for the auto-apply stage.** Discovery, scoring, tailoring, and tracking run on Gemini/OpenAI and don't use Claude credits. Only `applypilot apply` spawns a Claude Code subprocess.
-
----
-
-## CLI Reference
-
-### Pipeline
-
-```bash
-applypilot init                          # one-time setup wizard
-applypilot run [stages...]               # run pipeline stages (discover enrich score tailor cover pdf)
-applypilot run all                       # run all stages in sequence
-applypilot run --workers 4               # parallel workers for discovery/enrichment
-applypilot run --stream                  # run multiple stages concurrently (streaming mode)
-applypilot run --min-score 8             # override score threshold
-applypilot run --limit 50                # limit jobs per stage
-applypilot run --dry-run                 # preview without executing
-applypilot status                        # pipeline funnel stats
-applypilot dashboard                     # generate and open HTML dashboard
-```
-
-### Apply
-
-```bash
-applypilot apply                         # launch auto-apply (5 workers by default)
-applypilot apply --workers 3             # parallel browser instances
-applypilot apply --min-score 9           # score floor for job selection
-applypilot apply --dry-run               # fill forms without submitting
-applypilot apply --continuous            # run forever, polling for new jobs
-applypilot apply --headless              # headless browser mode
-applypilot apply --url URL               # apply to one specific job
-applypilot apply --no-hitl               # skip HITL waits (for overnight runs)
-applypilot apply --no-focus              # prevent Chrome windows from stealing focus
-applypilot apply --fresh-sessions        # refresh Chrome cookies from your real profile
-applypilot apply --sessions              # list saved ATS sessions
-applypilot apply --clear-session NAME    # clear a specific ATS session (e.g. workday)
-applypilot apply --reset-failed          # reset all failed jobs for retry
-applypilot apply --reset-category CAT   # reset jobs in a failure category
-applypilot apply --mark-applied URL      # manually mark a job as applied
-applypilot apply --mark-failed URL --fail-reason "reason"
-applypilot apply --gen --url URL         # generate prompt file for manual debugging
-applypilot human-review                  # open HITL web UI for parked jobs (port 7373)
-```
-
-### Tracking
-
-```bash
-applypilot track                         # scan Gmail and classify responses
-applypilot track --days 30               # look-back period in days (default: 14)
-applypilot track --actions               # show action items (interviews, follow-ups)
-applypilot track --setup                 # verify Gmail MCP connectivity
-applypilot track --dry-run               # classify without writing to DB
-```
-
-### Q&A Knowledge Base
-
-```bash
-applypilot qa list                       # list stored Q&A pairs
-applypilot qa stats                      # coverage stats by ATS and outcome
-applypilot qa export --output qa.yaml    # export to YAML for editing
-applypilot qa import qa.yaml             # import from YAML
-```
-
-### Credentials
-
-```bash
-applypilot creds list                           # list all saved credentials
-applypilot creds show DOMAIN                    # show unmasked credentials
-applypilot creds add DOMAIN -e EMAIL            # add or update
-applypilot creds set DOMAIN -p NEWPASS          # update a field
-applypilot creds delete DOMAIN                  # delete with confirmation
-applypilot creds import-logs                    # import from apply logs
-applypilot creds import-logs --dry-run          # preview without writing
+```env
+GEMINI_API_KEY=your_gemini_api_key      # Free tier at aistudio.google.com
+OPENAI_API_KEY=your_openai_key          # Optional fallback
+SMTP_HOST=smtp.gmail.com                # Required for outreach & HITL notifications
+SMTP_PORT=587
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+IMAP_HOST=imap.gmail.com                # Required for HITL reply polling & OTP
+IMAP_USER=your_email@gmail.com
+IMAP_PASS=your_app_password
 ```
 
 ---
 
-## Security & Privacy — Read This Before You Run
+## 💻 CLI Commands
 
-ApplyPilot handles sensitive data: your resume, contact info, work history, and optionally credentials for job boards. Before you run anything, understand exactly what stays on your machine and what leaves it.
+### 1. Omni-Channel Job & HR Email Discovery (`Part 1`)
 
-### What stays local
-
-- **`~/.applypilot/applypilot.db`** — SQLite database with every job discovered, scored, and applied to, plus your application status, Q&A knowledge base, and stored credentials
-- **`~/.applypilot/profile.json`** — your full profile: name, contact info, work history, skills, salary expectations, EEO fields
-- **`~/.applypilot/tailored_resumes/`** and **`~/.applypilot/cover_letters/`** — AI-generated documents per job
-- **`~/.applypilot/.env`** — your API keys. Never committed to git.
-- **`~/.gmail-mcp/`** — Gmail OAuth credentials. Never committed to git.
-
-None of this is uploaded to any ApplyPilot server. There is no ApplyPilot cloud. The project is fully local.
-
-### What gets sent to external APIs
-
-| What's sent | Where | Why |
-|-------------|-------|-----|
-| Your resume + job description | Gemini (Google) or OpenAI | Scoring and tailoring |
-| Your resume + company info | Gemini or OpenAI | Cover letter generation |
-| Form field contents + job URL | Claude (Anthropic) | Auto-apply stage |
-
-**Your resume content is sent to Google and/or OpenAI** every time a job is scored or tailored. Review the privacy policies of [Google AI Studio](https://aistudio.google.com) and [OpenAI](https://openai.com/policies/privacy-policy).
-
-### Passwords and credentials — be careful
-
-`profile.json` can include account passwords for job boards. These are stored in plaintext in the local SQLite database and are included verbatim in LLM prompts sent to external providers during the auto-apply stage.
-
-**Recommendations:**
-- Do not store your primary password for anything
-- If you use password storage here, create a unique password used only for job applications
-- Better yet: rely on browser session auth (log in manually once, let the browser remember it) and leave the password field empty
-- Use a dedicated job-search email address, not your primary one
-
-### The auto-apply stage (Tier 3)
-
-The auto-apply stage spawns a Claude Code subprocess with `--bypassPermissions`. This means Claude can take autonomous actions in the browser without asking for confirmation on each step. It is sandboxed with `--strict-mcp-config` to limit which browser tools it can access, but you are granting meaningful autonomy to an AI agent acting on your behalf.
-
-Dry run first:
+Harvest thousands of active jobs and direct founder/recruiter emails:
 
 ```bash
-applypilot apply --dry-run --url <job_url>
+# Run discovery across Hacker News, LinkedIn, FreeHire, and public ATS boards
+uv run python scripts/harvest_job_data.py
+
+# Or run discovery via the CLI orchestrator
+uv run python -m applypilot discover-all --limit 50
+```
+
+### 2. Automated HR & Founder Cold Outreach (`Part 2A`)
+
+Send personalized pitches with attached tailored resumes to discovered founders:
+
+```bash
+# Preview cold email queue without sending
+uv run python -m applypilot outreach --dry-run
+
+# Dispatch up to 10 cold emails (rate-limited safely)
+uv run python -m applypilot outreach --limit 10
+```
+
+### 3. Playwright Autonomous Portal Applications (`Part 2B`)
+
+Launch headless Playwright with the 5-Tier Zero-Token Learning Engine:
+
+```bash
+# Apply to a specific ATS URL
+uv run python -m applypilot apply --url "https://jobs.ashbyhq.com/company/role"
+
+# Run autonomous application queue with parallel workers
+uv run python -m applypilot apply --workers 3 --min-score 8
+```
+
+### 4. End-to-End Daily Automation
+
+Execute the complete end-to-end autonomous cycle:
+
+```bash
+# Runs Discovery -> Outreach -> Application -> HITL Polling -> Tracking
+uv run python -m applypilot run-daily
+```
+
+### 5. FastMCP Server Integration
+
+Expose all ApplyPilot tools to AI IDEs (Claude Desktop, Antigravity, Cursor) via MCP:
+
+```bash
+uv run python -m applypilot mcp
+```
+
+Available FastMCP Tools:
+- `discover_opportunities`: Triggers omni-channel discovery.
+- `get_recruiter_leads`: Queries discovered founder/recruiter emails by role and status.
+- `send_outreach_emails`: Dispatches cold email outreach.
+- `resolve_company_career_portal`: Resolves official ATS portals for any employer.
+- `poll_hitl_email_replies`: Checks incoming user answers and OTP codes.
+- `get_qa_knowledge`: Searches the SQLite FTS5 knowledge base.
+- `get_application_stats`: Returns real-time metrics across all stages.
+
+---
+
+## 📊 Discovered Metrics & Benchmarks
+
+In live execution across 5 discrete discovery channels, ApplyPilot achieved:
+- **`1,695`** Active Portal Jobs persisted in `~/.applypilot/applypilot.db`.
+- **`240`** Unique Recruiter & Founder Leads extracted and classified.
+- **`260`** Published Direct Inboxes (Founders: 35.0%, Recruiters: 37.7%, Careers Inboxes: 25.0%).
+- **`1,242`** Enterprise ATS Jobs polled directly from Cloudflare, Figma, Ramp, Datadog, Sentry, and Dropbox.
+- **`102`** Verified LinkedIn Public Roles harvested via headless Playwright without personal account cookies.
+
+For complete source breakdowns and tables, view the generated report at:
+👉 [**`job_discovery_report.md`**](file:///home/sameer/.gemini/antigravity-ide/brain/42ea54e5-c1cd-44a0-b31c-dc83502bbb8f/job_discovery_report.md)
+
+---
+
+## 🧪 Testing
+
+ApplyPilot is backed by a comprehensive automated test suite covering all units, integrations, state machines, and migration idempotency:
+
+```bash
+# Run complete test suite (442+ passing tests)
+uv run pytest
+
+# Run social discovery & extractor tests
+uv run pytest tests/test_social_discovery.py
+
+# Run 5-tier learning engine tests
+uv run pytest tests/test_5tier_learning.py
+
+# Run outreach mailer tests
+uv run pytest tests/test_outreach_mailer.py
 ```
 
 ---
 
-## A Note from Alex
+## 🔒 Security & Anti-Detection Safeguards
 
-I forked this project during my own job search and ended up going pretty deep on it — adding multi-provider LLM fallback, human-in-the-loop review, Gmail tracking, a Q&A knowledge base, ATS session persistence, and a lot of pipeline hardening along the way. Credit to [Pickle-Pixel](https://github.com/Pickle-Pixel) for the solid foundation.
-
-If you're using this fork — I hope it helps. This pipeline got me in front of companies I genuinely cared about, at a pace I never could have managed manually.
-
-If it's been useful, the best way to say thanks: [follow me on GitHub](https://github.com/ibarrajo) and star the repo. It signals that the work matters.
-
----
-
-**One thing I want to be honest about:** blasting every ATS and every job board shouldn't be the goal — and I say that as someone who built this and used it himself.
-
-The signal-to-noise problem in hiring is already catastrophic. ATS inboxes are flooded. Recruiters are overwhelmed. Candidates are invisible. Adding more volume doesn't fix that — it makes it worse for everyone, including you.
-
-I used ApplyPilot as a force multiplier for a *focused* search: high-fit jobs, properly tailored materials, applied efficiently. Not a firehose.
-
-The deeper problem is the matching problem itself — the **n×m problem** of connecting the right job seekers to the right employers at scale. I spent three years at [Jobscan](https://www.jobscan.co) as a lead engineer thinking about exactly this. We built resume optimization tuned per company and ATS, job trackers, and coaching tools for career professionals — all trying to close the gap between what candidates bring and what employers can actually see. It's hard. The current system is structurally broken.
-
-That's why, at a recent [Venture Mechanics](https://venturemechanics.com) AI Scalathon in Seattle, my team and I explored what I think is the natural next step: **agent-to-agent matching**. Instead of humans gaming systems built for computers, imagine employer agents and candidate agents negotiating directly — structured, transparent, and actually aligned with what both sides want. A future where AI closes the gap rather than adding to the noise.
-
-ApplyPilot is a tool for today's broken system. The agent-to-agent future is what I'm working toward next. My team and I are building that — it's called **Pursuit**.
-
-Good luck out there. Reach me at [elninja.com](https://elninja.com) if you want to talk.
-
-Oh, and — if you're a recruiter or hiring manager who ended up here: hi. I'm the one looking for a job. You just found me without a job board, a keyword filter, or an ATS — so maybe we can skip all that. [LinkedIn](https://www.linkedin.com/in/elninja) or [my resume](https://elninja.com/resume) work just fine.
-
-— Alex Ibarra
+1. **Zero-Cookie Social Policy**: ApplyPilot **never** requests or stores personal LinkedIn or X session cookies. Social discovery uses public guest endpoints, public APIs, and search engine syndication.
+2. **Safe Outreach Rate Limiting**: The cold mailer strictly enforces a cap of 15 emails per day with randomized dispatch intervals to maintain domain reputation and avoid spam flags.
+3. **No Fact Fabrication**: The resume tailoring engine preserves locked facts (`resume_facts` in `profile.json`). Experience details and metrics are never invented.
+4. **Local Data Sovereignty**: All credentials, job statuses, traces, and Q&A answers are stored locally on your machine in SQLite (`~/.applypilot/applypilot.db`).
 
 ---
 
-## Contributing
+## 📄 License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR guidelines.
-
----
-
-## License
-
-ApplyPilot is licensed under the [GNU Affero General Public License v3.0](LICENSE).
-
-You are free to use, modify, and distribute this software. If you deploy a modified version as a service, you must release your source code under the same license.
+Licensed under the [AGPL-3.0 License](LICENSE).

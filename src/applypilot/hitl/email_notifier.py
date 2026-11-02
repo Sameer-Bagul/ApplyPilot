@@ -254,3 +254,114 @@ def dispatch_hitl_email_and_park(job: dict,
 
     logger.info("Parked job %s awaiting email reply (Ticket #%d)", job_url[:60], ticket_id)
     return ticket_id
+
+
+def park_and_notify_user(
+    job_id: str | None = None,
+    lead_id: str | None = None,
+    company: str = "",
+    role_title: str = "",
+    job_url: str = "",
+    blocker_type: str = "screening_question",
+    unknown_questions: list[dict] | None = None,
+    dom_checkpoint: dict | None = None,
+    recipient_email: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> int:
+    """Park an application or lead and dispatch a structured HITL notification email to user.
+
+    Supports both Track A (outreach / cold mailer) and Track B (portal form applier).
+    """
+    if conn is None:
+        conn = get_connection()
+
+    questions = unknown_questions or []
+    target_url = job_url or (f"https://applypilot.local/leads/{lead_id}" if lead_id else f"https://applypilot.local/jobs/{job_id}")
+
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO jobs (url, title, company, site, state)
+            VALUES (?, ?, ?, 'hitl', 'discovered')
+            """,
+            (target_url, role_title or "Role", company or "Company"),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+    ticket_id = create_hitl_ticket(
+        job_url=target_url,
+        unanswered_questions=questions,
+        dom_checkpoint=dom_checkpoint,
+        conn=conn,
+    )
+
+    try:
+        conn.execute(
+            """
+            UPDATE hitl_tickets
+            SET job_id = ?, lead_id = ?, company = ?, role_title = ?, blocker_type = ?, questions_json = ?
+            WHERE ticket_id = ?
+            """,
+            (
+                job_id,
+                lead_id,
+                company,
+                role_title,
+                blocker_type,
+                json.dumps(questions),
+                ticket_id,
+            ),
+        )
+        conn.commit()
+    except Exception as e:
+        logger.debug("Hitl ticket extended fields notice: %s", e)
+
+    job_dict = {
+        "title": role_title or "Role",
+        "company": company or "Company",
+        "url": target_url,
+        "fit_score": "N/A",
+    }
+    step_info = f"Step {dom_checkpoint.get('step_index', 1)}" if dom_checkpoint else blocker_type
+    subject = f"[ApplyPilot HITL #AP-{ticket_id}] Action Required: {len(questions)} Missing Answer(s) for {role_title or 'Position'} at {company or 'Company'}"
+    text_body, html_body = format_hitl_email_body(ticket_id, job_dict, questions, step_info)
+
+    to_email = recipient_email or "me"
+    success, msg_id, th_id = send_gmail_api(to_email, subject, text_body, html_body)
+
+    if msg_id or th_id:
+        try:
+            conn.execute(
+                "UPDATE hitl_tickets SET gmail_message_id = ?, gmail_thread_id = ? WHERE ticket_id = ?",
+                (msg_id, th_id, ticket_id),
+            )
+            conn.commit()
+        except Exception:
+            pass
+
+    if job_url:
+        try:
+            transition_state(
+                conn=conn,
+                job_url=job_url,
+                to_state="parked_awaiting_email",
+                reason=f"HITL email dispatched (Ticket #AP-{ticket_id})",
+                metadata={"ticket_id": ticket_id, "questions_count": len(questions)},
+            )
+        except Exception as e:
+            logger.debug("Job state transition notice: %s", e)
+
+    if lead_id:
+        try:
+            conn.execute(
+                "UPDATE recruiter_leads SET outreach_status = 'parked_hitl', gmail_thread_id = ? WHERE lead_id = ?",
+                (th_id, lead_id),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.debug("Lead status transition notice: %s", e)
+
+    logger.info("Dispatched HITL email for ticket #AP-%d", ticket_id)
+    return ticket_id

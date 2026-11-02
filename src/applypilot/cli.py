@@ -39,10 +39,12 @@ def _bootstrap() -> None:
     """Common setup: load env, create dirs, init DB."""
     from applypilot.config import load_env, ensure_dirs
     from applypilot.database import init_db
+    from applypilot.learning.migrations import run_migrations
 
     load_env()
     ensure_dirs()
     init_db()
+    run_migrations()
 
 
 def _version_callback(value: bool) -> None:
@@ -177,6 +179,80 @@ def run(
 
     if result.get("errors"):
         raise typer.Exit(code=1)
+
+
+@app.command("discover-all")
+def discover_all(
+    sources: Optional[list[str]] = typer.Option(
+        None, "--source", "-s",
+        help="Sources to query: reddit, dorks, watchlist. Can be specified multiple times.",
+    ),
+    keywords: Optional[list[str]] = typer.Option(
+        None, "--keyword", "-k",
+        help="Role keywords to filter search dorks (e.g. Python, AI).",
+    ),
+    limit: int = typer.Option(30, "--limit", "-l", help="Max items per source."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview discovered jobs and leads without saving."),
+) -> None:
+    """Discover fresh hiring posts across Reddit, social dorks, and direct ATS boards."""
+    _bootstrap()
+    from applypilot.social_discovery.orchestrator import run_omni_channel_discovery
+    console.print("[bold blue]Starting Omni-Channel Job & HR Discovery...[/bold blue]")
+    summary = run_omni_channel_discovery(
+        sources=sources,
+        role_keywords=keywords,
+        dry_run=dry_run,
+        limit=limit,
+    )
+    console.print(f"[bold green]Discovery complete![/bold green] Total found: {summary['total_discovered']}")
+    console.print(f"  • Reddit Posts: {summary['reddit_posts_count']}")
+    console.print(f"  • Social Dorks: {summary['dork_posts_count']}")
+    console.print(f"  • ATS Watchlist Jobs: {summary['watchlist_jobs_count']}")
+    console.print(f"  • HR Recruiter Leads: {summary['leads_count']}")
+    console.print(f"  • Routes: {summary['route_counts']}")
+    if dry_run:
+        console.print("[dim](Dry run mode: no changes were committed to database)[/dim]")
+
+
+@app.command("outreach")
+def outreach(
+    mode: str = typer.Option("draft", "--mode", "-m", help="Execution mode: draft (creates Gmail Drafts) or auto_send."),
+    limit: int = typer.Option(10, "--limit", "-l", help="Maximum leads to reach out to."),
+    min_score: int = typer.Option(70, "--min-score", help="Minimum fit score threshold."),
+) -> None:
+    """Execute hyper-tailored email outreach to recruiters and founders for discovered leads."""
+    _bootstrap()
+    from applypilot.outreach.mailer import run_hr_outreach
+    console.print(f"[bold blue]Executing HR/Founder Outreach (mode: {mode})...[/bold blue]")
+    summary = run_hr_outreach(mode=mode, limit=limit, min_score=min_score)
+    console.print("[bold green]Outreach completed![/bold green]")
+    console.print(f"  • Processed: {summary['processed']}")
+    console.print(f"  • Drafted: {summary['drafted']}")
+    console.print(f"  • Sent: {summary['sent']}")
+    console.print(f"  • Parked for HITL review: {summary['parked_hitl']}")
+    console.print(f"  • Skipped (awaiting portal apply first): {summary['skipped_dual_attack']}")
+
+
+@app.command("run-daily")
+def run_daily(
+    limit: int = typer.Option(10, "--limit", "-l", help="Max jobs to discover and process per channel."),
+    min_score: int = typer.Option(70, "--min-score", help="Minimum fit score threshold."),
+    outreach_mode: str = typer.Option("draft", "--mode", "-m", help="HR outreach mode: draft or auto_send."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview daily pipeline run without committing changes."),
+) -> None:
+    """Execute the full autonomous daily job acquisition pipeline."""
+    _bootstrap()
+    from applypilot.daily_runner import run_daily_pipeline
+    console.print("[bold blue]Starting ApplyPilot Autonomous Daily Job Acquisition Pipeline...[/bold blue]")
+    report = run_daily_pipeline(
+        dry_run=dry_run,
+        min_score=min_score,
+        limit=limit,
+        outreach_mode=outreach_mode,
+    )
+    console.print("[bold green]Daily pipeline run complete![/bold green]")
+    if dry_run:
+        console.print("[dim](Dry run mode: changes were not committed)[/dim]")
 
 
 @app.command()

@@ -265,6 +265,126 @@ def fetch_ats_otp_code(company_domain: str = "",
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 6 Dual-Track & Self-Evolving MCP Tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def discover_all_channels(
+    sources: list[str] = ["reddit", "dorks", "watchlist"],
+    max_age_hours: int = 24,
+) -> dict:
+    """Discover fresh hiring posts across Reddit, social dorks, and direct ATS feeds."""
+    from applypilot.social_discovery.orchestrator import run_omni_channel_discovery
+    conn = _get_db()
+    return run_omni_channel_discovery(sources=sources, conn=conn)
+
+
+@mcp.tool()
+def resolve_company_career_portal(company_name: str) -> dict:
+    """Resolve company name to official /careers page and underlying ATS application URL."""
+    from applypilot.career_resolver.resolver import resolve_company_ats
+    return resolve_company_ats(company_name)
+
+
+@mcp.tool()
+def score_and_tailor_queue(min_score: int = 75) -> dict:
+    """Retrieve scored and tailor-ready jobs meeting the minimum match score."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT url, title, company, fit_score, state FROM jobs "
+        "WHERE fit_score >= ? AND state IN ('discovered', 'scored', 'ready_to_apply') "
+        "ORDER BY fit_score DESC LIMIT 25",
+        (min_score,),
+    ).fetchall()
+    return {
+        "min_score": min_score,
+        "eligible_jobs": [dict(r) if isinstance(r, sqlite3.Row) else {"url": r[0], "title": r[1], "company": r[2]} for r in rows],
+    }
+
+
+@mcp.tool()
+def execute_hr_outreach(mode: str = "draft", limit: int = 10) -> dict:
+    """Execute hyper-tailored cold email outreach to recruiters and founders."""
+    from applypilot.outreach.mailer import run_hr_outreach
+    conn = _get_db()
+    return run_hr_outreach(mode=mode, limit=limit, conn=conn)
+
+
+@mcp.tool()
+def execute_portal_applications(limit: int = 10, headless: bool = True) -> dict:
+    """Execute portal applications for ready jobs using the zero-token Playwright engine."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT url, title, company FROM jobs WHERE state = 'ready_to_apply' LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return {
+        "queued_portal_applications": len(rows),
+        "headless": headless,
+        "limit": limit,
+    }
+
+
+@mcp.tool()
+def query_candidate_memory(
+    question_text: str,
+    field_type: str = "text",
+    options: list[str] | None = None,
+) -> dict:
+    """Query candidate memory (Profile, Q&A FTS, Pattern Rules) with zero LLM tokens."""
+    from applypilot.learning.canonical_matcher import lookup_canonical_answer
+    conn = _get_db()
+    profile = _load_candidate_profile()
+    val, conf, src = lookup_canonical_answer(
+        label=question_text,
+        field_type=field_type,
+        options=options,
+        profile=profile,
+        conn=conn,
+    )
+    return {
+        "question": question_text,
+        "resolved_answer": val,
+        "confidence": conf,
+        "source": src,
+    }
+
+
+@mcp.tool()
+def trigger_email_hitl(
+    job_id: str,
+    unknown_questions: list[dict],
+    lead_id: str | None = None,
+) -> dict:
+    """Trigger an asynchronous email notification to the user for unresolved questions."""
+    from applypilot.hitl.email_notifier import park_and_notify_user
+    conn = _get_db()
+    ticket_id = park_and_notify_user(
+        job_id=job_id,
+        lead_id=lead_id,
+        unknown_questions=unknown_questions,
+        conn=conn,
+    )
+    return {"ticket_id": ticket_id, "status": "parked_hitl"}
+
+
+@mcp.tool()
+def sync_email_replies_and_unpark() -> dict:
+    """Poll Gmail for user replies to pending HITL tickets, update Q&A memory, and unpark jobs."""
+    from applypilot.hitl.email_reply_parser import poll_hitl_replies
+    conn = _get_db()
+    return poll_hitl_replies(conn=conn)
+
+
+@mcp.tool()
+def run_post_execution_learner() -> dict:
+    """Analyze apply trace telemetry and promote verified selectors into Tier 0 cache."""
+    from applypilot.learning.trace_analyzer import analyze_and_promote_traces
+    conn = _get_db()
+    return analyze_and_promote_traces(conn=conn)
+
+
 def run_server():
     """Start the FastMCP stdio server."""
     mcp.run()

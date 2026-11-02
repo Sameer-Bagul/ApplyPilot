@@ -55,20 +55,23 @@ def parse_reply_answers(reply_text: str) -> dict[int, str]:
 
     Matches formats like:
       Q1: A
+      A1: Yes
       Q2 - APPROVE
-      q1: Yes
-      Q3: Over 4 years using Kubernetes and ArgoCD
+      A2: 4 years
     """
     clean_text = strip_email_quoted_headers(reply_text)
-    pattern = re.compile(r"(?i)\bQ(\d+)\s*[:\-]\s*(.+?)(?=(?:\bQ\d+\s*[:\-]|\Z))", re.DOTALL)
+    pattern = re.compile(r"(?i)\b[QA](\d+)\s*[:\-\.]\s*(.+?)(?=(?:\b[QA]\d+\s*[:\-\.]|\Z))", re.DOTALL)
 
     answers: dict[int, str] = {}
     for match in pattern.finditer(clean_text):
         q_num = int(match.group(1))
         ans_val = match.group(2).strip()
-        # Clean inline newlines inside single answer
         ans_clean = " ".join(ans_val.split())
         answers[q_num] = ans_clean
+
+    if not answers and clean_text:
+        # Direct answer if only 1 question was asked or user responded directly
+        answers[1] = " ".join(clean_text.split())
 
     return answers
 
@@ -175,6 +178,16 @@ def process_hitl_ticket_reply(ticket_id: int, reply_body: str,
                 conn=conn,
             )
 
+            try:
+                conn.execute(
+                    "INSERT INTO qa_fts (question_key, canonical_question, question_text, answer_text) "
+                    "VALUES (?, ?, ?, ?)",
+                    (norm_q, norm_q, q_spec.get("label", ""), val),
+                )
+                conn.commit()
+            except Exception:
+                pass
+
     # If any required questions had errors, ticket remains open
     if errors:
         return {
@@ -200,6 +213,18 @@ def process_hitl_ticket_reply(ticket_id: int, reply_body: str,
         (job_url,),
     )
     conn.commit()
+
+    # Unpark recruiter lead if applicable
+    try:
+        t_row = conn.execute("SELECT lead_id FROM hitl_tickets WHERE ticket_id = ?", (ticket_id,)).fetchone()
+        if t_row and t_row[0]:
+            conn.execute(
+                "UPDATE recruiter_leads SET outreach_status = 'queued' WHERE lead_id = ?",
+                (t_row[0],),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.debug("Lead unparking notice: %s", e)
 
     logger.info("Ticket #%d resolved. Job %s moved to queued_resume", ticket_id, job_url[:60])
     return {
@@ -325,3 +350,9 @@ def sync_email_hitl_replies(poll_window_hours: int = 48,
         "requeued_jobs": requeued_jobs,
         "errors": errors,
     }
+
+
+def poll_hitl_replies(poll_window_hours: int = 48,
+                      conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Poll Gmail for user replies to pending HITL tickets (standard alias)."""
+    return sync_email_hitl_replies(poll_window_hours=poll_window_hours, conn=conn)
