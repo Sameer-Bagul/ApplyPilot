@@ -172,35 +172,45 @@ Run `uv run applypilot mcp` to verify the MCP server starts cleanly over stdio, 
 
 ---
 
-## Lean 5-Server MCP Architecture & Search Cascade Configuration
+## 360-Degree Omni-Channel MCP Ecosystem & Master Configuration
 
-To prevent prompt token bloat while maximizing omni-channel discovery and automation, ApplyPilot operates on a **Lean 5-Server MCP Architecture** coupled with a **2-Stage Search Engine Cascade**:
+Connecting Google Maps, Google Workspace (Gmail, Sheets, Calendar, Drive), and Search/Job MCPs turns ApplyPilot into a 360-degree autonomous job acquisition engine.
 
-### 1. Two-Stage Search Engine Cascade
-1. **Tier 1 — DuckDuckGo (`ddgs` / DuckDuckGo MCP) ($0 / Unlimited Quota)**:
-   - Handles 100% of employer `/careers` URL resolution, company domain discovery, and initial tech-stack checks.
-   - Saves paid API credits for deep scanning.
-2. **Tier 2 — Brave Search MCP (Fresh Social Dorks)**:
-   - Targeted specifically for fresh (past 24h: `freshness="pd"`) social hiring announcements:
-     - `site:linkedin.com/posts ("we are hiring" OR "hiring") ("email" OR "@")`
-     - `site:x.com ("we are hiring" OR "hiring a") ("email" OR "apply")`
-   - High real-time recall on social networks where standard search indexes lag.
-3. **Tier 3 — Firecrawl MCP (Custom Career Site Crawler)**:
-   - For bespoke employer websites that do not use standard ATS platforms (Greenhouse, Lever, Ashby), `firecrawl_map` crawls `company.com/careers` and extracts all direct application links without launching a full Playwright session.
+### 1. The 5 Functional MCP Categories
 
-### 2. High-Value MCP Servers in the Pipeline
-
-| MCP Server | Role in ApplyPilot | Strategic Benefit |
+| Category | MCP Server | Key Capabilities & Pipeline Role |
 | :--- | :--- | :--- |
-| **`applypilot-mcp`** | Core Engine | Controls local SQLite DB (`applypilot.db`), 5-Tier Zero-Token Cache, Email HITL loop, and Cold Mailer. |
-| **`freehire`** / **`jobspipe`** | Job Feed Streamer | Streams 47,000+ active IT jobs, structured salaries, and ATS links (Workday, Greenhouse, Ashby, iCIMS). |
-| **`playwright-mcp`** | Browser Automation | Navigates multi-step ATS portal forms, fills inputs, and uploads tailored resumes. |
-| **`brave-search`** | Time-Bounded Dorking | Executes past-24h social hiring dorks across LinkedIn, X, and Threads. |
-| **`firecrawl`** | Custom Career Site Mapper | Scrapes and maps non-standard corporate `/careers` pages into clean Markdown and URLs. |
-| **`hunter`** *(Optional)* | Email Verifier | Verifies that extracted founder/recruiter emails are deliverable before dispatch, preventing hard bounces. |
-| **`github-mcp`** *(Optional)* | Portfolio Evidence | Pulls verified technical proof from your GitHub repositories into cold outreach pitches. |
+| **1. Job Discovery & ATS Feeds** | **`applypilot-mcp`** (Custom)<br>**`freehire`** / **`jobspipe`**<br>**`jobspy-mcp`** | • Core SQLite DB, 5-Tier Zero-Token Cache & learning engine.<br>• Streams 47,000+ normalized active IT jobs across 30+ ATS boards.<br>• On-demand queries across LinkedIn, Indeed, Glassdoor, and Naukri. |
+| **2. Search, Social Dorks & Crawlers** | **`duckduckgo`** (`ddgs`)<br>**`brave-search`**<br>**`exa`**<br>**`firecrawl`**<br>**`reddit`** | • $0 company research and `/careers` URL resolution.<br>• 24h fresh dorks (`freshness="pd"`) for LinkedIn and X hiring posts.<br>• Semantic neural search for stealth startups & hiring founders.<br>• Maps bespoke company career websites into clean Markdown URLs.<br>• Harvester for r/forhire, r/developersIndia, and monthly hiring threads. |
+| **3. Google Maps & Location Intelligence** | **`google-maps`** (`cablate/mcp-google-map`)<br>**`google-maps-scraper`** | • **Hidden Tech Hub Discovery**: Searches Google Maps for software firms & AI startups in Pune, Bengaluru, Hyderabad, Gurgaon, or Mumbai, grabbing domains for companies that never advertise on job boards.<br>• **Commute & Location Guardrail**: Computes exact transit/driving times for hybrid and onsite job openings against user preferences. |
+| **4. Google Workspace Productivity** | **`google-workspace`** (`taylorwilsdon/google_workspace_mcp`) | • **Live Google Sheets Mirror**: Appends every submitted application and cold email to a mobile-accessible Google Sheet.<br>• **Interview Calendar Assistant**: Checks free Google Calendar slots when an HR reply or interview invite is detected in Gmail. |
+| **5. Verification, Proof & Automation** | **`hunter-io`**<br>**`github-mcp`**<br>**`playwright-mcp`** | • Pre-flight SMTP/MX email verification to guarantee zero bounce rates on cold outreach.<br>• Injects real project repositories, commits, and PR evidence into cold emails.<br>• Microsoft accessibility-tree browser automation to fill multi-page ATS forms. |
 
-### 3. Lean MCP Configuration Block (`mcp_config.json` / Claude Desktop / Hermes Agent)
+---
+
+### 2. Google Maps "Hidden Tech Hub" Discovery Architecture
+
+Most software development firms, agencies, and funded startups maintain an active Google Business profile with their official domain and contact details—long before they purchase expensive LinkedIn Job postings.
+
+```
+ [ "Software Company in Hinjewadi, Pune" ]
+                     │
+                     ▼
+             [ Google Maps MCP ]
+     (Extracts Company Name + Website Domain)
+                     │
+                     ▼
+         [ cdx_harvester & resolver ]
+    (Inspects /careers or embeds ATS slug)
+                     │
+                     ▼
+         [ ApplyPilot Watchlist DB ]
+  (Discovers private openings ahead of competitors)
+```
+
+---
+
+### 3. Master MCP Configuration Block (`mcp_config.json` / Claude Desktop / Hermes Agent / AI IDE)
 
 ```json
 {
@@ -229,6 +239,34 @@ To prevent prompt token bloat while maximizing omni-channel discovery and automa
       "args": ["-y", "firecrawl-mcp"],
       "env": {
         "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    },
+    "google-maps": {
+      "command": "npx",
+      "args": ["-y", "@cablate/mcp-google-map"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "${GOOGLE_MAPS_API_KEY}"
+      }
+    },
+    "google-workspace": {
+      "command": "uvx",
+      "args": ["workspace-mcp"],
+      "env": {
+        "GOOGLE_WORKSPACE_CREDENTIALS": "${GOOGLE_WORKSPACE_CREDENTIALS}"
+      }
+    },
+    "exa": {
+      "command": "npx",
+      "args": ["-y", "exa-mcp-server"],
+      "env": {
+        "EXA_API_KEY": "${EXA_API_KEY}"
+      }
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }
