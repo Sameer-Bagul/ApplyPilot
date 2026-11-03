@@ -8,10 +8,10 @@ Welcome to the definitive architecture and developer manual for ApplyPilot. This
 
 | Guide Document | Focus & Highlights |
 | :--- | :--- |
-| **[01. System Architecture Overview](file:///home/sameer/Projects/ApplyPilot/docs/guide/01_system_architecture_overview.md)** | Three-tier execution model, local SQLite database schema, Next.js UI integration, and master system flowchart. |
+| **[01. System Architecture Overview](file:///home/sameer/Projects/ApplyPilot/docs/guide/01_system_architecture_overview.md)** | Three-tier execution model, local SQLite database schema, Next.js UI integration with Agent Radar DAG, and master system flowchart. |
 | **[02. Data Sources & Discovery Pipeline](file:///home/sameer/Projects/ApplyPilot/docs/guide/02_data_sources_and_discovery.md)** | The 7 startup directory harvesters, 11 keyless direct ATS feeds, VC portfolio boards, and Schema.org JSON-LD parser. |
 | **[03. Company Looping & Email Enrichment](file:///home/sameer/Projects/ApplyPilot/docs/guide/03_company_looping_and_email_enrichment.md)** | How we loop over companies, DuckDuckGo active web search, recruiter extraction, Google DoH MX verification, and the 8-12 email guarantee. |
-| **[04. Agent Execution & Dual-Attack Model](file:///home/sameer/Projects/ApplyPilot/docs/guide/04_agent_execution_and_dual_attack.md)** | Sequential vs. parallel execution, multi-worker Chrome CDP isolation, the Dual-Attack application strategy, and asynchronous email HITL. |
+| **[04. Agent Execution & Dual-Attack Model](file:///home/sameer/Projects/ApplyPilot/docs/guide/04_agent_execution_and_dual_attack.md)** | Sequential vs. parallel execution, multi-worker Chrome CDP isolation, Dual-Attack application strategy, asynchronous email HITL, and the multi-lane animated Agent Radar DAG. |
 | **[05. MCP System & Tool Inventory](file:///home/sameer/Projects/ApplyPilot/docs/guide/05_mcp_system_and_tool_inventory.md)** | Complete topology of 9 MCP servers, tool invocation triggers, and the 24 native FastMCP tools catalog. |
 
 ---
@@ -80,3 +80,4 @@ Whenever any developer or AI assistant modifies:
 
 **The developer/agent MUST update the corresponding guide document in `docs/guide/` as part of that same commit.**
 See [`AGENT.md`](file:///home/sameer/Projects/ApplyPilot/AGENT.md) for full instructions.
+

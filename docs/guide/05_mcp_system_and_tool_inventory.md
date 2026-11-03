@@ -90,3 +90,4 @@ The native server (`src/applypilot/mcp_server.py`) registers the following tools
 22. `sync_email_hitl_replies`: Polls Gmail for user replies to pending tickets and requeues jobs.
 23. `sync_email_replies_and_unpark`: Synchronizes email replies, updates Q&A memory, and transitions jobs to ready.
 24. `fetch_ats_otp_code`: Intercepts and retrieves 2FA OTP codes sent by employers (e.g. Workday verification).
+

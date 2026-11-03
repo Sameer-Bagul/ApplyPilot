@@ -27,7 +27,10 @@ import {
   X,
   Send,
   Layers,
+  Activity,
+  GitBranch,
 } from 'lucide-react';
+import { AgentRadarView } from '@/components/agent-radar/AgentRadarView';
 
 interface StatsData {
   totalJobs: number;
@@ -314,9 +317,12 @@ export default function DashboardPage() {
               }`}
             >
               <div className="flex items-center gap-3">
-                <Radio className="w-4 h-4 text-rose-500 animate-pulse" />
-                <span>Live ATS Radar</span>
+                <GitBranch className="w-4 h-4 text-purple-600" />
+                <span>Agent Radar</span>
               </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60">
+                LIVE DAG
+              </span>
             </button>
           </div>
         </div>
@@ -529,7 +535,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Card 4: 11-ATS Radar */}
+              {/* Card 4: Autonomous Agent Radar */}
               <div
                 onClick={() => setActiveTab('radar')}
                 className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md transition-all relative overflow-hidden"
@@ -537,16 +543,16 @@ export default function DashboardPage() {
                 <div className="absolute inset-x-0 top-0 h-20 mesh-gradient-4 opacity-70 group-hover:opacity-90 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
                   <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
-                    <Radio className="w-4 h-4 text-zinc-800" />
+                    <GitBranch className="w-4 h-4 text-purple-600" />
                   </div>
                   <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                     <ArrowUpRight className="w-4 h-4 text-zinc-800" />
                   </div>
                 </div>
                 <div className="relative z-10 flex flex-col">
-                  <span className="text-2xl font-bold tracking-tight text-zinc-900">11</span>
-                  <span className="text-sm font-medium text-zinc-600">ATS Direct Feeds</span>
-                  <span className="text-[11px] text-zinc-400 mt-0.5">GH, Lever, Ashby, Workday, etc.</span>
+                  <span className="text-2xl font-bold tracking-tight text-zinc-900">6 Lanes</span>
+                  <span className="text-sm font-medium text-zinc-600">Autonomous Agent DAG</span>
+                  <span className="text-[11px] text-purple-600 font-medium mt-0.5">Live Real-Time Radar</span>
                 </div>
               </div>
             </div>
@@ -1098,64 +1104,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ----------------- TAB: LIVE RADAR & LOOPER ----------------- */}
+        {/* ----------------- TAB: LIVE RADAR & DAG ----------------- */}
         {activeTab === 'radar' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6">
-            <div className="flex flex-col gap-1 pb-4 border-b border-zinc-200/60">
-              <div className="flex items-center gap-2">
-                <Radio className="w-5 h-5 text-rose-500 animate-pulse" />
-                <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Real-Time Job Launch Radar</h2>
-              </div>
-              <p className="text-xs text-zinc-500">
-                Continuous polling of 11 ATS platforms and custom careers pages with ETag change detection.
-              </p>
-            </div>
-
-            {/* ATS Platforms Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {[
-                { name: 'Greenhouse', status: 'Live API (JSON)', type: 'boards-api.greenhouse.io' },
-                { name: 'Lever', status: 'Live API (JSON)', type: 'api.lever.co' },
-                { name: 'Ashby', status: 'REST & GraphQL', type: 'api.ashbyhq.com' },
-                { name: 'Workday', status: 'CXS Endpoint', type: 'host/wday/cxs' },
-                { name: 'Workable', status: 'Widget API', type: 'apply.workable.com' },
-                { name: 'SmartRecruiters', status: 'Postings API', type: 'api.smartrecruiters.com' },
-                { name: 'BambooHR', status: 'Careers List', type: 'slug.bamboohr.com' },
-                { name: 'Recruitee', status: 'Offers API', type: 'slug.recruitee.com' },
-                { name: 'Teamtailor', status: 'JSON Feed', type: 'slug.teamtailor.com' },
-                { name: 'Breezy HR', status: 'JSON Feed', type: 'slug.breezy.hr' },
-                { name: 'Personio', status: 'XML Stream', type: 'slug.jobs.personio.de' },
-                { name: 'Custom Pages', status: 'JSON-LD + ETag', type: 'Schema.org JobPosting' },
-              ].map((ats, idx) => (
-                <div key={idx} className="liquid-glass rounded-2xl p-4 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-sm text-zinc-900">{ats.name}</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                  </div>
-                  <span className="text-[11px] text-emerald-600 font-medium">{ats.status}</span>
-                  <span className="text-[10px] text-zinc-400 font-mono truncate">{ats.type}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Quick CLI Commands reference */}
-            <div className="liquid-glass rounded-2xl p-5 flex flex-col gap-3">
-              <span className="text-xs font-semibold text-zinc-700 tracking-wide">
-                CLI Looper Commands
-              </span>
-              <div className="flex flex-col gap-2 font-mono text-xs text-zinc-600">
-                <div className="p-2.5 rounded-xl bg-zinc-900 text-zinc-200 select-all">
-                  uv run applypilot loop-companies --tier 1 --limit 50 --target-emails 8
-                </div>
-                <div className="p-2.5 rounded-xl bg-zinc-900 text-zinc-200 select-all">
-                  uv run applypilot harvest-vc-boards --board all --limit 50
-                </div>
-                <div className="p-2.5 rounded-xl bg-zinc-900 text-zinc-200 select-all">
-                  uv run applypilot run-daily --dry-run
-                </div>
-              </div>
-            </div>
-          </div>
+          <AgentRadarView />
         )}
       </main>
 

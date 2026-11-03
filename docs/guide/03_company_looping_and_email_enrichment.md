@@ -127,3 +127,4 @@ Simultaneously during each company loop:
 3. **Automatic Route Upgrade**:
    - Newly discovered jobs for any company with verified recruiter emails are immediately tagged with:
      `execution_route = "DUAL_ATTACK"`
+

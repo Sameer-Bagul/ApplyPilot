@@ -96,3 +96,4 @@ Before concluding any development task:
    Must compile with 0 TypeScript errors and 0 build failures.
 3. **Confirm Guide Synchronization**:
    Verify that any new feature or altered logic is documented in the appropriate file in `docs/guide/`.
+

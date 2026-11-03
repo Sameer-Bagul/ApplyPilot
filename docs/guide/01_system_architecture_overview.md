@@ -104,3 +104,4 @@ The dashboard (`dashboard/`) runs independently on port `3000` or inside the con
   - `/api/companies`: Watchlist startups with VIP filters and open roles count.
   - `/api/companies/drilldown`: Full company drawer showing all 8-12 verified recruiter emails, 1-click email copy, bulk outreach composition, and active jobs.
   - `/api/leads`: Searchable recruiter and founder contacts with 1-click email and LinkedIn note copy.
+

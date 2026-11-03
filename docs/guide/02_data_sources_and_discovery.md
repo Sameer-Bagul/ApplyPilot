@@ -136,3 +136,4 @@ For companies using custom landing pages without standard ATS subdomains:
   - Calculates SHA-256 content hashes of the rendered HTML body.
   - If content hash changes, parses Schema.org `JobPosting` microdata embedded within `<script type="application/ld+json">` blocks.
   - Extracts exact job titles, hiring organization, base salary, physical address, and application direct links.
+

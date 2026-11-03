@@ -119,3 +119,43 @@ When an ATS platform requires two-factor authentication (e.g. Workday sending a 
    - The background tracker daemon polls Gmail periodically.
    - When the candidate replies to the email ticket (or the OTP arrives), the tracker extracts the answer, updates `qa_pairs` memory, and unparks the job.
    - The next run of `applypilot apply` resumes the job right where it left off.
+
+---
+
+## 5. Agent Radar: Multi-Lane Real-Time DAG & Telemetry
+
+To visualize the working of the entire autonomous multi-agent pipeline in real time, ApplyPilot provides an interactive **Agent Radar & DAG** tab in the Next.js liquid-glass dashboard.
+
+```mermaid
+flowchart LR
+    L0["Lane 0: Brain / Orchestrator<br/>(#8B5CF6 Violet)"]
+    L1["Lane 1: Harvesters<br/>(#10B981 Emerald)"]
+    L2["Lane 2: Deep Looper & MX<br/>(#F59E0B Amber)"]
+    L3["Lane 3: 11-ATS Radar<br/>(#3B82F6 Blue)"]
+    L4["Lane 4: CDP Workers<br/>(#F43F5E Rose)"]
+    L5["Lane 5: Dual-Attack<br/>(#6366F1 Indigo)"]
+
+    L0 -->|Fork| L1
+    L0 -->|Fork| L2
+    L0 -->|Fork| L3
+    L3 -->|Fork| L4
+    L2 -->|Fork| L5
+    L4 & L5 -->|Bezier Merge| GOAL["Final Goal Accomplished"]
+```
+
+### Visual & Interactive Features
+1. **Multi-Lane SVG DAG**:
+   - Dedicated color-coded lanes for Orchestrator, Directory Harvesters, Deep Looper, 11-ATS Radar, Parallel Apply Workers, and Dual-Attack Outreach.
+   - Continuous intra-lane vertical SVG tracks with smooth cubic-bezier fork curves connecting child tasks to parent lanes.
+   - Cubic-bezier merge curves that converge into the master goal completion circle upon cycle completion.
+2. **Cryptographic ScrambleText**:
+   - Dynamic 450-520ms alphanumeric glitch decoding animation that reveals node labels and goal states on step progression.
+3. **Deep Node Inspector**:
+   - Displays invoked tool command lines (with copy-to-clipboard), active worker agent IDs, latencies, and execution route tags (`DUAL_ATTACK`).
+   - Interactive JSON inspector for inputs and outputs.
+   - Explanatory architecture and guardrail specs for each agent step.
+4. **Dual Operation Modes**:
+   - **Pipeline Simulator**: Interactive scenario player (e.g. `daily_cycle`, `deep_looper`) with Play/Pause, Step Back/Forward, scrubber, and 1x/2x/4x speed controls.
+   - **Live Production Telemetry**: Live SQLite event streamer connected directly to `~/.applypilot/applypilot.db` polling `apply_traces`, `jobs`, `recruiter_leads`, and `career_watchlist`.
+
+
