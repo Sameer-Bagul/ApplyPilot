@@ -86,3 +86,4 @@ export function RouteBadge({ route, compact = false, className = '' }: RouteBadg
     </Tooltip>
   );
 }
+

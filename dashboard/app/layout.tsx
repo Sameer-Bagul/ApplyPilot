@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { LiquidGlassInit } from '@/components/ui/LiquidGlass';
 
 export const metadata: Metadata = {
   title: 'ApplyPilot | Autonomous Job Intelligence & Acquisition',
@@ -13,13 +14,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased selection:bg-rose-100 selection:text-rose-900">
-        {/* Soft atmospheric background glow spheres */}
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div className="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] rounded-full bg-rose-200/30 blur-[130px]" />
-          <div className="absolute top-[20%] right-[-10%] w-[700px] h-[700px] rounded-full bg-amber-100/35 blur-[150px]" />
-          <div className="absolute bottom-[-10%] left-[20%] w-[800px] h-[800px] rounded-full bg-indigo-100/30 blur-[160px]" />
-          <div className="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-emerald-100/25 blur-[140px]" />
+      <body className="antialiased selection:bg-rose-100 selection:text-rose-900 bg-[#F7F6F9]">
+        <LiquidGlassInit />
+        {/* Ethereal atmospheric background glow spheres from liquidglass.dev & iOS liquid glass */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+          <div className="absolute top-[-12%] left-[-8%] w-[680px] h-[680px] rounded-full bg-gradient-to-br from-[#FFD1B3]/45 via-[#FF8C82]/35 to-transparent blur-[140px]" />
+          <div className="absolute top-[18%] right-[-10%] w-[750px] h-[750px] rounded-full bg-gradient-to-bl from-[#DDD6FE]/40 via-[#FBCFE8]/30 to-transparent blur-[160px]" />
+          <div className="absolute bottom-[-15%] left-[15%] w-[850px] h-[850px] rounded-full bg-gradient-to-tr from-[#C7D2FE]/35 via-[#E0E7FF]/25 to-transparent blur-[170px]" />
+          <div className="absolute bottom-[25%] right-[8%] w-[580px] h-[580px] rounded-full bg-gradient-to-tl from-[#A7F3D0]/30 via-[#BAE6FD]/25 to-transparent blur-[150px]" />
         </div>
 
         <div className="relative z-10 min-h-screen">

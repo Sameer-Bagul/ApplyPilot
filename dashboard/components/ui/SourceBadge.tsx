@@ -264,3 +264,4 @@ export function SourceBadge({ site, compact = false, className = '' }: SourceBad
     </Tooltip>
   );
 }
+
