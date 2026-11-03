@@ -137,3 +137,29 @@ For companies using custom landing pages without standard ATS subdomains:
   - If content hash changes, parses Schema.org `JobPosting` microdata embedded within `<script type="application/ld+json">` blocks.
   - Extracts exact job titles, hiring organization, base salary, physical address, and application direct links.
 
+---
+
+## 5. Major Job Aggregators: Indeed, Naukri, LinkedIn, and Glassdoor
+
+In addition to startup directories and direct ATS feeds, ApplyPilot includes built-in aggregator scrapers for high-volume job boards:
+
+| Platform | Scope | Ingestion Strategy | Features Handled |
+| :--- | :--- | :--- | :--- |
+| **Indeed** | Global & India (`in.indeed.com`) | `applypilot.discovery.jobspy` (`indeed`) | Auto-routes to `country_indeed="india"` for Indian tech hubs (Bangalore, Mumbai, Hyderabad, Pune, Delhi). Parses salary, markdown description, and direct apply links. Form auto-login and Gmail OTP interception supported. |
+| **Naukri** | India (`naukri.com`) | `applypilot.discovery.jobspy` (`naukri`) | Direct job search across Indian tech cities with salary, experience range, company name, and live job URLs. |
+| **LinkedIn** | Global | `applypilot.discovery.jobspy` (`linkedin`) + DDG Recruiter Dorks | Role search with full description fetching, plus social post lead extraction for founders and talent acquisition leads. |
+| **Glassdoor** | Global | `applypilot.discovery.jobspy` (`glassdoor`) | Simplified location mapping, company ratings, and job postings. |
+
+### CLI Usage for Aggregator Sources:
+```bash
+# Run Naukri India discovery
+applypilot run discover --source naukri
+
+# Run Indeed only (auto-targets India or US based on search config location)
+applypilot run discover --source indeed
+
+# Run multi-source aggregator crawl
+applypilot run discover --source naukri --source indeed --source linkedin
+```
+
+

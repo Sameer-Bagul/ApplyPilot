@@ -83,9 +83,10 @@ _UPSTREAM: dict[str, str | None] = {
 
 # Canonical name → description. Order determines default execution order.
 DISCOVERY_SOURCES: dict[str, str] = {
-    "jobspy":       "JobSpy aggregator (LinkedIn, Indeed, ZipRecruiter)",
+    "jobspy":       "JobSpy aggregator (LinkedIn, Indeed, Naukri, Glassdoor, ZipRecruiter)",
     "linkedin":     "LinkedIn only (via JobSpy)",
     "indeed":       "Indeed only (via JobSpy)",
+    "naukri":       "Naukri India only (via JobSpy)",
     "workday":      "Workday corporate career sites",
     "greenhouse":   "Greenhouse ATS public board API",
     "lever":        "Lever ATS public postings API",
@@ -102,12 +103,14 @@ _SOURCE_ALIASES: dict[str, str] = {
     "hn":    "hackernews",
     "smart": "smartextract",
     "dice":  "smartextract",  # dice is scraped via smartextract + sites.yaml
+    "nk":    "naukri",
 }
 
 # Sources that are jobspy with a specific site filter
 _JOBSPY_SITE_SOURCES: dict[str, list[str]] = {
     "linkedin": ["linkedin"],
     "indeed":   ["indeed"],
+    "naukri":   ["naukri"],
 }
 
 

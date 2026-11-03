@@ -475,8 +475,11 @@ export function AgentRadarView() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {[
+            { name: 'Naukri India', status: 'JobSpy API', type: 'naukri.com' },
+            { name: 'Indeed (India/US)', status: 'Live API', type: 'in.indeed.com' },
+            { name: 'LinkedIn Jobs', status: 'Direct Stream', type: 'linkedin.com/jobs' },
             { name: 'Greenhouse', status: 'Live API', type: 'boards-api.greenhouse.io' },
             { name: 'Lever', status: 'Live API', type: 'api.lever.co' },
             { name: 'Ashby', status: 'REST & GraphQL', type: 'api.ashbyhq.com' },
@@ -504,14 +507,14 @@ export function AgentRadarView() {
         {/* CLI Autonomous Control Reference */}
         <div className="liquid-glass rounded-2xl p-4 flex flex-col gap-2 mt-2 bg-white/40 border border-zinc-200/50">
           <span className="text-xs font-semibold text-zinc-700 tracking-wide">
-            Autonomous CLI Looper Shortcuts
+            Autonomous CLI Discovery & Looper Shortcuts
           </span>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 font-mono text-[11px] text-zinc-700">
             <div className="p-2.5 rounded-xl bg-zinc-900 text-zinc-200 select-all truncate">
-              uv run applypilot loop-companies --tier 1 --limit 50 --target-emails 8
+              uv run applypilot run discover --source naukri --source indeed
             </div>
             <div className="p-2.5 rounded-xl bg-zinc-900 text-zinc-200 select-all truncate">
-              uv run applypilot harvest-vc-boards --board all --limit 50
+              uv run applypilot loop-companies --tier 1 --limit 50 --target-emails 8
             </div>
             <div className="p-2.5 rounded-xl bg-zinc-900 text-zinc-200 select-all truncate">
               uv run applypilot run-daily --dry-run
@@ -522,3 +525,4 @@ export function AgentRadarView() {
     </div>
   );
 }
+

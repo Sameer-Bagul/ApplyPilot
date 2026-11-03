@@ -289,7 +289,9 @@ def _run_one_search(
         # jobspy validates this param even if Indeed isn't being used, and
         # may auto-detect a non-US country from the exit IP causing failures.
         if "indeed" in other_sites:
-            kwargs["country_indeed"] = defaults.get("country_indeed", "usa")
+            loc_lower = str(s.get("location", "")).lower()
+            is_india = any(k in loc_lower for k in ("bangalore", "bengaluru", "mumbai", "delhi", "hyderabad", "pune", "chennai", "gurgaon", "noida", "india"))
+            kwargs["country_indeed"] = "india" if is_india else defaults.get("country_indeed", "usa")
         if s.get("remote"):
             kwargs["is_remote"] = True
         if proxy_config:
@@ -376,6 +378,12 @@ def search_jobs(
         sites = ["indeed", "linkedin"]
 
     proxy_config = parse_proxy(proxy) if proxy else None
+
+    # Auto-adjust country_indeed to india if location is an Indian tech hub
+    if country_indeed == "usa":
+        loc_lower = location.lower()
+        if any(k in loc_lower for k in ("bangalore", "bengaluru", "mumbai", "delhi", "hyderabad", "pune", "chennai", "gurgaon", "noida", "india")):
+            country_indeed = "india"
 
     log.info("Search: \"%s\" in %s | sites=%s | remote=%s", query, location, sites, remote_only)
 

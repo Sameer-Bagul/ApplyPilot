@@ -272,3 +272,4 @@ export function NodeInspector({ node }: NodeInspectorProps) {
     </div>
   );
 }
+
