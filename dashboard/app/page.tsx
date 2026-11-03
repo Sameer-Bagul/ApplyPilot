@@ -36,6 +36,7 @@ import {
 import { AgentRadarView } from '@/components/agent-radar/AgentRadarView';
 import { SourceBadge } from '@/components/ui/SourceBadge';
 import { RouteBadge } from '@/components/ui/RouteBadge';
+import { WallpaperSwitcher } from '@/components/ui/LiquidBackground';
 
 interface StatsData {
   totalJobs: number;
@@ -519,6 +520,8 @@ export default function DashboardPage() {
 
           {/* Header Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3 justify-end shrink-0">
+            <WallpaperSwitcher />
+
             <button
               onClick={() => {
                 fetchStats();
