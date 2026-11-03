@@ -1,4 +1,11 @@
 {
+  "name": "applypilot",
+  "private": true,
+  "scripts": {
+    "dashboard": "npm --prefix dashboard run dev",
+    "dashboard:build": "npm --prefix dashboard run build",
+    "dashboard:start": "npm --prefix dashboard run start"
+  },
   "devDependencies": {
     "@playwright/test": "1.60.0"
   }

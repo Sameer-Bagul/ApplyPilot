@@ -29,6 +29,8 @@ tmp_*
 
 # Node
 node_modules/
+dashboard/.next/
+dashboard/node_modules/
 
 # Python venv
 .venv/

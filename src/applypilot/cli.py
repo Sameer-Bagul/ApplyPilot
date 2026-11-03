@@ -1063,12 +1063,27 @@ def mcp() -> None:
 
 @app.command()
 def dashboard(
-    serve: bool = typer.Option(False, "--serve", "-s", help="Serve dashboard over HTTP (useful for Docker/remote)."),
-    port: int = typer.Option(8080, "--port", "-p", help="HTTP port when serving."),
+    serve: bool = typer.Option(False, "--serve", "-s", help="Serve legacy dashboard over HTTP."),
+    port: int = typer.Option(3000, "--port", "-p", help="HTTP port when serving."),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host address to bind when serving."),
+    next_ui: bool = typer.Option(True, "--next/--legacy", help="Launch the Next.js iOS liquid-glass dashboard (default: Next.js)."),
 ) -> None:
-    """Generate and open the HTML dashboard in your browser."""
+    """Launch the ApplyPilot dashboard (Next.js iOS liquid-glass UI or legacy static HTML)."""
     _bootstrap()
+
+    if next_ui:
+        import subprocess
+        dashboard_dir = Path(__file__).resolve().parent.parent.parent / "dashboard"
+        if dashboard_dir.exists():
+            console.print(f"[bold green]Starting Next.js iOS Liquid-Glass Dashboard on port {port}...[/bold green]")
+            console.print(f"[bold cyan]Open http://localhost:{port} in your browser.[/bold cyan]")
+            try:
+                subprocess.run(["npm", "run", "dev", "--", "-p", str(port)], cwd=str(dashboard_dir), check=True)
+            except KeyboardInterrupt:
+                console.print("\n[dim]Dashboard server stopped.[/dim]")
+            return
+        else:
+            console.print("[yellow]Next.js dashboard directory not found; falling back to legacy dashboard.[/yellow]")
 
     from applypilot.view import generate_dashboard, open_dashboard
 

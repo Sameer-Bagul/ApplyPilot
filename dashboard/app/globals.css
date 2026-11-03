@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #fbfbfd;
+    --foreground: #1d1d1f;
+  }
+}
+
+body {
+  background-color: #f6f5f8;
+  color: #1d1d1f;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* Liquid Glass Card */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 10px 36px -4px rgba(0, 0, 0, 0.03), 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+}
+
+.liquid-glass-subtle {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+}
+
+.liquid-glass-elevated {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 14px 44px -8px rgba(0, 0, 0, 0.05), 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+/* Orb Spheres from the reference image */
+.orb-peach {
+  background: radial-gradient(circle at 35% 35%, #ffd1b3 0%, #ff8c82 50%, #e6556e 100%);
+  box-shadow: inset -3px -3px 8px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(230, 85, 110, 0.25);
+}
+
+.orb-rose {
+  background: radial-gradient(circle at 35% 35%, #fed7e2 0%, #f687b3 50%, #d53f8c 100%);
+  box-shadow: inset -3px -3px 8px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(213, 63, 140, 0.25);
+}
+
+/* Ethereal Abstract Mesh Gradients for Header Cards */
+.mesh-gradient-1 {
+  background: linear-gradient(135deg, #fbc2eb 0%, #a6c1ee 50%, #fcd4d9 100%);
+}
+
+.mesh-gradient-2 {
+  background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 50%, #fed6e3 100%);
+}
+
+.mesh-gradient-3 {
+  background: linear-gradient(135deg, #d4fc79 0%, #96e6a1 50%, #84fab0 100%);
+}
+
+.mesh-gradient-4 {
+  background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+}
+
+/* Smooth minimal custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
