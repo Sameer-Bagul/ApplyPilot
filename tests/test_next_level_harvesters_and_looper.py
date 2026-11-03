@@ -363,14 +363,27 @@ def test_company_deep_looper_single_and_all(mem_db):
 
     company = dict(mem_db.execute("SELECT * FROM career_watchlist WHERE company_name = 'SuperTech'").fetchone())
 
-    with patch("applypilot.discovery.company_deep_looper.enrich_startup_emails_deep") as mock_enrich, \
-         patch("applypilot.discovery.company_deep_looper.poll_board") as mock_poll:
+    def mock_deep_enrich(company_name, domain, careers_page_url=None, target_count=8, conn=None):
+        from applypilot.database import store_recruiter_lead
+        for em in ["saurabh@supertech.io", "careers@supertech.io", "talent@supertech.io"]:
+            store_recruiter_lead(
+                contact_email=em,
+                role_title=f"Talent at {company_name}",
+                company_name=company_name,
+                company_domain=domain,
+                source_platform="test",
+                execution_route="DUAL_ATTACK",
+                conn=conn,
+            )
+        return {
+            "company": company_name,
+            "domain": domain,
+            "new_leads_added": 3,
+            "total_leads": 3,
+        }
 
-        mock_enrich.return_value = [
-            {"email": "saurabh@supertech.io", "type": "founder_direct", "contact_name": "Saurabh Gupta", "confidence": 0.95},
-            {"email": "careers@supertech.io", "type": "recruitment_inbox", "confidence": 0.90},
-            {"email": "talent@supertech.io", "type": "talent_acquisition", "confidence": 0.88},
-        ]
+    with patch("applypilot.discovery.company_deep_looper.enrich_company_deep", side_effect=mock_deep_enrich), \
+         patch("applypilot.discovery.company_deep_looper.poll_board") as mock_poll:
 
         mock_poll.return_value = [
             {

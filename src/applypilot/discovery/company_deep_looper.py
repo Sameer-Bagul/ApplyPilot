@@ -36,6 +36,10 @@ from applypilot.discovery.bangalore_map_harvester import (
     enrich_startup_emails_deep,
     generate_linkedin_connection_note,
 )
+from applypilot.discovery.web_and_social_recruiter_harvester import (
+    clean_watchlist_domains,
+    enrich_company_deep,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,52 +113,15 @@ def loop_and_enrich_single_company(
                 pass
 
         if len(existing_emails) < target_emails:
-            website = f"https://{c_domain}" if c_domain and not c_domain.startswith("http") else careers_url
-            enriched_items = enrich_startup_emails_deep(
+            deep_res = enrich_company_deep(
                 company_name=c_name,
                 domain=c_domain,
-                website_url=website,
-                founders=f_names,
+                careers_page_url=careers_url,
                 target_count=target_emails,
-                client=client,
+                conn=conn,
             )
-
-            for item in enriched_items:
-                em = item["email"]
-                stored_emails.append(em)
-                if em not in existing_emails:
-                    c_type = "founder" if "founder" in item.get("type", "") else "recruiter"
-                    r_title = f"{'Leadership / Founder' if c_type == 'founder' else 'Talent / Recruitment'} at {c_name}"
-
-                    # Attach LinkedIn note if founder has LinkedIn
-                    li_note = None
-                    founder_li_url = f_linkedins[0] if f_linkedins else None
-                    if founder_li_url and c_type == "founder":
-                        f_first = f_names[0] if f_names else "there"
-                        li_note = generate_linkedin_connection_note(f_first, c_name)
-
-                    try:
-                        store_recruiter_lead(
-                            contact_email=em,
-                            role_title=r_title,
-                            company_name=c_name,
-                            company_domain=c_domain,
-                            contact_name=item.get("contact_name"),
-                            contact_type=c_type,
-                            source_platform="company_deep_looper",
-                            source_post_url=careers_url or (f"https://{c_domain}" if c_domain else "https://applypilot.local"),
-                            evidence_snippet=f"Deep synthesis: {item.get('type')} ({int(item.get('confidence', 0.8)*100)}% conf)",
-                            linkedin_connection_note=li_note,
-                            contact_linkedin_url=founder_li_url,
-                            execution_route="DUAL_ATTACK" if careers_url else "EMAIL_ONLY",
-                            conn=conn,
-                        )
-                        res["emails_added"] += 1
-                        existing_emails.add(em)
-                    except Exception:
-                        pass
-
-        res["total_emails"] = len(existing_emails)
+            res["emails_added"] += deep_res.get("new_leads_added", 0)
+            res["total_emails"] = deep_res.get("total_leads", len(existing_emails))
 
     # Step 2: Real-Time Job Launch Radar
     discovered_jobs: list[dict[str, Any]] = []
@@ -270,6 +237,9 @@ def loop_all_watchlist_companies(
     if conn is None:
         conn = get_connection()
         should_close = True
+
+    # Clean and normalize any malformed domains in watchlist
+    clean_watchlist_domains(conn=conn)
 
     query = "SELECT * FROM career_watchlist WHERE 1=1"
     params: list[Any] = []

@@ -475,6 +475,23 @@ def loop_companies(
     console.print(f"  • Companies with New Openings: {summary['companies_with_new_jobs']}")
 
 
+@app.command("enrich-watchlist-deep")
+def enrich_watchlist_deep_cli(
+    min_emails: int = typer.Option(8, "--min-emails", "-m", help="Target verified emails per company (5-15)."),
+    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max companies to enrich."),
+) -> None:
+    """Enrich all watchlist companies with real recruiters (via DuckDuckGo) and verified email mailboxes."""
+    _bootstrap()
+    from applypilot.discovery.web_and_social_recruiter_harvester import loop_and_enrich_all_watchlist_deep
+    console.print(f"[bold blue]Running Web & Social Recruiter Deep Enrichment (target: >={min_emails} emails/company)...[/bold blue]")
+    summary = loop_and_enrich_all_watchlist_deep(min_emails=min_emails, limit=limit)
+    console.print("[bold green]Deep Recruiter & Email Enrichment Complete![/bold green]")
+    console.print(f"  • Companies Checked: {summary['total_companies_checked']}")
+    console.print(f"  • Domains Normalized: {summary['domains_cleaned']}")
+    console.print(f"  • Companies Enriched: {summary['companies_enriched']}")
+    console.print(f"  • Total Verified Leads Added: {summary['total_leads_added']}")
+
+
 @app.command("harvest-all-directories")
 def harvest_all_directories(
     limit: int = typer.Option(30, "--limit", "-l", help="Limit per directory source."),

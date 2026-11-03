@@ -287,3 +287,72 @@ export function getLeads(params: {
     },
   };
 }
+
+export function getCompanyDetail(params: { id?: string; name?: string }) {
+  const db = getDb();
+  let company: any = null;
+
+  if (params.id) {
+    company = db
+      .prepare('SELECT * FROM career_watchlist WHERE company_id = ?')
+      .get(params.id);
+  } else if (params.name) {
+    company = db
+      .prepare('SELECT * FROM career_watchlist WHERE company_name = ?')
+      .get(params.name);
+  }
+
+  if (!company) {
+    return null;
+  }
+
+  let founders = [];
+  let emails = [];
+  try {
+    if (company.founders_json) founders = JSON.parse(company.founders_json);
+  } catch {}
+  try {
+    if (company.hr_contacts_json) emails = JSON.parse(company.hr_contacts_json);
+  } catch {}
+
+  // Fetch all leads for this company
+  const leads = db
+    .prepare(
+      `SELECT lead_id, job_id, company_name, company_domain, role_title,
+              contact_name, contact_email, contact_type, contact_linkedin_url,
+              linkedin_connection_note, source_platform, evidence_snippet,
+              execution_route, outreach_status, created_at
+       FROM recruiter_leads
+       WHERE company_name = ?
+       ORDER BY contact_type ASC, created_at DESC`
+    )
+    .all(company.company_name);
+
+  // Fetch all open jobs for this company
+  const jobs = db
+    .prepare(
+      `SELECT url, title, company, location, site, execution_route,
+              fit_score, discovered_at, state
+       FROM jobs
+       WHERE company = ?
+       ORDER BY discovered_at DESC
+       LIMIT 50`
+    )
+    .all(company.company_name);
+
+  return {
+    company: {
+      ...company,
+      founders,
+      emails,
+    },
+    leads,
+    jobs,
+    stats: {
+      totalLeads: leads.length,
+      totalJobs: jobs.length,
+      verifiedEmails: leads.map((l: any) => l.contact_email).filter(Boolean),
+      hasDualAttack: leads.length > 0 && (jobs.length > 0 || Boolean(company.careers_page_url)),
+    },
+  };
+}

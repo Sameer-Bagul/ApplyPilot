@@ -24,6 +24,9 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Compass,
+  X,
+  Send,
+  Layers,
 } from 'lucide-react';
 
 interface StatsData {
@@ -71,6 +74,37 @@ export default function DashboardPage() {
   const [leadPage, setLeadPage] = useState(1);
   const [leadPagination, setLeadPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [leadsLoading, setLeadsLoading] = useState(false);
+
+  // Company Drill-Down Modal State
+  const [selectedCompany, setSelectedCompany] = useState<any | null>(null);
+  const [drilldownData, setDrilldownData] = useState<any | null>(null);
+  const [drilldownLoading, setDrilldownLoading] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'leads' | 'jobs'>('leads');
+  const [copiedAllEmails, setCopiedAllEmails] = useState(false);
+
+  const openCompanyDrilldown = async (company: any) => {
+    setSelectedCompany(company);
+    setDrilldownLoading(true);
+    setDrawerTab('leads');
+    try {
+      const res = await fetch(`/api/companies/drilldown?name=${encodeURIComponent(company.company_name)}`);
+      const data = await res.json();
+      if (data.success) {
+        setDrilldownData(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load company drilldown', err);
+    } finally {
+      setDrilldownLoading(false);
+    }
+  };
+
+  const copyAllEmails = (emails: string[]) => {
+    if (!emails || emails.length === 0) return;
+    navigator.clipboard.writeText(emails.join(', '));
+    setCopiedAllEmails(true);
+    setTimeout(() => setCopiedAllEmails(false), 2500);
+  };
 
   // Load overview stats
   const fetchStats = async () => {
@@ -810,19 +844,20 @@ export default function DashboardPage() {
                     <th className="pb-2 px-4">Hub / Area</th>
                     <th className="pb-2 px-4">ATS Provider</th>
                     <th className="pb-2 px-4 text-center">Open Roles</th>
-                    <th className="pb-2 px-4 text-right">Careers URL</th>
+                    <th className="pb-2 px-4 text-center">Verified Outreach</th>
+                    <th className="pb-2 px-4 text-right">Drill Down</th>
                   </tr>
                 </thead>
                 <tbody>
                   {companiesLoading ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-zinc-400 text-xs">
+                      <td colSpan={8} className="text-center py-12 text-zinc-400 text-xs">
                         Loading companies from watchlist...
                       </td>
                     </tr>
                   ) : companies.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-zinc-400 text-xs">
+                      <td colSpan={8} className="text-center py-12 text-zinc-400 text-xs">
                         No companies found.
                       </td>
                     </tr>
@@ -850,20 +885,23 @@ export default function DashboardPage() {
                         <td className="py-3.5 px-4 text-center font-semibold text-zinc-800">
                           {c.open_roles_count || 0}
                         </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => openCompanyDrilldown(c)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/60 transition-all cursor-pointer shadow-sm"
+                          >
+                            <Mail className="w-3 h-3 text-rose-500" />
+                            <span>{c.emails?.length ? `${c.emails.length} Inboxes` : '8+ Inboxes'}</span>
+                          </button>
+                        </td>
                         <td className="py-3.5 px-4 text-right rounded-r-2xl">
-                          {c.careers_page_url ? (
-                            <a
-                              href={c.careers_page_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-700 hover:text-zinc-950 px-2.5 py-1 rounded-full bg-zinc-100/80 hover:bg-zinc-200 transition-all"
-                            >
-                              <span>Careers</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          ) : (
-                            <span className="text-zinc-400 text-xs">—</span>
-                          )}
+                          <button
+                            onClick={() => openCompanyDrilldown(c)}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-zinc-800 hover:text-zinc-950 px-3 py-1.5 rounded-full bg-white shadow-sm hover:shadow border border-zinc-200/80 transition-all cursor-pointer"
+                          >
+                            <span>Explore</span>
+                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1120,6 +1158,203 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {/* ----------------- COMPANY DRILLDOWN DRAWER ----------------- */}
+      {selectedCompany && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-zinc-900/25 backdrop-blur-sm transition-opacity">
+          <div className="w-full max-w-2xl h-full liquid-glass border-l border-white/80 p-6 md:p-8 flex flex-col shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="flex items-start justify-between pb-6 border-b border-zinc-200/60">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold tracking-tight text-zinc-900">
+                    {selectedCompany.company_name}
+                  </h2>
+                  {selectedCompany.is_vip === 1 && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
+                      VIP Top-500
+                    </span>
+                  )}
+                  {drilldownData?.stats?.hasDualAttack && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200/60">
+                      DUAL ATTACK READY
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                  <span className="font-mono text-zinc-700">{selectedCompany.official_domain || 'domain.com'}</span>
+                  <span>•</span>
+                  <span>{selectedCompany.sector || 'Technology'}</span>
+                  <span>•</span>
+                  <span>{selectedCompany.area || selectedCompany.location || 'Bengaluru'}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setSelectedCompany(null);
+                  setDrilldownData(null);
+                }}
+                className="liquid-glass rounded-full p-2 text-zinc-500 hover:text-zinc-900 transition-colors shadow-sm cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Bulk Actions Bar */}
+            <div className="py-4 flex flex-wrap items-center gap-2 border-b border-zinc-200/40">
+              <button
+                onClick={() => copyAllEmails(drilldownData?.stats?.verifiedEmails || selectedCompany.emails)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold bg-zinc-900 text-white hover:bg-zinc-800 transition-all shadow-sm cursor-pointer"
+              >
+                {copiedAllEmails ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedAllEmails ? 'Copied All to Clipboard!' : `Copy All (${drilldownData?.stats?.totalLeads || 8}) Emails`}</span>
+              </button>
+
+              <a
+                href={`mailto:${(drilldownData?.stats?.verifiedEmails || []).join(';')}?subject=Senior%20Software%20Engineer%20Application%20%E2%80%94%20${encodeURIComponent(selectedCompany.company_name)}`}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold bg-white text-zinc-800 hover:bg-zinc-50 border border-zinc-200/80 transition-all shadow-sm"
+              >
+                <Send className="w-3.5 h-3.5 text-rose-500" />
+                <span>Compose Bulk Outreach</span>
+              </a>
+
+              {selectedCompany.careers_page_url && (
+                <a
+                  href={selectedCompany.careers_page_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-2xl text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-white/60 hover:bg-white transition-all ml-auto"
+                >
+                  <span>Portal</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+
+            {/* Drawer Navigation Tabs */}
+            <div className="flex items-center gap-2 pt-4">
+              <button
+                onClick={() => setDrawerTab('leads')}
+                className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
+                  drawerTab === 'leads'
+                    ? 'bg-white shadow-sm text-zinc-900 border border-white/80'
+                    : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                Verified Contacts & Inboxes ({drilldownData?.stats?.totalLeads || 0})
+              </button>
+              <button
+                onClick={() => setDrawerTab('jobs')}
+                className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
+                  drawerTab === 'jobs'
+                    ? 'bg-white shadow-sm text-zinc-900 border border-white/80'
+                    : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                Live Jobs On Radar ({drilldownData?.stats?.totalJobs || 0})
+              </button>
+            </div>
+
+            {/* Drawer Content */}
+            <div className="flex-1 overflow-y-auto py-4">
+              {drilldownLoading ? (
+                <div className="text-center py-16 text-zinc-400 text-xs flex flex-col items-center gap-2">
+                  <div className="w-6 h-6 rounded-full border-2 border-zinc-300 border-t-zinc-800 animate-spin" />
+                  <span>Loading deep company telemetry...</span>
+                </div>
+              ) : drawerTab === 'leads' ? (
+                <div className="flex flex-col gap-3">
+                  {drilldownData?.leads?.map((lead: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="liquid-glass rounded-2xl p-4 flex flex-col gap-2.5 bg-white/70 hover:bg-white transition-all shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-zinc-900">
+                              {lead.contact_name || lead.role_title}
+                            </span>
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200/60">
+                              {lead.contact_type}
+                            </span>
+                          </div>
+                          <span className="text-xs text-zinc-500 mt-0.5">{lead.role_title}</span>
+                        </div>
+
+                        <button
+                          onClick={() => copyToClipboard(lead.contact_email, `drawer-${lead.lead_id}`)}
+                          className="liquid-glass rounded-full px-2.5 py-1 text-xs font-mono font-medium text-zinc-800 hover:text-zinc-950 flex items-center gap-1.5 shrink-0 shadow-sm transition-all cursor-pointer"
+                        >
+                          {copiedId === `drawer-${lead.lead_id}` ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5 text-zinc-500" />
+                          )}
+                          <span>{lead.contact_email}</span>
+                        </button>
+                      </div>
+
+                      {lead.linkedin_connection_note && (
+                        <div className="p-3 rounded-xl bg-zinc-50/80 border border-zinc-200/50 flex flex-col gap-1.5 mt-1">
+                          <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500">
+                            <span>Tailored LinkedIn Connection Note (≤280 chars)</span>
+                            <button
+                              onClick={() => copyToClipboard(lead.linkedin_connection_note, `note-${lead.lead_id}`)}
+                              className="text-zinc-600 hover:text-zinc-900 flex items-center gap-1 cursor-pointer"
+                            >
+                              {copiedId === `note-${lead.lead_id}` ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                              <span>Copy Note</span>
+                            </button>
+                          </div>
+                          <p className="text-xs text-zinc-700 italic leading-relaxed">
+                            "{lead.linkedin_connection_note}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {drilldownData?.jobs?.length === 0 ? (
+                    <div className="text-center py-12 text-zinc-400 text-xs">
+                      No direct ATS jobs parsed for this company yet. Monitored via dual-attack email outreach.
+                    </div>
+                  ) : (
+                    drilldownData?.jobs?.map((job: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="liquid-glass rounded-2xl p-4 flex items-center justify-between gap-4 bg-white/70 hover:bg-white transition-all shadow-sm"
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-semibold text-sm text-zinc-900 truncate">{job.title}</span>
+                          <span className="text-xs text-zinc-500 mt-0.5">{job.location || 'Bengaluru / Remote'}</span>
+                        </div>
+                        <a
+                          href={job.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="liquid-glass rounded-full px-3 py-1.5 text-xs font-medium text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-sm transition-all"
+                        >
+                          <span>Apply</span>
+                          <ExternalLink className="w-3 h-3 text-zinc-500" />
+                        </a>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
