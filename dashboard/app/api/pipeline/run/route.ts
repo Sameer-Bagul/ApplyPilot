@@ -27,6 +27,7 @@ export interface PipelineRunState {
   goalState: 'pending' | 'running' | 'done';
   goalText: string;
   activeAgent: string;
+  cities?: string[];
   nodes: PipelineRunNode[];
   logs: string[];
   summary: Record<string, any> | null;
@@ -143,6 +144,9 @@ export async function POST(req: Request) {
 
     const mode: 'live' | 'dry_run' = body.mode === 'dry_run' ? 'dry_run' : 'live';
     const limit = typeof body.limit === 'number' ? body.limit : 20;
+    const cities: string[] = Array.isArray(body.cities) && body.cities.length > 0
+      ? body.cities
+      : ['Bengaluru', 'Hyderabad', 'Pune', 'Delhi NCR', 'Remote'];
 
     // Reset state for new run
     global.__applypilot_process_running__ = true;
@@ -154,6 +158,7 @@ export async function POST(req: Request) {
       goalState: 'running',
       goalText: 'Phase 1: Autonomous Job & Lead Acquisition Pipeline',
       activeAgent: 'applypilot-brain',
+      cities,
       nodes: [],
       logs: [],
       summary: null,
@@ -167,10 +172,11 @@ export async function POST(req: Request) {
       : 'python3';
 
     const scriptPath = path.join(repoRoot, 'src', 'applypilot', 'pipeline_runner_api.py');
+    const procArgs = [scriptPath, '--mode', mode, '--limit', String(limit), '--cities', ...cities];
 
     const proc = spawn(
       pythonBin,
-      [scriptPath, '--mode', mode, '--limit', String(limit)],
+      procArgs,
       {
         cwd: repoRoot,
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
@@ -195,6 +201,7 @@ export async function POST(req: Request) {
             state.goalText = evt.goalText || state.goalText;
             state.status = 'running';
             state.goalState = 'running';
+            if (evt.cities) state.cities = evt.cities;
           } else if (evt.type === 'node') {
             const newNode: PipelineRunNode = {
               id: evt.id,

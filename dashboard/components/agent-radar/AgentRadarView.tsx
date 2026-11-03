@@ -18,7 +18,63 @@ import {
   ChevronDown,
   Layers,
   Terminal,
+  MapPin,
+  Building2,
+  Globe,
+  Sliders,
+  Check,
 } from 'lucide-react';
+
+export interface CityHub {
+  id: string;
+  name: string;
+  short: string;
+  desc: string;
+}
+
+export const ALL_AVAILABLE_CITIES: CityHub[] = [
+  { id: 'bengaluru', name: 'Bengaluru', short: 'BLR', desc: 'Silicon Valley of India' },
+  { id: 'hyderabad', name: 'Hyderabad', short: 'HYD', desc: 'Cyberabad & Cloud Systems' },
+  { id: 'pune', name: 'Pune', short: 'PNQ', desc: 'Top SaaS & High-Scale Engineering' },
+  { id: 'delhi_ncr', name: 'Delhi NCR', short: 'NCR', desc: 'Gurugram, Noida, New Delhi' },
+  { id: 'mumbai', name: 'Mumbai', short: 'BOM', desc: 'Fintech & Banking Capital' },
+  { id: 'chennai', name: 'Chennai', short: 'MAA', desc: 'Enterprise SaaS & Systems' },
+  { id: 'remote', name: 'Remote', short: 'REMOTE', desc: '100% Distributed / Global' },
+];
+
+export interface CityPreset {
+  id: string;
+  label: string;
+  cities: string[];
+}
+
+export const CITY_PRESETS: CityPreset[] = [
+  {
+    id: 'all_hubs',
+    label: 'All Tech Hubs (BLR, HYD, PNQ, NCR, Remote)',
+    cities: ['Bengaluru', 'Hyderabad', 'Pune', 'Delhi NCR', 'Remote'],
+  },
+  {
+    id: 'blr_only',
+    label: 'Bengaluru Only',
+    cities: ['Bengaluru'],
+  },
+  {
+    id: 'golden_triangle',
+    label: 'BLR + HYD + PNQ (Golden Triangle)',
+    cities: ['Bengaluru', 'Hyderabad', 'Pune'],
+  },
+  {
+    id: 'ncr_mumbai',
+    label: 'Delhi NCR + Mumbai',
+    cities: ['Delhi NCR', 'Mumbai'],
+  },
+  {
+    id: 'remote_only',
+    label: 'Remote Only',
+    cities: ['Remote'],
+  },
+];
 
 interface PipelineSummary {
   durationSeconds?: number;
@@ -27,6 +83,7 @@ interface PipelineSummary {
   totalJobsInDb?: number;
   totalLeadsInDb?: number;
   totalCompaniesInDb?: number;
+  cities?: string[];
 }
 
 interface PipelineRunState {
@@ -37,6 +94,7 @@ interface PipelineRunState {
   goalState: 'pending' | 'running' | 'done';
   goalText: string;
   activeAgent: string;
+  cities?: string[];
   nodes: DAGNode[];
   summary: PipelineSummary | null;
   error: string | null;
@@ -57,11 +115,41 @@ export function AgentRadarView() {
   });
 
   const [selectedMode, setSelectedMode] = useState<'live' | 'deep' | 'dry_run'>('live');
+  const [selectedPreset, setSelectedPreset] = useState<string>('all_hubs');
+  const [selectedCities, setSelectedCities] = useState<string[]>([
+    'Bengaluru',
+    'Hyderabad',
+    'Pune',
+    'Delhi NCR',
+    'Remote',
+  ]);
   const [selectedNode, setSelectedNode] = useState<DAGNode | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
   const [isStopping, setIsStopping] = useState<boolean>(false);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const applyPreset = (preset: CityPreset) => {
+    setSelectedPreset(preset.id);
+    setSelectedCities([...preset.cities]);
+  };
+
+  const toggleCity = (cityName: string) => {
+    setSelectedCities((prev) => {
+      let next: string[];
+      if (prev.includes(cityName)) {
+        if (prev.length === 1) return prev; // Keep at least one city
+        next = prev.filter((c) => c !== cityName);
+      } else {
+        next = [...prev, cityName];
+      }
+      const matched = CITY_PRESETS.find(
+        (p) => p.cities.length === next.length && p.cities.every((c) => next.includes(c))
+      );
+      setSelectedPreset(matched ? matched.id : 'custom');
+      return next;
+    });
+  };
 
   // Poll current pipeline status on mount
   const checkStatus = async () => {
@@ -148,7 +236,11 @@ export function AgentRadarView() {
       const res = await fetch('/api/pipeline/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: isDry ? 'dry_run' : 'live', limit }),
+        body: JSON.stringify({
+          mode: isDry ? 'dry_run' : 'live',
+          limit,
+          cities: selectedCities,
+        }),
       });
       const data = await res.json();
       if (data.success && data.run) {
@@ -342,9 +434,63 @@ export function AgentRadarView() {
         </div>
       </div>
 
+      {/* 1.5 CITY-WISE QUERY & TECH HUB TARGET SELECTOR */}
+      <div className="liquid-glass rounded-2xl p-3 sm:px-4 sm:py-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs shadow-xs border border-white/60">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 font-bold text-zinc-800">
+            <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+            <span>Target Tech Hubs ({selectedCities.length}):</span>
+          </div>
+
+          {/* Preset Buttons */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {CITY_PRESETS.map((p) => {
+              const isActive = selectedPreset === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => applyPreset(p)}
+                  disabled={isRunning}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs border border-zinc-200/80'
+                      : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/40'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Individual City Toggle Chips */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {ALL_AVAILABLE_CITIES.map((c) => {
+            const isSelected = selectedCities.includes(c.name);
+            return (
+              <button
+                key={c.id}
+                onClick={() => toggleCity(c.name)}
+                disabled={isRunning}
+                title={`${c.name} • ${c.desc}`}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                  isSelected
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200/90 shadow-2xs font-bold'
+                    : 'bg-zinc-100/60 text-zinc-400 hover:text-zinc-700 border border-transparent'
+                }`}
+              >
+                {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />}
+                {c.short}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 2. LIVE METRICS & LANE LEGEND STRIP */}
       <div className="liquid-glass rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
-        {/* Lane Legend */}
+        {/* Lane Legend & Active Hubs */}
         <div className="flex items-center gap-3 text-[11px] font-mono flex-wrap">
           <span className="text-zinc-400 font-sans font-medium text-xs">Lanes:</span>
           <span className="flex items-center gap-1.5 text-purple-700">
@@ -362,6 +508,20 @@ export function AgentRadarView() {
           <span className="flex items-center gap-1.5 text-blue-700">
             <span className="w-2 h-2 rounded-full bg-blue-500" />
             11-ATS Stream Radar
+          </span>
+
+          <span className="text-zinc-300">|</span>
+
+          {/* Active Target Hubs Display */}
+          <span className="flex items-center gap-1 text-zinc-600 font-sans">
+            <MapPin className="w-3 h-3 text-rose-500" />
+            <span>Target Cities:</span>
+            <span className="font-mono text-zinc-900 font-bold">
+              {selectedCities.map((c) => {
+                const found = ALL_AVAILABLE_CITIES.find((item) => item.name === c);
+                return found ? found.short : c;
+              }).join(' • ')}
+            </span>
           </span>
         </div>
 

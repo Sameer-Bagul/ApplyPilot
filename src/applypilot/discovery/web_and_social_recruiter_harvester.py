@@ -191,8 +191,17 @@ def scrape_company_site_leadership(
     return result
 
 
-def search_web_recruiters(company_name: str, max_results: int = 5, domain: str | None = None) -> list[dict[str, Any]]:
-    """Search for real recruiters, CEOs, CTOs, and leadership blogs using DuckDuckGo search."""
+def search_web_recruiters(
+    company_name: str,
+    max_results: int = 5,
+    domain: str | None = None,
+    cities: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Search for real recruiters, CEOs, CTOs, and leadership blogs using DuckDuckGo search.
+    
+    Supports city-targeted queries (e.g. Bengaluru, Hyderabad, Pune, Delhi NCR, Remote)
+    to discover local recruiting desks, HR partners, and engineering leadership.
+    """
     people: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
@@ -203,6 +212,14 @@ def search_web_recruiters(company_name: str, max_results: int = 5, domain: str |
         f"{company_name} CEO founder linkedin",
         f"{company_name} CTO VP engineering linkedin",
     ]
+
+    # City-specific queries to capture regional tech hub talent partners & engineering heads
+    if cities and len(cities) > 0:
+        cities_or = " OR ".join(f'"{c}"' for c in cities)
+        queries.insert(0, f'"{company_name}" (recruiter OR "talent acquisition" OR "HR") ({cities_or}) site:linkedin.com/in')
+        queries.append(f'"{company_name}" ("Engineering Manager" OR "Head of Engineering" OR "Director") ({cities_or}) site:linkedin.com/in')
+        for c in cities[:2]:
+            queries.append(f'"{company_name}" technical recruiter "{c}" site:linkedin.com/in')
 
     if domain and "." in domain:
         queries.append(f'"{company_name}" (blog OR substack OR medium) ("CTO" OR "CEO" OR "founder")')
@@ -378,6 +395,7 @@ def enrich_company_deep(
     domain: str,
     careers_page_url: str | None = None,
     target_count: int = 10,
+    cities: list[str] | None = None,
     conn: Any = None,
 ) -> dict[str, Any]:
     """Execute deep multi-channel email enrichment and job radar for a single company."""
@@ -408,7 +426,7 @@ def enrich_company_deep(
 
         # 2. Multi-angle DuckDuckGo search for recruiters, CEOs, CTOs, and tech blogs
         try:
-            web_people = search_web_recruiters(company_name, max_results=5, domain=domain)
+            web_people = search_web_recruiters(company_name, max_results=5, domain=domain, cities=cities)
         except TypeError:
             web_people = search_web_recruiters(company_name, max_results=5)
 
@@ -534,6 +552,7 @@ def enrich_company_deep(
 def loop_and_enrich_all_watchlist_deep(
     min_emails: int = 8,
     limit: int | None = None,
+    cities: list[str] | None = None,
     conn: Any = None,
 ) -> dict[str, Any]:
     """Iterate through all companies in career_watchlist and ensure each has >= min_emails."""
@@ -570,6 +589,7 @@ def loop_and_enrich_all_watchlist_deep(
             domain=c_domain,
             careers_page_url=careers_url,
             target_count=min_emails,
+            cities=cities,
             conn=conn,
         )
 

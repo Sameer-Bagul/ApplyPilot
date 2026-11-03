@@ -57,6 +57,7 @@ def loop_and_enrich_single_company(
     enrich_emails: bool = True,
     poll_jobs: bool = True,
     target_emails: int = 8,
+    cities: list[str] | None = None,
     client: httpx.Client | None = None,
     conn: Any = None,
 ) -> dict[str, Any]:
@@ -118,6 +119,7 @@ def loop_and_enrich_single_company(
                 domain=c_domain,
                 careers_page_url=careers_url,
                 target_count=target_emails,
+                cities=cities,
                 conn=conn,
             )
             res["emails_added"] += deep_res.get("new_leads_added", 0)
@@ -230,6 +232,7 @@ def loop_all_watchlist_companies(
     target_emails: int = 8,
     enrich_emails: bool = True,
     poll_jobs: bool = True,
+    cities: list[str] | None = None,
     conn: Any = None,
 ) -> dict[str, Any]:
     """Loop over all companies in career_watchlist to maximize emails and capture open jobs."""
@@ -270,6 +273,7 @@ def loop_all_watchlist_companies(
                 enrich_emails=enrich_emails,
                 poll_jobs=poll_jobs,
                 target_emails=target_emails,
+                cities=cities,
                 client=client,
                 conn=conn,
             )
