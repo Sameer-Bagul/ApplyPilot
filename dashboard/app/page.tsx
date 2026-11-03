@@ -31,6 +31,8 @@ import {
   GitBranch,
 } from 'lucide-react';
 import { AgentRadarView } from '@/components/agent-radar/AgentRadarView';
+import { SourceBadge } from '@/components/ui/SourceBadge';
+import { RouteBadge } from '@/components/ui/RouteBadge';
 
 interface StatsData {
   totalJobs: number;
@@ -579,20 +581,18 @@ export default function DashboardPage() {
                   {stats?.recentJobs?.map((job, idx) => (
                     <div key={idx} className="py-3.5 flex items-center justify-between gap-4 group">
                       <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium text-sm text-zinc-900 truncate">
                             {job.title || 'Software Role'}
                           </span>
-                          {job.execution_route === 'DUAL_ATTACK' && (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200/60 shrink-0">
-                              DUAL
-                            </span>
-                          )}
+                          <RouteBadge route={job.execution_route} compact={true} />
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mt-0.5">
+                        <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1 flex-wrap">
                           <span className="font-medium text-zinc-700">{job.company || 'Startup'}</span>
                           <span>•</span>
                           <span className="truncate">{job.location || 'Bengaluru / Remote'}</span>
+                          <span>•</span>
+                          <SourceBadge site={job.site} compact={false} />
                         </div>
                       </div>
 
@@ -749,21 +749,11 @@ export default function DashboardPage() {
                             <span>{job.location || 'Remote'}</span>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 text-zinc-500 text-xs font-mono">
-                          {job.site || 'ATS'}
+                        <td className="py-3.5 px-4">
+                          <SourceBadge site={job.site} />
                         </td>
                         <td className="py-3.5 px-4">
-                          <span
-                            className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full border ${
-                              job.execution_route === 'DUAL_ATTACK'
-                                ? 'bg-rose-50 text-rose-700 border-rose-200/60'
-                                : job.execution_route === 'EMAIL_ONLY'
-                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200/60'
-                                : 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
-                            }`}
-                          >
-                            {job.execution_route || 'PORTAL'}
-                          </span>
+                          <RouteBadge route={job.execution_route} />
                         </td>
                         <td className="py-3.5 px-4 text-right rounded-r-2xl">
                           <a
@@ -1284,8 +1274,15 @@ export default function DashboardPage() {
                         className="liquid-glass rounded-2xl p-4 flex items-center justify-between gap-4 bg-white/70 hover:bg-white transition-all shadow-sm"
                       >
                         <div className="flex flex-col min-w-0">
-                          <span className="font-semibold text-sm text-zinc-900 truncate">{job.title}</span>
-                          <span className="text-xs text-zinc-500 mt-0.5">{job.location || 'Bengaluru / Remote'}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm text-zinc-900 truncate">{job.title}</span>
+                            <RouteBadge route={job.execution_route} compact={true} />
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1 flex-wrap">
+                            <span className="truncate">{job.location || 'Bengaluru / Remote'}</span>
+                            <span>•</span>
+                            <SourceBadge site={job.site} />
+                          </div>
                         </div>
                         <a
                           href={job.url}
