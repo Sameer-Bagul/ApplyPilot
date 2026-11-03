@@ -36,6 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js 22 LTS for Next.js liquid-glass dashboard UI
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create dedicated non-root user
 RUN groupadd -g 1000 applypilot && \
     useradd -u 1000 -g applypilot -m -s /bin/bash applypilot
@@ -60,6 +65,12 @@ RUN pip install --upgrade pip setuptools wheel && \
 COPY --chown=applypilot:applypilot . .
 RUN pip install .
 
+# Install dependencies and build Next.js liquid-glass dashboard UI
+RUN cd dashboard && \
+    (npm ci || npm install) && \
+    npm run build && \
+    chown -R applypilot:applypilot /home/applypilot/app/dashboard
+
 # Setup entrypoint
 COPY --chown=applypilot:applypilot docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
@@ -70,8 +81,8 @@ VOLUME ["/home/applypilot/.applypilot", "/home/applypilot/.gmail-mcp"]
 # Switch to non-root user
 USER applypilot
 
-# Expose ports: 8080 (Web Dashboard), 8000 (MCP Server HTTP transport)
-EXPOSE 8080 8000
+# Expose ports: 3000 (Next.js Dashboard), 8080 (Legacy Dashboard), 8000 (MCP Server HTTP transport)
+EXPOSE 3000 8080 8000
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["status"]
+CMD ["all"]

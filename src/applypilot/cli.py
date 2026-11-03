@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -1061,6 +1062,22 @@ def mcp() -> None:
     run_server()
 
 
+def _find_dashboard_dir() -> Optional[Path]:
+    """Locate the Next.js dashboard directory across local dev, Docker, and package environments."""
+    candidates = [
+        os.environ.get("APPLYPILOT_DASHBOARD_DIR"),
+        Path.cwd() / "dashboard",
+        Path(__file__).resolve().parent.parent.parent / "dashboard",
+        Path("/home/applypilot/app/dashboard"),
+    ]
+    for c in candidates:
+        if c:
+            p = Path(c).resolve()
+            if p.exists() and (p / "package.json").exists():
+                return p
+    return None
+
+
 @app.command()
 def dashboard(
     serve: bool = typer.Option(False, "--serve", "-s", help="Serve legacy dashboard over HTTP."),
@@ -1073,12 +1090,24 @@ def dashboard(
 
     if next_ui:
         import subprocess
-        dashboard_dir = Path(__file__).resolve().parent.parent.parent / "dashboard"
-        if dashboard_dir.exists():
+        dashboard_dir = _find_dashboard_dir()
+        if dashboard_dir:
             console.print(f"[bold green]Starting Next.js iOS Liquid-Glass Dashboard on port {port}...[/bold green]")
-            console.print(f"[bold cyan]Open http://localhost:{port} in your browser.[/bold cyan]")
+            console.print(f"[bold cyan]Open http://{host}:{port} in your browser.[/bold cyan]")
             try:
-                subprocess.run(["npm", "run", "dev", "--", "-p", str(port)], cwd=str(dashboard_dir), check=True)
+                # Prefer optimized production start if .next exists, else dev
+                if (dashboard_dir / ".next").exists():
+                    subprocess.run(
+                        ["npx", "next", "start", "-H", host, "-p", str(port)],
+                        cwd=str(dashboard_dir),
+                        check=True,
+                    )
+                else:
+                    subprocess.run(
+                        ["npx", "next", "dev", "-H", host, "-p", str(port)],
+                        cwd=str(dashboard_dir),
+                        check=True,
+                    )
             except KeyboardInterrupt:
                 console.print("\n[dim]Dashboard server stopped.[/dim]")
             return

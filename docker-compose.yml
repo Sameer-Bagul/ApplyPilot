@@ -59,7 +59,7 @@ services:
       - .:/home/applypilot/data:ro
     command: ["track", "--poll-hitl", "--interval", "60"]
 
-  # Live HTML Dashboard server
+  # Live Next.js Liquid-Glass UI Dashboard
   dashboard:
     build:
       context: .
@@ -68,10 +68,10 @@ services:
     container_name: applypilot-dashboard
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "3000:3000"
     volumes:
       - applypilot_home:/home/applypilot/.applypilot
-    command: ["dashboard", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "3000"]
 
   # FastMCP server for AI agent integrations (e.g. Claude Desktop, IDE, Cursor)
   mcp:

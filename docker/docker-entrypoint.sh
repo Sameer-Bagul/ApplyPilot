@@ -26,20 +26,49 @@ for f in "$DATA_DIR"/*.pdf "$DATA_DIR"/*.docx; do
 done
 shopt -u nullglob
 
+# Ensure database tables and config directory exist
+applypilot status >/dev/null 2>&1 || true
+
+# If START_UI or START_DASHBOARD is enabled, launch Next.js in background
+if [ "${START_UI:-false}" = "true" ] || [ "${START_DASHBOARD:-false}" = "true" ]; then
+    echo "[ApplyPilot] Starting Next.js UI Dashboard in background on http://0.0.0.0:3000..."
+    (
+        cd "$APP_DIR/dashboard"
+        if [ -d ".next" ]; then
+            exec npx next start -H 0.0.0.0 -p 3000
+        else
+            exec npx next dev -H 0.0.0.0 -p 3000
+        fi
+    ) &
+fi
+
 # Dispatch commands
 case "$1" in
-    init|run|apply|status|track|learn|mcp|qa|creds)
-        exec applypilot "$@"
+    all|start)
+        echo "[ApplyPilot] Starting ApplyPilot iOS Liquid-Glass UI Dashboard on http://0.0.0.0:3000..."
+        if [ "${START_TRACKER:-false}" = "true" ]; then
+            echo "[ApplyPilot] Starting background email tracker daemon..."
+            applypilot track --poll-hitl --interval 60 &
+        fi
+        if [ "${START_WORKER:-false}" = "true" ]; then
+            echo "[ApplyPilot] Starting background apply worker daemon..."
+            applypilot apply --workers "${WORKERS:-2}" &
+        fi
+        exec applypilot dashboard --host 0.0.0.0 --port 3000
         ;;
     dashboard)
         shift
-        exec applypilot dashboard --serve --host 0.0.0.0 --port 8080 "$@"
+        exec applypilot dashboard --host 0.0.0.0 --port 3000 "$@"
+        ;;
+    init|run|apply|status|track|learn|mcp|qa|creds|run-daily|discover-all|harvest-vc-boards|import-fundraising-founders|import-startupmap-one|loop-companies|harvest-all-directories)
+        exec applypilot "$@"
         ;;
     -*)
         exec applypilot "$@"
         ;;
     "")
-        exec applypilot --help
+        echo "[ApplyPilot] Defaulting to ApplyPilot iOS Liquid-Glass UI Dashboard..."
+        exec applypilot dashboard --host 0.0.0.0 --port 3000
         ;;
     *)
         exec "$@"
