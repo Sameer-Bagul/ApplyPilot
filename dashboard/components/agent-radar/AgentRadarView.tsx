@@ -372,9 +372,9 @@ export function AgentRadarView() {
       )}
 
       {/* 3. MAIN SPLIT VIEWPORT: DAG GRAPH ON LEFT, NODE INSPECTOR ON RIGHT */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-6 items-start">
         {/* LEFT / CENTER: Directed Acyclic Graph */}
-        <div className="lg:col-span-7 flex flex-col gap-3">
+        <div className="xl:col-span-7 flex flex-col gap-3">
           <div className="liquid-glass rounded-3xl p-5 shadow-sm overflow-hidden flex flex-col gap-3 min-h-[440px] relative">
             <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
             {/* Graph Header / Legend */}
@@ -457,13 +457,14 @@ export function AgentRadarView() {
         </div>
 
         {/* RIGHT: Deep Node Inspector */}
-        <div className="lg:col-span-5">
+        <div className="xl:col-span-5">
           <NodeInspector node={selectedNode} />
         </div>
       </div>
 
       {/* 4. REAL-TIME 11-ATS PLATFORM GRID & ARCHITECTURE REFERENCE */}
-      <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-4 border border-white/80 shadow-sm">
+      <div className="liquid-glass rounded-3xl p-4 sm:p-6 flex flex-col gap-4 border border-white/80 shadow-sm relative overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
         <div className="flex flex-col gap-1 pb-3 border-b border-zinc-200/60">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -472,14 +473,14 @@ export function AgentRadarView() {
                 11-ATS Keyless Stream Poller & ETag Change Detection
               </h3>
             </div>
-            <span className="text-[11px] font-mono text-zinc-400">Zero Auth Required</span>
+            <span className="text-[11px] font-mono text-zinc-400 hidden sm:inline">Zero Auth Required</span>
           </div>
           <p className="text-xs text-zinc-500">
             ApplyPilot connects directly to public REST/JSON APIs, XML streams, and JSON-LD Schema.org feeds with millisecond launch detection.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3">
           {[
             { name: 'Naukri India', status: 'JobSpy API', type: 'naukri.com' },
             { name: 'Indeed (India/US)', status: 'Live API', type: 'in.indeed.com' },

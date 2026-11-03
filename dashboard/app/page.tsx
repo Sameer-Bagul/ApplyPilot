@@ -29,6 +29,9 @@ import {
   Layers,
   Activity,
   GitBranch,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { AgentRadarView } from '@/components/agent-radar/AgentRadarView';
 import { SourceBadge } from '@/components/ui/SourceBadge';
@@ -86,6 +89,10 @@ export default function DashboardPage() {
   const [drilldownLoading, setDrilldownLoading] = useState(false);
   const [drawerTab, setDrawerTab] = useState<'leads' | 'jobs'>('leads');
   const [copiedAllEmails, setCopiedAllEmails] = useState(false);
+
+  // Responsive Navigation State
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const openCompanyDrilldown = async (company: any) => {
     setSelectedCompany(company);
@@ -218,179 +225,300 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const navItems: Array<{
+    id: 'overview' | 'jobs' | 'companies' | 'leads' | 'radar';
+    label: string;
+    icon: any;
+    color: string;
+    badge: string | null;
+    badgeColor: string;
+  }> = [
+    {
+      id: 'overview',
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      color: 'text-purple-600',
+      badge: null,
+      badgeColor: '',
+    },
+    {
+      id: 'jobs',
+      label: 'All Jobs',
+      icon: Briefcase,
+      color: 'text-blue-600',
+      badge: stats?.totalJobs ? stats.totalJobs.toLocaleString() : null,
+      badgeColor: 'bg-blue-50 text-blue-700 border-blue-200/50',
+    },
+    {
+      id: 'companies',
+      label: 'Companies',
+      icon: Building2,
+      color: 'text-amber-600',
+      badge: stats?.totalCompanies ? stats.totalCompanies.toLocaleString() : null,
+      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200/50',
+    },
+    {
+      id: 'leads',
+      label: 'Contacts & Leads',
+      icon: Users,
+      color: 'text-emerald-600',
+      badge: stats?.totalLeads ? stats.totalLeads.toLocaleString() : null,
+      badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200/50',
+    },
+    {
+      id: 'radar',
+      label: 'Agent Radar',
+      icon: GitBranch,
+      color: 'text-purple-600',
+      badge: 'LIVE DAG',
+      badgeColor: 'bg-purple-50 text-purple-700 border-purple-200/60',
+    },
+  ];
+
   return (
-    <div className="flex min-h-screen p-4 md:p-6 lg:p-8 gap-6 max-w-[1600px] mx-auto">
-      {/* ----------------- SIDEBAR ----------------- */}
-      <aside className="w-64 shrink-0 flex flex-col gap-6">
+    <div className="flex flex-col md:flex-row min-h-screen p-2.5 sm:p-3 md:p-4 lg:p-5 2xl:p-7 gap-3 sm:gap-4 lg:gap-6 w-full max-w-none">
+      {/* ----------------- DESKTOP & TABLET SIDEBAR ----------------- */}
+      <aside
+        className={`hidden md:flex flex-col gap-4 lg:gap-6 shrink-0 transition-all duration-300 ${
+          sidebarCollapsed ? 'w-20' : 'w-56 lg:w-64'
+        }`}
+      >
         {/* Brand Liquid Glass Card */}
-        <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-8">
-          {/* Logo & Orb */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full orb-peach shrink-0 flex items-center justify-center" />
-            <div className="flex flex-col">
-              <span className="font-semibold text-lg tracking-tight text-zinc-900">ApplyPilot</span>
-              <span className="text-xs text-zinc-400 font-medium tracking-wide">AUTONOMOUS AGENT</span>
+        <div
+          className={`liquid-glass rounded-3xl flex flex-col transition-all relative overflow-hidden shadow-sm ${
+            sidebarCollapsed ? 'p-3 items-center gap-4' : 'p-5 lg:p-6 gap-6'
+          }`}
+        >
+          <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
+
+          {/* Logo, Title & Collapse Button */}
+          <div className={`flex items-center w-full ${sidebarCollapsed ? 'flex-col gap-2' : 'justify-between gap-3'}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-full orb-peach shrink-0 flex items-center justify-center shadow-md" />
+              {!sidebarCollapsed && (
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-lg tracking-tight text-zinc-900 truncate">ApplyPilot</span>
+                  <span className="text-[10px] text-zinc-400 font-semibold tracking-wider uppercase">AUTONOMOUS</span>
+                </div>
+              )}
             </div>
+
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? "Expand Sidebar (27\" / Full Mode)" : "Collapse Sidebar (13\" / Compact Mode)"}
+              className="liquid-pill rounded-full p-1.5 text-zinc-500 hover:text-zinc-950 transition-all cursor-pointer shadow-xs shrink-0"
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </button>
           </div>
 
           {/* Navigation Items */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 px-3 mb-2">
-              Navigation
-            </span>
-
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
-                activeTab === 'overview'
-                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
-                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <LayoutDashboard className="w-4 h-4 text-purple-600" />
-                <span>Dashboard</span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('jobs')}
-              className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
-                activeTab === 'jobs'
-                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
-                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Briefcase className="w-4 h-4 text-blue-600" />
-                <span>All Jobs</span>
-              </div>
-              {stats?.totalJobs ? (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/50">
-                  {stats.totalJobs.toLocaleString()}
-                </span>
-              ) : null}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('companies')}
-              className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
-                activeTab === 'companies'
-                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
-                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Building2 className="w-4 h-4 text-amber-600" />
-                <span>Companies</span>
-              </div>
-              {stats?.totalCompanies ? (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/50">
-                  {stats.totalCompanies.toLocaleString()}
-                </span>
-              ) : null}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('leads')}
-              className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
-                activeTab === 'leads'
-                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
-                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Users className="w-4 h-4 text-emerald-600" />
-                <span>Contacts & Leads</span>
-              </div>
-              {stats?.totalLeads ? (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/50">
-                  {stats.totalLeads.toLocaleString()}
-                </span>
-              ) : null}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('radar')}
-              className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
-                activeTab === 'radar'
-                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
-                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <GitBranch className="w-4 h-4 text-purple-600" />
-                <span>Agent Radar</span>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60 shadow-xs">
-                LIVE DAG
+          <div className="flex flex-col gap-1.5 w-full">
+            {!sidebarCollapsed && (
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 px-3 mb-1">
+                Navigation
               </span>
-            </button>
+            )}
+
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  title={sidebarCollapsed ? `${item.label} ${item.badge ? `(${item.badge})` : ''}` : undefined}
+                  className={`flex items-center rounded-2xl text-sm font-medium transition-all cursor-pointer relative ${
+                    sidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-2.5'
+                  } ${
+                    isActive
+                      ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
+                      : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${item.color} shrink-0`} />
+                    {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                  </div>
+                  {!sidebarCollapsed && item.badge ? (
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${item.badgeColor || 'bg-zinc-100 text-zinc-700'} shrink-0`}>
+                      {item.badge}
+                    </span>
+                  ) : null}
+                  {sidebarCollapsed && isActive && (
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-purple-600" />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* System Looper Status Card */}
-        <div className="liquid-glass rounded-3xl p-5 flex flex-col gap-4 text-xs">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 px-1">
-            Looper Engine
-          </span>
+        {!sidebarCollapsed ? (
+          <div className="liquid-glass rounded-3xl p-5 flex flex-col gap-3.5 text-xs relative overflow-hidden shadow-sm">
+            <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 px-1">
+              Looper Engine
+            </span>
 
-          <div className="flex flex-col gap-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">Tier 1 Sweep</span>
-              <span className="font-medium text-emerald-600 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Every 6h
-              </span>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">Tier 1 Sweep</span>
+                <span className="font-medium text-emerald-600 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Every 6h
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">ATS Feeds</span>
+                <span className="font-semibold text-zinc-800">11 Platforms</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">Synthesis</span>
+                <span className="font-semibold text-zinc-800">DoH MX Active</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">ATS Feeds</span>
-              <span className="font-medium text-zinc-800">11 Platforms</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">Email Synthesis</span>
-              <span className="font-medium text-zinc-800">DoH MX Active</span>
+
+            <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-zinc-400 text-[11px]">
+              <span>DB: Local SQLite</span>
+              <span className="font-mono text-[10px]">WAL Active</span>
             </div>
           </div>
-
-          <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-zinc-400">
-            <span>DB: SQLite WAL</span>
-            <span className="font-mono text-[10px]">100% Local</span>
+        ) : (
+          <div
+            title="Looper Engine: 11 ATS Platforms, DoH MX Active, Local SQLite WAL"
+            className="liquid-glass rounded-3xl p-3 flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm relative overflow-hidden"
+          >
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-mono text-zinc-500 text-center">WAL</span>
           </div>
-        </div>
+        )}
       </aside>
 
+      {/* ----------------- MOBILE SLIDE-OVER DRAWER (PHONES) ----------------- */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex bg-zinc-950/30 backdrop-blur-md transition-opacity">
+          <div className="w-72 max-w-[85vw] h-full liquid-glass-elevated border-r border-white/90 p-5 flex flex-col gap-6 shadow-2xl relative animate-in slide-in-from-left duration-200 overflow-y-auto">
+            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none z-20" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full orb-peach shrink-0 flex items-center justify-center shadow-md" />
+                <span className="font-bold text-lg text-zinc-900">ApplyPilot</span>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="liquid-pill rounded-full p-2 text-zinc-500 hover:text-zinc-950 cursor-pointer shadow-xs"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 px-3 mb-1">
+                Navigation
+              </span>
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
+                      isActive
+                        ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95'
+                        : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-4 h-4 ${item.color}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${item.badgeColor || 'bg-zinc-100 text-zinc-700'}`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Mobile Looper summary */}
+            <div className="mt-auto liquid-glass-subtle rounded-2xl p-4 flex flex-col gap-2 text-xs border border-white/80">
+              <span className="text-[10px] uppercase font-bold text-zinc-400">System Telemetry</span>
+              <div className="flex justify-between text-zinc-600">
+                <span>ATS Discovery:</span>
+                <span className="font-semibold text-zinc-900">11 Platforms</span>
+              </div>
+              <div className="flex justify-between text-zinc-600">
+                <span>Outreach Synthesis:</span>
+                <span className="font-semibold text-emerald-600">Active (DoH MX)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ----------------- MAIN CONTENT AREA ----------------- */}
-      <main className="flex-1 flex flex-col gap-6 min-w-0">
+      <main className="flex-1 flex flex-col gap-4 sm:gap-6 min-w-0">
         {/* Top Header / Search & Profile Bar */}
-        <header className="flex items-center justify-between gap-4">
-          {/* Frosted Pill Search */}
-          <div className="liquid-glass rounded-full px-5 py-2.5 flex items-center gap-3 max-w-md w-full shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
-            <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
-            <Search className="w-4 h-4 text-zinc-400 shrink-0 group-hover:text-purple-600 transition-colors" />
-            <input
-              type="text"
-              placeholder="Search jobs, startups, or recruiter emails..."
-              className="bg-transparent border-none outline-none text-sm text-zinc-800 placeholder:text-zinc-400 w-full"
-              value={activeTab === 'jobs' ? jobSearch : activeTab === 'companies' ? companySearch : leadSearch}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (activeTab === 'jobs') {
-                  setJobSearch(val);
-                  fetchJobs(1, val);
-                } else if (activeTab === 'companies') {
-                  setCompanySearch(val);
-                  fetchCompanies(1, val);
-                } else {
-                  setLeadSearch(val);
-                  fetchLeads(1, val);
+        <header className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+            {/* Mobile Hamburger Button */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden liquid-pill rounded-2xl p-2 text-zinc-700 hover:text-zinc-950 shadow-xs cursor-pointer shrink-0"
+              title="Open Navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Frosted Pill Search */}
+            <div className="liquid-glass rounded-full px-4 sm:px-5 py-2 sm:py-2.5 flex items-center gap-2.5 sm:gap-3 flex-1 max-w-full sm:max-w-md lg:max-w-lg shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+              <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
+              <Search className="w-4 h-4 text-zinc-400 shrink-0 group-hover:text-purple-600 transition-colors" />
+              <input
+                type="text"
+                placeholder={
+                  activeTab === 'jobs'
+                    ? "Search roles, ATS platforms, or keywords..."
+                    : activeTab === 'companies'
+                    ? "Search companies, hubs, or sectors..."
+                    : activeTab === 'leads'
+                    ? "Search recruiter names or emails..."
+                    : "Search jobs, startups, or recruiter emails..."
                 }
-              }}
-            />
+                className="bg-transparent border-none outline-none text-xs sm:text-sm text-zinc-800 placeholder:text-zinc-400 w-full min-w-0"
+                value={activeTab === 'jobs' ? jobSearch : activeTab === 'companies' ? companySearch : leadSearch}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (activeTab === 'jobs') {
+                    setJobSearch(val);
+                    fetchJobs(1, val);
+                  } else if (activeTab === 'companies') {
+                    setCompanySearch(val);
+                    fetchCompanies(1, val);
+                  } else {
+                    setLeadSearch(val);
+                    fetchLeads(1, val);
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {/* Header Right Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 justify-end shrink-0">
             <button
               onClick={() => {
                 fetchStats();
@@ -399,17 +527,17 @@ export default function DashboardPage() {
                 if (activeTab === 'leads') fetchLeads(leadPage);
               }}
               title="Refresh Data"
-              className="liquid-pill rounded-full w-10 h-10 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-sm cursor-pointer"
+              className="liquid-pill rounded-full w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-xs cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
 
             {/* User Avatar */}
-            <div className="liquid-pill rounded-full pl-2 pr-4 py-1.5 flex items-center gap-2.5 shadow-sm cursor-pointer">
-              <div className="w-7 h-7 rounded-full orb-peach flex items-center justify-center text-white text-xs font-semibold shadow-inner">
+            <div className="liquid-pill rounded-full pl-1.5 sm:pl-2 pr-3 sm:pr-4 py-1 sm:py-1.5 flex items-center gap-2 sm:gap-2.5 shadow-xs cursor-pointer">
+              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full orb-peach flex items-center justify-center text-white text-[11px] sm:text-xs font-semibold shadow-inner">
                 SB
               </div>
-              <span className="text-sm font-semibold text-zinc-800">Sameer Bagul</span>
+              <span className="text-xs sm:text-sm font-semibold text-zinc-800 hidden xs:inline sm:inline">Sameer Bagul</span>
             </div>
           </div>
         </header>
@@ -693,19 +821,19 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB: ALL JOBS ----------------- */}
         {activeTab === 'jobs' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6 relative overflow-hidden shadow-sm">
+          <div className="liquid-glass rounded-3xl p-4 sm:p-6 flex flex-col gap-4 sm:gap-6 relative overflow-hidden shadow-sm">
             <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
             {/* Header & Filter Controls */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
-                <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Active Job Openings</h2>
+                <h2 className="text-base sm:text-lg font-semibold text-zinc-900 tracking-tight">Active Job Openings</h2>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   Showing {jobs.length} of {jobPagination.total.toLocaleString()} opportunities indexed
                 </p>
               </div>
 
               {/* Execution Route Filter Pills */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                 {['ALL', 'DUAL_ATTACK', 'PORTAL_ONLY', 'EMAIL_ONLY'].map((route) => (
                   <button
                     key={route}
@@ -713,7 +841,7 @@ export default function DashboardPage() {
                       setJobRoute(route);
                       fetchJobs(1, jobSearch, route);
                     }}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                    className={`rounded-full px-3 sm:px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                       jobRoute === route
                         ? 'liquid-pill-dark shadow-md'
                         : 'liquid-pill text-zinc-600 hover:text-zinc-950 shadow-xs'
@@ -726,16 +854,16 @@ export default function DashboardPage() {
             </div>
 
             {/* Jobs Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-y-2.5">
+            <div className="overflow-x-auto -mx-2 sm:mx-0">
+              <table className="w-full text-left text-sm border-separate border-spacing-y-2 sm:border-spacing-y-2.5">
                 <thead>
                   <tr className="text-xs font-medium text-zinc-400">
-                    <th className="pb-2 px-4">Role Title</th>
-                    <th className="pb-2 px-4">Company</th>
-                    <th className="pb-2 px-4">Location</th>
-                    <th className="pb-2 px-4">Source / ATS</th>
-                    <th className="pb-2 px-4">Route</th>
-                    <th className="pb-2 px-4 text-right">Action</th>
+                    <th className="pb-2 px-3 sm:px-4">Role Title</th>
+                    <th className="pb-2 px-2 sm:px-4">Company</th>
+                    <th className="hidden sm:table-cell pb-2 px-2 sm:px-4">Location</th>
+                    <th className="pb-2 px-2 sm:px-4">Source</th>
+                    <th className="hidden md:table-cell pb-2 px-2 sm:px-4">Route</th>
+                    <th className="pb-2 px-3 sm:px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -757,30 +885,32 @@ export default function DashboardPage() {
                   ) : (
                     jobs.map((job, idx) => (
                       <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
-                        <td className="py-3.5 px-4 font-semibold text-zinc-900 rounded-l-2xl">
-                          <span className="truncate block max-w-xs md:max-w-md group-hover:text-purple-950 transition-colors">
+                        <td className="py-3 px-3 sm:px-4 font-semibold text-zinc-900 rounded-l-2xl">
+                          <span className="truncate block max-w-[130px] xs:max-w-[190px] sm:max-w-xs md:max-w-md 2xl:max-w-xl group-hover:text-purple-950 transition-colors">
                             {job.title}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-zinc-700 font-medium">{job.company || 'Company'}</td>
-                        <td className="py-3.5 px-4 text-zinc-500 text-xs">
-                          <div className="flex items-center gap-1.5 truncate max-w-xs">
+                        <td className="py-3 px-2 sm:px-4 text-zinc-700 font-medium text-xs sm:text-sm">
+                          <span className="truncate block max-w-[90px] sm:max-w-none">{job.company || 'Company'}</span>
+                        </td>
+                        <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-zinc-500 text-xs">
+                          <div className="flex items-center gap-1.5 truncate max-w-[130px] lg:max-w-xs">
                             <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                            <span>{job.location || 'Remote'}</span>
+                            <span className="truncate">{job.location || 'Remote'}</span>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="py-3 px-2 sm:px-4">
                           <SourceBadge site={job.site} />
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="hidden md:table-cell py-3 px-2 sm:px-4">
                           <RouteBadge route={job.execution_route} />
                         </td>
-                        <td className="py-3.5 px-4 text-right rounded-r-2xl">
+                        <td className="py-3 px-3 sm:px-4 text-right rounded-r-2xl">
                           <a
                             href={job.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="liquid-pill-dark inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer"
+                            className="liquid-pill-dark inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer shrink-0"
                           >
                             <span>Apply</span>
                             <ArrowUpRight className="w-3.5 h-3.5" />
@@ -822,11 +952,11 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB: COMPANIES (WATCHLIST) ----------------- */}
         {activeTab === 'companies' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6 relative overflow-hidden shadow-sm">
+          <div className="liquid-glass rounded-3xl p-4 sm:p-6 flex flex-col gap-4 sm:gap-6 relative overflow-hidden shadow-sm">
             <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
-                <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Career Watchlist & VIP Startups</h2>
+                <h2 className="text-base sm:text-lg font-semibold text-zinc-900 tracking-tight">Career Watchlist & VIP Startups</h2>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   Showing {companies.length} of {companyPagination.total.toLocaleString()} monitored companies
                 </p>
@@ -839,7 +969,7 @@ export default function DashboardPage() {
                     setCompanyVipOnly(nextVip);
                     fetchCompanies(1, companySearch, nextVip);
                   }}
-                  className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                  className={`rounded-full px-3.5 sm:px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                     companyVipOnly
                       ? 'liquid-pill-dark shadow-md'
                       : 'liquid-pill text-zinc-600 hover:text-zinc-950 shadow-xs'
@@ -851,18 +981,18 @@ export default function DashboardPage() {
             </div>
 
             {/* Companies Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-y-2.5">
+            <div className="overflow-x-auto -mx-2 sm:mx-0">
+              <table className="w-full text-left text-sm border-separate border-spacing-y-2 sm:border-spacing-y-2.5">
                 <thead>
                   <tr className="text-xs font-medium text-zinc-400">
-                    <th className="pb-2 px-4">Company Name</th>
-                    <th className="pb-2 px-4">Stage & Funding</th>
-                    <th className="pb-2 px-4">Sector</th>
-                    <th className="pb-2 px-4">Hub / Area</th>
-                    <th className="pb-2 px-4">ATS Provider</th>
-                    <th className="pb-2 px-4 text-center">Open Roles</th>
-                    <th className="pb-2 px-4 text-center">Verified Outreach</th>
-                    <th className="pb-2 px-4 text-right">Drill Down</th>
+                    <th className="pb-2 px-3 sm:px-4">Company Name</th>
+                    <th className="hidden lg:table-cell pb-2 px-2 sm:px-4">Stage</th>
+                    <th className="hidden md:table-cell pb-2 px-2 sm:px-4">Sector</th>
+                    <th className="hidden sm:table-cell pb-2 px-2 sm:px-4">Hub / Area</th>
+                    <th className="hidden 2xl:table-cell pb-2 px-2 sm:px-4">ATS Provider</th>
+                    <th className="pb-2 px-2 sm:px-4 text-center">Open Roles</th>
+                    <th className="pb-2 px-2 sm:px-4 text-center">Outreach</th>
+                    <th className="pb-2 px-3 sm:px-4 text-right">Drill Down</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -884,9 +1014,9 @@ export default function DashboardPage() {
                   ) : (
                     companies.map((c, idx) => (
                       <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
-                        <td className="py-3.5 px-4 font-semibold text-zinc-900 rounded-l-2xl">
-                          <div className="flex items-center gap-2">
-                            <span className="group-hover:text-amber-950 transition-colors">{c.company_name}</span>
+                        <td className="py-3 px-3 sm:px-4 font-semibold text-zinc-900 rounded-l-2xl">
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span className="group-hover:text-amber-950 transition-colors truncate max-w-[120px] xs:max-w-[170px] sm:max-w-none">{c.company_name}</span>
                             {c.is_vip === 1 && (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60 shrink-0">
                                 VIP
@@ -894,30 +1024,31 @@ export default function DashboardPage() {
                             )}
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 text-xs text-zinc-600 font-medium">
+                        <td className="hidden lg:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-600 font-medium">
                           {c.stage || 'Funded'}
                         </td>
-                        <td className="py-3.5 px-4 text-xs text-zinc-600">{c.sector || 'Technology'}</td>
-                        <td className="py-3.5 px-4 text-xs text-zinc-500">{c.area || c.location || 'Bengaluru'}</td>
-                        <td className="py-3.5 px-4 text-xs font-mono text-zinc-600">
+                        <td className="hidden md:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-600">{c.sector || 'Technology'}</td>
+                        <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-500">{c.area || c.location || 'Bengaluru'}</td>
+                        <td className="hidden 2xl:table-cell py-3 px-2 sm:px-4 text-xs font-mono text-zinc-600">
                           {c.ats_provider || 'Direct'}
                         </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-zinc-800">
+                        <td className="py-3 px-2 sm:px-4 text-center font-bold text-zinc-800">
                           {c.open_roles_count || 0}
                         </td>
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3 px-2 sm:px-4 text-center">
                           <button
                             onClick={() => openCompanyDrilldown(c)}
-                            className="liquid-pill inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50/80 text-rose-700 hover:bg-rose-100 border border-rose-200/60 transition-all cursor-pointer shadow-xs"
+                            className="liquid-pill inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full text-xs font-semibold bg-rose-50/80 text-rose-700 hover:bg-rose-100 border border-rose-200/60 transition-all cursor-pointer shadow-xs shrink-0"
                           >
                             <Mail className="w-3.5 h-3.5 text-rose-500" />
-                            <span>{c.emails?.length ? `${c.emails.length} Inboxes` : '8+ Inboxes'}</span>
+                            <span>{c.emails?.length ? `${c.emails.length}` : '8+'}</span>
+                            <span className="hidden sm:inline">Inboxes</span>
                           </button>
                         </td>
-                        <td className="py-3.5 px-4 text-right rounded-r-2xl">
+                        <td className="py-3 px-3 sm:px-4 text-right rounded-r-2xl">
                           <button
                             onClick={() => openCompanyDrilldown(c)}
-                            className="liquid-pill inline-flex items-center gap-1 text-xs font-semibold text-zinc-800 hover:text-zinc-950 px-3.5 py-1.5 rounded-full shadow-xs cursor-pointer"
+                            className="liquid-pill inline-flex items-center gap-1 text-xs font-semibold text-zinc-800 hover:text-zinc-950 px-2.5 sm:px-3.5 py-1.5 rounded-full shadow-xs cursor-pointer shrink-0"
                           >
                             <span>Explore</span>
                             <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-950" />
@@ -959,17 +1090,17 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB: CONTACTS & EMAILS ----------------- */}
         {activeTab === 'leads' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6 relative overflow-hidden shadow-sm">
+          <div className="liquid-glass rounded-3xl p-4 sm:p-6 flex flex-col gap-4 sm:gap-6 relative overflow-hidden shadow-sm">
             <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
-                <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Verified Recruiter & Founder Leads</h2>
+                <h2 className="text-base sm:text-lg font-semibold text-zinc-900 tracking-tight">Verified Recruiter & Founder Leads</h2>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   Showing {leads.length} of {leadPagination.total.toLocaleString()} synthesized contacts
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                 {['ALL', 'founder', 'recruiter', 'inbox'].map((type) => (
                   <button
                     key={type}
@@ -977,7 +1108,7 @@ export default function DashboardPage() {
                       setLeadType(type);
                       fetchLeads(1, leadSearch, type);
                     }}
-                    className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                    className={`rounded-full px-3.5 sm:px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                       leadType === type
                         ? 'liquid-pill-dark shadow-md'
                         : 'liquid-pill text-zinc-600 hover:text-zinc-950 shadow-xs'
@@ -990,16 +1121,16 @@ export default function DashboardPage() {
             </div>
 
             {/* Leads Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-y-2.5">
+            <div className="overflow-x-auto -mx-2 sm:mx-0">
+              <table className="w-full text-left text-sm border-separate border-spacing-y-2 sm:border-spacing-y-2.5">
                 <thead>
                   <tr className="text-xs font-medium text-zinc-400">
-                    <th className="pb-2 px-4">Contact & Title</th>
-                    <th className="pb-2 px-4">Company</th>
-                    <th className="pb-2 px-4">Verified Email</th>
-                    <th className="pb-2 px-4">Type</th>
-                    <th className="pb-2 px-4">LinkedIn Note (≤280 chars)</th>
-                    <th className="pb-2 px-4 text-right">Actions</th>
+                    <th className="pb-2 px-3 sm:px-4">Contact & Title</th>
+                    <th className="pb-2 px-2 sm:px-4">Company</th>
+                    <th className="pb-2 px-2 sm:px-4">Verified Email</th>
+                    <th className="hidden sm:table-cell pb-2 px-2 sm:px-4">Type</th>
+                    <th className="hidden xl:table-cell pb-2 px-2 sm:px-4">LinkedIn Note</th>
+                    <th className="pb-2 px-3 sm:px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1021,24 +1152,26 @@ export default function DashboardPage() {
                   ) : (
                     leads.map((l, idx) => (
                       <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
-                        <td className="py-3.5 px-4 font-semibold text-zinc-900 rounded-l-2xl">
+                        <td className="py-3 px-3 sm:px-4 font-semibold text-zinc-900 rounded-l-2xl">
                           <div className="flex flex-col">
-                            <span className="group-hover:text-emerald-950 transition-colors">
+                            <span className="group-hover:text-emerald-950 transition-colors truncate max-w-[120px] xs:max-w-[170px] sm:max-w-xs">
                               {l.contact_name || l.role_title}
                             </span>
                             {l.contact_name && (
-                              <span className="text-xs text-zinc-500 font-normal">{l.role_title}</span>
+                              <span className="text-xs text-zinc-500 font-normal truncate max-w-[120px] xs:max-w-[170px] sm:max-w-xs">{l.role_title}</span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 font-semibold text-zinc-700">{l.company_name}</td>
-                        <td className="py-3.5 px-4 text-xs font-mono text-zinc-800">
+                        <td className="py-3 px-2 sm:px-4 font-semibold text-zinc-700 text-xs sm:text-sm">
+                          <span className="truncate block max-w-[90px] sm:max-w-none">{l.company_name}</span>
+                        </td>
+                        <td className="py-3 px-2 sm:px-4 text-xs font-mono text-zinc-800">
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate max-w-[200px] text-zinc-700 font-medium">{l.contact_email}</span>
+                            <span className="truncate max-w-[110px] sm:max-w-[180px] lg:max-w-xs text-zinc-700 font-medium">{l.contact_email}</span>
                             <button
                               onClick={() => copyToClipboard(l.contact_email, `email-tab-${idx}`)}
                               title="Copy Email"
-                              className="liquid-pill rounded-full w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-zinc-900 shadow-xs cursor-pointer"
+                              className="liquid-pill rounded-full w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-zinc-900 shadow-xs cursor-pointer shrink-0"
                             >
                               {copiedId === `email-tab-${idx}` ? (
                                 <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1048,12 +1181,12 @@ export default function DashboardPage() {
                             </button>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="hidden sm:table-cell py-3 px-2 sm:px-4">
                           <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-zinc-100/90 text-zinc-700 border border-zinc-200/60">
                             {l.contact_type || 'lead'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-xs text-zinc-600 max-w-xs">
+                        <td className="hidden xl:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-600 max-w-xs">
                           {l.linkedin_connection_note ? (
                             <div className="flex items-center justify-between gap-2 p-2 rounded-xl liquid-glass-subtle bg-white/70 border border-white/80">
                               <span className="truncate text-[11px] text-zinc-600">
@@ -1075,15 +1208,15 @@ export default function DashboardPage() {
                             <span className="text-zinc-400 text-xs">—</span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4 text-right rounded-r-2xl">
+                        <td className="py-3 px-3 sm:px-4 text-right rounded-r-2xl">
                           {l.contact_linkedin_url ? (
                             <a
                               href={l.contact_linkedin_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="liquid-pill inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700 hover:text-zinc-950 px-3 py-1.5 rounded-full shadow-xs cursor-pointer"
+                              className="liquid-pill inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700 hover:text-zinc-950 px-2.5 sm:px-3 py-1.5 rounded-full shadow-xs cursor-pointer shrink-0"
                             >
-                              <span>LinkedIn</span>
+                              <span className="hidden sm:inline">LinkedIn</span>
                               <ExternalLink className="w-3 h-3" />
                             </a>
                           ) : (
@@ -1133,7 +1266,7 @@ export default function DashboardPage() {
       {/* ----------------- COMPANY DRILLDOWN DRAWER ----------------- */}
       {selectedCompany && (
         <div className="fixed inset-0 z-50 flex justify-end bg-zinc-900/30 backdrop-blur-md transition-opacity">
-          <div className="w-full max-w-2xl h-full liquid-glass-elevated border-l border-white/95 p-6 md:p-8 flex flex-col shadow-[0_25px_60px_-15px_rgba(0,0,0,0.18)] overflow-y-auto animate-in slide-in-from-right duration-200 relative">
+          <div className="w-full sm:max-w-xl md:max-w-2xl 2xl:max-w-3xl h-full liquid-glass-elevated border-l border-white/95 p-4 sm:p-6 md:p-8 flex flex-col shadow-[0_25px_60px_-15px_rgba(0,0,0,0.18)] overflow-y-auto animate-in slide-in-from-right duration-200 relative">
             <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none z-20" />
             {/* Header */}
             <div className="flex items-start justify-between pb-6 border-b border-zinc-200/60">
