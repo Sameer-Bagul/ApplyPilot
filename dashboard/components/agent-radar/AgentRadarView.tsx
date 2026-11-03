@@ -55,7 +55,7 @@ export function AgentRadarView() {
     error: null,
   });
 
-  const [selectedMode, setSelectedMode] = useState<'live' | 'dry_run'>('live');
+  const [selectedMode, setSelectedMode] = useState<'live' | 'deep' | 'dry_run'>('live');
   const [selectedNode, setSelectedNode] = useState<DAGNode | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
@@ -141,10 +141,12 @@ export function AgentRadarView() {
   const handleTriggerPipeline = async () => {
     try {
       setIsTriggering(true);
+      const isDry = selectedMode === 'dry_run';
+      const limit = selectedMode === 'deep' ? 50 : 25;
       const res = await fetch('/api/pipeline/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: selectedMode, limit: 25 }),
+        body: JSON.stringify({ mode: isDry ? 'dry_run' : 'live', limit }),
       });
       const data = await res.json();
       if (data.success && data.run) {
@@ -224,7 +226,7 @@ export function AgentRadarView() {
           </div>
 
           <p className="text-xs text-zinc-500">
-            Multi-lane branching DAG executing JobSpy (Indeed, Naukri, LinkedIn), 11-ATS feeds, and Deep Company Looper for verified recruiter inboxes.
+            Multi-lane DAG executing JobSpy (Indeed, Naukri, LinkedIn), 11-ATS feeds, and Deep Company Looper. <strong>Every company discovered from Indeed is automatically researched, MX-verified, and enriched with 5–10 recruiter mailboxes.</strong>
           </p>
         </div>
 
@@ -241,7 +243,18 @@ export function AgentRadarView() {
                   : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
-              Live Sweep
+              Live Sweep (25 Co.)
+            </button>
+            <button
+              onClick={() => setSelectedMode('deep')}
+              disabled={isRunning}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                selectedMode === 'deep'
+                  ? 'liquid-pill bg-white shadow-xs text-emerald-700 font-bold'
+                  : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              Deep Looper (50 Co.)
             </button>
             <button
               onClick={() => setSelectedMode('dry_run')}

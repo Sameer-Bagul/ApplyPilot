@@ -165,10 +165,29 @@ def run_phase1_pipeline(
     new_leads_count = 0
     if not is_dry_run:
         try:
+            # 1. Ensure all companies discovered via Indeed and other job boards are enrolled in watchlist
+            from applypilot.database import upsert_career_watchlist
+            recent_job_companies = conn.execute(
+                "SELECT DISTINCT company, site FROM jobs WHERE company IS NOT NULL AND TRIM(company) != '' LIMIT 100"
+            ).fetchall()
+            for row in recent_job_companies:
+                co_name = row[0].strip()
+                co_site = row[1] or "job_board"
+                try:
+                    upsert_career_watchlist(
+                        company_name=co_name,
+                        priority_tier=2,
+                        is_vip=0,
+                        conn=conn,
+                    )
+                except Exception:
+                    pass
+
+            # 2. Deep research across watchlist companies (VIP Tier 1 + newly discovered Indeed companies)
             from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
             res_looper = loop_all_watchlist_companies(
-                priority_tier=1,
-                limit=min(limit, 15),
+                priority_tier=2,
+                limit=min(limit, 25),
                 target_emails=8,
                 enrich_emails=True,
                 poll_jobs=True,
@@ -269,3 +288,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

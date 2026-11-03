@@ -222,10 +222,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
+                    "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, discovered_at, "
                     "full_description, application_url, detail_scraped_at, posted_at, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (url, title, salary, description, location_str, site_label, strategy, now,
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (url, title, _company, salary, description, location_str, site_label, strategy, now,
                      full_description, apply_url, detail_scraped_at, posted_at, initial_state),
                 )
                 conn.execute(
@@ -235,6 +235,19 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                     (url, initial_state, now, f"discovered via {strategy}", None),
                 )
                 counts["new"] += 1
+
+                # Automatically ingest newly discovered company into career_watchlist for deep looping
+                if _company and len(_company.strip()) > 1:
+                    try:
+                        from applypilot.database import upsert_career_watchlist
+                        upsert_career_watchlist(
+                            company_name=_company.strip(),
+                            priority_tier=2,
+                            is_vip=0,
+                            conn=conn,
+                        )
+                    except Exception:
+                        pass
             except sqlite3.IntegrityError:
                 counts["existing"] += 1
 
