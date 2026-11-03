@@ -69,8 +69,9 @@ docker run -p 3000:3000 -v applypilot_data:/home/applypilot/.applypilot applypil
 
 ---
 
-## 3. Maintenance Policy (The Core Logic Sync Rule)
+## 3. Maintenance Policy & Standing Rules
 
+### Rule A: The Core Logic & Guide Sync Rule
 Whenever any developer or AI assistant modifies:
 1. Harvesters, directory parsers, or ATS feeds
 2. Looping mechanics or email synthesis logic
@@ -79,5 +80,13 @@ Whenever any developer or AI assistant modifies:
 5. Dashboard API routes or UI components
 
 **The developer/agent MUST update the corresponding guide document in `docs/guide/` as part of that same commit.**
-See [`AGENT.md`](file:///home/sameer/Projects/ApplyPilot/AGENT.md) for full instructions.
+
+### Rule B: The Logic Layer ↔ UI Layer Parity Rule
+Whenever a new feature, data provider, ATS integration, email synthesizer, or filter is implemented in the Python logic layer:
+1. **No Invisible Features**: The feature **must** be surfaced in the Next.js iOS liquid-glass dashboard.
+2. **APIs & Data Layer**: Add corresponding endpoints in `dashboard/app/api/` and queries in `dashboard/lib/db.ts`.
+3. **UI Views**: Add the relevant tab, filter, table, drill-down drawer, or DAG node in `dashboard/components/agent-radar/`.
+4. **Definition of Done**: A feature is incomplete if it only exists in backend Python code without user-facing UI visibility.
+
+See [`AGENT.md`](file:///home/sameer/Projects/ApplyPilot/AGENT.md) for full instructions and enforcement guidelines.
 

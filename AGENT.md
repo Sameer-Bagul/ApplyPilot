@@ -27,7 +27,29 @@ Documentation must NEVER drift out of sync with the codebase.
 
 ---
 
-## 2. Core Architectural Invariants
+## 2. The Logic Layer ↔ UI Layer Parity Rule (MANDATORY)
+
+ApplyPilot is designed as an integrated autonomous system where the **Logic Layer** (Python engines, harvesters, deep loopers, ATS pollers, parallel workers, SQLite database) and the **UI Layer** (Next.js 16 iOS liquid-glass dashboard, telemetry streams, branching DAG radar, company drill-down drawer) operate in complete lockstep.
+
+**WHENEVER YOU INTRODUCE OR MODIFY A FEATURE IN THE LOGIC LAYER, YOU MUST UPDATE THE UI LAYER IN THE SAME TASK:**
+
+1. **No Invisible Backend Features**:
+   - If a new harvester, data provider, ATS integration, looper strategy, email synthesizer, or search filter is built in Python, it **must** be surfaced in the dashboard.
+   - The user must never be forced to inspect the database via raw SQLite CLI to see what the system is doing.
+2. **Dashboard Data Layer & APIs (`dashboard/lib/db.ts`, `dashboard/app/api/`)**:
+   - Expose the newly generated data, tables, columns, or metrics through clean, typed API routes.
+   - Use built-in `node:sqlite` for synchronous, zero-dependency reads from `~/.applypilot/applypilot.db`.
+3. **User Interface Controls & Views (`dashboard/app/page.tsx`, `dashboard/components/`)**:
+   - Provide corresponding cards, filters, tables, or interactive drill-downs.
+   - Maintain the strict iOS liquid-glass design language: frosted glass (`backdrop-blur-xl`), soft ambient mesh glows, radial peach orb accents, and **strictly zero emojis** (Lucide React icons only).
+4. **Agent Radar & DAG Synchronization (`dashboard/components/agent-radar/`)**:
+   - If the feature introduces a new execution phase, autonomous subagent, or telemetry trace, update the multi-lane branching DAG, scenario steps, and `/api/agent-pipeline/telemetry` so the visualizer reflects the runtime reality.
+5. **Definition of Done**:
+   - A feature is **INCOMPLETE** if it only exists in backend Python code. A task is concluded only when both the logic layer AND the UI layer are fully implemented, functional, and verified together.
+
+---
+
+## 3. Core Architectural Invariants
 
 1. **Zero Emojis Everywhere**:
    - The UI and console output MUST strictly avoid emojis. Use only clean vector icons (Lucide React) in the web UI and clean text indicators in console logging.
@@ -44,7 +66,7 @@ Documentation must NEVER drift out of sync with the codebase.
 
 ---
 
-## 3. Directory Structure
+## 4. Directory Structure
 
 ```
 ApplyPilot/
@@ -60,9 +82,11 @@ ApplyPilot/
 │       └── 05_mcp_system_and_tool_inventory.md   # Topology of 9 MCP servers & 24 tools
 ├── dashboard/                                    # Next.js 16 iOS Liquid-Glass UI
 │   ├── app/                                      # App Router, pages, & API routes
+│   │   ├── api/agent-pipeline/                   # DAG scenarios & live telemetry
 │   │   ├── api/companies/drilldown/              # Company drawer telemetry API
 │   │   ├── api/stats/, jobs/, companies/, leads/ # Real-time SQLite endpoints
 │   │   └── page.tsx                              # Main dashboard & drilldown drawer
+│   ├── components/agent-radar/                   # Multi-lane DAG, ScrambleText, Inspector
 │   └── lib/db.ts                                 # Native node:sqlite data layer
 ├── src/applypilot/
 │   ├── apply/                                    # Multi-worker Chrome CDP engine
@@ -81,7 +105,7 @@ ApplyPilot/
 
 ---
 
-## 4. Verification & Testing Requirements
+## 5. Verification & Testing Requirements
 
 Before concluding any development task:
 1. **Run Python Pytest Suite**:
@@ -94,6 +118,8 @@ Before concluding any development task:
    cd dashboard && npm run build
    ```
    Must compile with 0 TypeScript errors and 0 build failures.
-3. **Confirm Guide Synchronization**:
+3. **Verify Logic ↔ UI Parity**:
+   Confirm that all new backend features, entities, or metrics are visible, filterable, or actionable in the Next.js UI dashboard.
+4. **Confirm Guide Synchronization**:
    Verify that any new feature or altered logic is documented in the appropriate file in `docs/guide/`.
 
