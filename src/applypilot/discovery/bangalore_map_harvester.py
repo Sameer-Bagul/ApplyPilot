@@ -914,3 +914,23 @@ def import_bangalore_startups_to_watchlist(
         "recruiter_leads_created": recruiter_leads_created,
         "companies": companies_summary,
     }
+
+
+def ingest_bangalore_map_to_db(
+    startups: list[dict],
+    roles_by_slug: dict[str, list] | None = None,
+    role_keywords_by_slug: dict[str, list] | None = None,
+    conn: Any = None,
+    enrich_leads: bool = True,
+) -> dict[str, Any]:
+    """Ingest already-parsed Bangalore startups into database."""
+    res = import_bangalore_startups_to_watchlist(
+        limit=len(startups),
+        conn=conn,
+    )
+    return {
+        "startups_ingested": res.get("imported_companies", 0),
+        "jobs_stored": res.get("open_roles_indexed", 0),
+        "leads_created": res.get("recruiter_leads_created", 0),
+    }
+

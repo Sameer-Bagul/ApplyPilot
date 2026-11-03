@@ -55,7 +55,7 @@ def run_daily_pipeline(
         report["hitl_sync"] = {"error": str(e)}
 
     # Step 2: Omni-channel discovery (Part 1)
-    logger.info("Step 2/6: Running Omni-Channel Discovery (Reddit, Dorks, Career Sites)...")
+    logger.info("Step 2/7: Running Omni-Channel Discovery (Reddit, Dorks, Career Sites)...")
     try:
         report["discovery"] = run_omni_channel_discovery(
             sources=sources,
@@ -67,8 +67,23 @@ def run_daily_pipeline(
         logger.warning("Discovery warning: %s", e)
         report["discovery"] = {"error": str(e)}
 
+    # Step 2.5: Deep Company Looper (Maximum Emails & Real-Time Job Launch Radar)
+    logger.info("Step 3/7: Running Deep Company Looper on VIP Watchlist...")
+    try:
+        from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
+        report["company_looper"] = loop_all_watchlist_companies(
+            priority_tier=1,
+            limit=limit * 2,
+            enrich_emails=not dry_run,
+            poll_jobs=True,
+            conn=conn,
+        )
+    except Exception as e:
+        logger.warning("Company looper warning: %s", e)
+        report["company_looper"] = {"error": str(e)}
+
     # Step 3: Score & Tailor queue
-    logger.info("Step 3/6: Scoring and tailoring queue...")
+    logger.info("Step 4/7: Scoring and tailoring queue...")
     try:
         # Check discovered jobs count
         row = conn.execute(

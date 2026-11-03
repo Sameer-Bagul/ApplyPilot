@@ -363,12 +363,123 @@ def import_blr_arena(
     console.print(f"  • Recruiter Leads Created: {stats['leads_created']}")
 
 
+@app.command("harvest-vc-boards")
+def harvest_vc_boards(
+    board: str = typer.Option("all", "--board", "-b", help="VC board to harvest: all, accel, khosla, lightspeed, general_catalyst, thrive."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum jobs to harvest."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis for startups."),
+) -> None:
+    """Harvest verified startup jobs and portfolio companies from Getro and Consider VC talent networks."""
+    _bootstrap()
+    from applypilot.discovery.vc_portfolio_harvester import (
+        fetch_consider_board_jobs,
+        fetch_getro_board_jobs,
+        ingest_vc_jobs_to_db,
+    )
+    console.print(f"[bold blue]Harvesting VC Portfolio Talent Boards (board={board}, limit={limit})...[/bold blue]")
+    jobs_collected = []
+    if board in ("all", "accel"):
+        jobs_collected.extend(fetch_getro_board_jobs("accel", hits_per_page=limit))
+    if board in ("all", "khosla"):
+        jobs_collected.extend(fetch_getro_board_jobs("khosla", hits_per_page=limit))
+    if board in ("all", "general_catalyst"):
+        jobs_collected.extend(fetch_getro_board_jobs("general_catalyst", hits_per_page=limit))
+    if board in ("all", "thrive"):
+        jobs_collected.extend(fetch_getro_board_jobs("thrive", hits_per_page=limit))
+    if board in ("all", "lightspeed"):
+        jobs_collected.extend(fetch_consider_board_jobs("lightspeed"))
+
+    jobs_collected = jobs_collected[:limit]
+    stats = ingest_vc_jobs_to_db(jobs_collected, vc_source=f"VC Board ({board})", enrich_emails=enrich)
+    console.print("[bold green]VC Talent Boards harvest completed![/bold green]")
+    console.print(f"  • Portfolio Startups Ingested: {stats['companies_ingested']}")
+    console.print(f"  • Live ATS Jobs Stored: {stats['jobs_stored']}")
+    console.print(f"  • Recruiter Leads Created: {stats['leads_created']}")
+    console.print(f"  • Domains Verified: {stats['domains_verified']}")
+
+
+@app.command("import-fundraising-founders")
+def import_fundraising_founders(
+    limit: int = typer.Option(50, "--limit", "-l", help="Max founders to import."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis."),
+) -> None:
+    """Import Bengaluru & Indian startup founders and personal LinkedIn URLs from startupfundraising.com."""
+    _bootstrap()
+    from applypilot.discovery.startupfundraising_harvester import (
+        fetch_startupfundraising_html,
+        parse_founders_html,
+        ingest_fundraising_founders_to_db,
+    )
+    console.print(f"[bold blue]Importing StartupFundraising Founders (limit={limit})...[/bold blue]")
+    html = fetch_startupfundraising_html()
+    founders = parse_founders_html(html)[:limit]
+    stats = ingest_fundraising_founders_to_db(founders, enrich_emails=enrich)
+    console.print("[bold green]StartupFundraising import completed![/bold green]")
+    console.print(f"  • Founders Ingested: {stats['founders_ingested']}")
+    console.print(f"  • Companies Ingested: {stats['companies_ingested']}")
+    console.print(f"  • Recruiter/Founder Leads Created: {stats['leads_created']}")
+    console.print(f"  • LinkedIn Notes Generated: {stats['notes_generated']}")
+
+
+@app.command("import-startupmap-one")
+def import_startupmap_one(
+    limit: int = typer.Option(50, "--limit", "-l", help="Max jobs to import."),
+    remote: bool = typer.Option(False, "--remote", help="Fetch remote feed instead of Bengaluru."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis."),
+) -> None:
+    """Import curated startup jobs and ATS links from startupmap.one."""
+    _bootstrap()
+    from applypilot.discovery.startupmap_one_harvester import (
+        fetch_startupmap_html,
+        parse_startupmap_jobs,
+        ingest_startupmap_jobs_to_db,
+        STARTUPMAP_BLR_URL,
+        STARTUPMAP_REMOTE_URL,
+    )
+    target_url = STARTUPMAP_REMOTE_URL if remote else STARTUPMAP_BLR_URL
+    console.print(f"[bold blue]Importing StartupMap.one jobs ({target_url})...[/bold blue]")
+    html = fetch_startupmap_html(target_url)
+    jobs = parse_startupmap_jobs(html)[:limit]
+    stats = ingest_startupmap_jobs_to_db(jobs, enrich_emails=enrich)
+    console.print("[bold green]StartupMap.one import completed![/bold green]")
+    console.print(f"  • Companies Ingested: {stats['companies_ingested']}")
+    console.print(f"  • Jobs Stored: {stats['jobs_stored']}")
+
+
+@app.command("loop-companies")
+def loop_companies(
+    tier: int = typer.Option(1, "--tier", "-t", help="Priority tier to sweep (1 for VIP Top-500, 2 for Global Index)."),
+    vip_only: bool = typer.Option(False, "--vip-only", help="Only sweep VIP-flagged companies."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum companies to process in this sweep."),
+    target_emails: int = typer.Option(8, "--target-emails", help="Target verified emails per company (5-15)."),
+    enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis."),
+    poll_jobs: bool = typer.Option(True, "--poll-jobs/--no-poll-jobs", help="Poll 11 ATS platforms and check JSON-LD for new job launches."),
+) -> None:
+    """Deeply loop through watchlist companies: maximize verified emails & detect real-time job launches."""
+    _bootstrap()
+    from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
+    console.print(f"[bold blue]Starting Deep Company Looper (tier<={tier}, limit={limit}, target_emails={target_emails})...[/bold blue]")
+    summary = loop_all_watchlist_companies(
+        priority_tier=tier,
+        vip_only=vip_only,
+        limit=limit,
+        target_emails=target_emails,
+        enrich_emails=enrich,
+        poll_jobs=poll_jobs,
+    )
+    console.print("[bold green]Deep Company Looping Sweep Complete![/bold green]")
+    console.print(f"  • Companies Processed: {summary['companies_processed']}")
+    console.print(f"  • Verified Emails Added: {summary['total_emails_added']}")
+    console.print(f"  • Brand New Jobs Found on Launch: {summary['total_new_jobs_found']}")
+    console.print(f"  • Companies with New Openings: {summary['companies_with_new_jobs']}")
+
+
 @app.command("harvest-all-directories")
 def harvest_all_directories(
     limit: int = typer.Option(30, "--limit", "-l", help="Limit per directory source."),
     enrich: bool = typer.Option(True, "--enrich/--no-enrich", help="Run deep email synthesis."),
 ) -> None:
-    """Execute omni-directory harvest across Bangalore Map, YC, TopStartups, and BLR Arena."""
+    """Execute omni-directory harvest across Bangalore Map, YC, TopStartups, BLR Arena, VC Boards, and Founders."""
     _bootstrap()
     from applypilot.discovery.multi_directory_orchestrator import run_omni_startup_harvest
     console.print("[bold blue]Launching Omni-Directory Startup & Job Harvest across all sources...[/bold blue]")
@@ -377,6 +488,9 @@ def harvest_all_directories(
         include_yc=True,
         include_topstartups=True,
         include_blr_arena=True,
+        include_vc_boards=True,
+        include_startupfundraising=True,
+        include_startupmap_one=True,
         limit_per_source=limit,
         enrich_emails=enrich,
     )

@@ -465,11 +465,95 @@ def harvest_blr_arena(
 
 
 @mcp.tool()
+def harvest_vc_portfolio_boards(
+    boards: list[str] = ["accel", "khosla", "lightspeed"],
+    limit: int = 50,
+    enrich_emails: bool = True,
+) -> dict:
+    """Harvest verified startup jobs and portfolio companies from Getro & Consider VC talent networks."""
+    from applypilot.discovery.vc_portfolio_harvester import (
+        fetch_consider_board_jobs,
+        fetch_getro_board_jobs,
+        ingest_vc_jobs_to_db,
+    )
+    conn = _get_db()
+    jobs_collected = []
+    for b in boards:
+        if b in ("accel", "khosla", "general_catalyst", "thrive"):
+            jobs_collected.extend(fetch_getro_board_jobs(b, hits_per_page=limit))
+        elif b in ("lightspeed", "consider"):
+            jobs_collected.extend(fetch_consider_board_jobs("lightspeed"))
+    jobs_collected = jobs_collected[:limit]
+    return ingest_vc_jobs_to_db(jobs_collected, vc_source=f"VC Portfolio ({','.join(boards)})", enrich_emails=enrich_emails, conn=conn)
+
+
+@mcp.tool()
+def import_startupfundraising_founders(
+    limit: int = 50,
+    enrich_emails: bool = True,
+) -> dict:
+    """Import Bengaluru startup founders and direct LinkedIn URLs from startupfundraising.com."""
+    from applypilot.discovery.startupfundraising_harvester import (
+        fetch_startupfundraising_html,
+        parse_founders_html,
+        ingest_fundraising_founders_to_db,
+    )
+    conn = _get_db()
+    html = fetch_startupfundraising_html()
+    founders = parse_founders_html(html)[:limit]
+    return ingest_fundraising_founders_to_db(founders, enrich_emails=enrich_emails, conn=conn)
+
+
+@mcp.tool()
+def import_startupmap_one_jobs(
+    limit: int = 50,
+    remote: bool = False,
+    enrich_emails: bool = True,
+) -> dict:
+    """Import curated startup jobs and ATS links from startupmap.one."""
+    from applypilot.discovery.startupmap_one_harvester import (
+        fetch_startupmap_html,
+        parse_startupmap_jobs,
+        ingest_startupmap_jobs_to_db,
+        STARTUPMAP_BLR_URL,
+        STARTUPMAP_REMOTE_URL,
+    )
+    conn = _get_db()
+    target_url = STARTUPMAP_REMOTE_URL if remote else STARTUPMAP_BLR_URL
+    html = fetch_startupmap_html(target_url)
+    jobs = parse_startupmap_jobs(html)[:limit]
+    return ingest_startupmap_jobs_to_db(jobs, enrich_emails=enrich_emails, conn=conn)
+
+
+@mcp.tool()
+def loop_and_enrich_watchlist_companies(
+    priority_tier: int = 1,
+    vip_only: bool = False,
+    limit: int = 50,
+    target_emails: int = 8,
+    enrich_emails: bool = True,
+    poll_jobs: bool = True,
+) -> dict:
+    """Deeply loop through watchlist companies: maximize verified emails & detect real-time job launches."""
+    from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
+    conn = _get_db()
+    return loop_all_watchlist_companies(
+        priority_tier=priority_tier,
+        vip_only=vip_only,
+        limit=limit,
+        target_emails=target_emails,
+        enrich_emails=enrich_emails,
+        poll_jobs=poll_jobs,
+        conn=conn,
+    )
+
+
+@mcp.tool()
 def harvest_all_startup_directories(
     limit_per_source: int = 30,
     enrich_emails: bool = True,
 ) -> dict:
-    """Execute omni-directory harvest across Bangalore Map, YC, TopStartups, and BLR Arena."""
+    """Execute omni-directory harvest across Bangalore Map, YC, TopStartups, BLR Arena, VC Boards, and Founders."""
     from applypilot.discovery.multi_directory_orchestrator import run_omni_startup_harvest
     conn = _get_db()
     return run_omni_startup_harvest(
@@ -477,6 +561,9 @@ def harvest_all_startup_directories(
         include_yc=True,
         include_topstartups=True,
         include_blr_arena=True,
+        include_vc_boards=True,
+        include_startupfundraising=True,
+        include_startupmap_one=True,
         limit_per_source=limit_per_source,
         enrich_emails=enrich_emails,
         conn=conn,

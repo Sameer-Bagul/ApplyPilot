@@ -1,0 +1,58 @@
+{
+  "mcpServers": {
+    "applypilot-mcp": {
+      "command": "uv",
+      "args": ["run", "applypilot", "mcp"],
+      "description": "Core ApplyPilot brain, 5-Tier cache, Omni-Channel harvesters, Email HITL, and Deep Looper"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "description": "Deterministic accessibility-tree browser automation for multi-step ATS form filling"
+    },
+    "jobspipe": {
+      "url": "https://mcp.jobspipe.dev/mcp",
+      "description": "Streamable HTTP search across 30+ job boards, Greenhouse, and Lever"
+    },
+    "duckduckgo": {
+      "command": "uvx",
+      "args": ["duckduckgo-mcp-server"],
+      "description": "Free, unlimited company domain and career portal resolution"
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      },
+      "description": "24h time-bounded hiring post search dorks for LinkedIn, X, and Threads"
+    },
+    "exa": {
+      "command": "npx",
+      "args": ["-y", "exa-mcp-server"],
+      "env": {
+        "EXA_API_KEY": "${EXA_API_KEY}"
+      },
+      "description": "Neural search for social hiring announcements"
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      },
+      "description": "Deep mapping of custom JS-rendered career sites"
+    },
+    "google-maps": {
+      "command": "npx",
+      "args": ["-y", "@cablate/mcp-google-map"],
+      "description": "Commute checks and discovering tech companies by city/neighborhood"
+    },
+    "google-workspace": {
+      "command": "uvx",
+      "args": ["google-workspace-mcp"],
+      "description": "Live Google Sheets tracking, Gmail draft/reply management, and Google Calendar interview checks"
+    }
+  }
+}
+

@@ -65,6 +65,25 @@ from applypilot.discovery.social_dorker import (
     execute_social_dorks,
     search_duckduckgo_html,
 )
+from applypilot.discovery.vc_portfolio_harvester import (
+    fetch_getro_board_jobs,
+    fetch_consider_board_jobs,
+    ingest_vc_jobs_to_db,
+)
+from applypilot.discovery.startupfundraising_harvester import (
+    fetch_startupfundraising_html,
+    parse_founders_html,
+    ingest_fundraising_founders_to_db,
+)
+from applypilot.discovery.startupmap_one_harvester import (
+    fetch_startupmap_html,
+    parse_startupmap_jobs,
+    ingest_startupmap_jobs_to_db,
+)
+from applypilot.discovery.multi_directory_orchestrator import (
+    run_omni_startup_harvest,
+    loop_and_enrich_watchlist,
+)
 
 __all__ = [
     # ATS direct feeds

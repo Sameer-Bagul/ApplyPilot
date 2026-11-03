@@ -45,26 +45,32 @@ def _add_column_if_missing(
     return False
 
 
-def run_migrations(db_path: Path | str | None = None) -> sqlite3.Connection:
+def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sqlite3.Connection:
     """Run all schema migrations idempotently on the specified or default database.
 
     Creates tables if not exists, adds missing columns to existing tables,
     and initializes the FTS5 virtual table `qa_fts` for zero-token lexical search.
 
     Args:
-        db_path: Path to the SQLite database. Defaults to ~/.applypilot/applypilot.db.
+        db_path: Path to the SQLite database or an active sqlite3.Connection.
+                 Defaults to ~/.applypilot/applypilot.db.
 
     Returns:
         The sqlite3.Connection.
     """
-    path = Path(db_path) if db_path else config.DB_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(db_path, sqlite3.Connection):
+        conn = db_path
+    else:
+        path = Path(db_path) if db_path else config.DB_PATH
+        if str(path) != ":memory:":
+            path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(path), timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA foreign_keys = ON")
+        conn = sqlite3.connect(str(path), timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        if str(path) != ":memory:":
+            conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA foreign_keys = ON")
 
     # 1. ats_selector_cache
     conn.execute("""
