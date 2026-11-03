@@ -25,9 +25,9 @@ body {
 
 /* True Liquid Glass Specular Optics & Refraction */
 .liquid-glass {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(28px) saturate(1.85);
-  -webkit-backdrop-filter: blur(28px) saturate(1.85);
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(14px) saturate(1.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
   border: 1px solid rgba(255, 255, 255, 0.85);
   box-shadow: 
     inset 0 1.25px 0.75px 0 rgba(255, 255, 255, 0.95),
@@ -37,9 +37,9 @@ body {
 }
 
 .liquid-glass-subtle {
-  background: rgba(255, 255, 255, 0.52);
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
   border: 1px solid rgba(255, 255, 255, 0.75);
   box-shadow: 
     inset 0 1px 0.5px 0 rgba(255, 255, 255, 0.85),
@@ -47,9 +47,9 @@ body {
 }
 
 .liquid-glass-elevated {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(36px) saturate(2.0);
-  -webkit-backdrop-filter: blur(36px) saturate(2.0);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(20px) saturate(1.7);
+  -webkit-backdrop-filter: blur(20px) saturate(1.7);
   border: 1px solid rgba(255, 255, 255, 0.95);
   box-shadow: 
     inset 0 1.5px 1px 0 rgba(255, 255, 255, 1),
@@ -106,9 +106,9 @@ body {
 
 /* Floating Frosted Glass Table Rows */
 .liquid-row {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(20px) saturate(1.75);
-  -webkit-backdrop-filter: blur(20px) saturate(1.75);
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
   border: 1px solid rgba(255, 255, 255, 0.85);
   box-shadow: 
     inset 0 1px 0.5px rgba(255, 255, 255, 0.95),
@@ -116,14 +116,14 @@ body {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .liquid-row:hover {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.92);
   border-color: rgba(255, 255, 255, 1);
   box-shadow: 
     inset 0 1.25px 0.75px rgba(255, 255, 255, 1),
     0 8px 24px -2px rgba(31, 38, 135, 0.06);
 }
 
-/* 3D Orb Spheres from the reference image */
+/* 3D Orb Spheres */
 .orb-peach {
   background: radial-gradient(circle at 35% 35%, #ffd1b3 0%, #ff8c82 50%, #e6556e 100%);
   box-shadow: inset -3px -3px 8px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(230, 85, 110, 0.25);
@@ -132,6 +132,76 @@ body {
 .orb-rose {
   background: radial-gradient(circle at 35% 35%, #fed7e2 0%, #f687b3 50%, #d53f8c 100%);
   box-shadow: inset -3px -3px 8px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(213, 63, 140, 0.25);
+}
+
+/* 3D Ceramic Pearl Spheres from Glassmorphism Reference (Image 1) */
+.pearl-sphere {
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 28%, #ffffff 0%, #f8fafc 38%, #e2e8f0 72%, #94a3b8 100%);
+  box-shadow: 
+    -22px 35px 70px -10px rgba(15, 23, 42, 0.17),
+    -10px 18px 36px rgba(15, 23, 42, 0.09),
+    inset -14px -14px 28px rgba(15, 23, 42, 0.13),
+    inset 6px 6px 14px rgba(255, 255, 255, 1);
+  filter: drop-shadow(0 20px 30px rgba(15, 23, 42, 0.08));
+}
+
+/* Geometric Dotted Grid Patterns */
+.dot-grid-pattern {
+  background-image: radial-gradient(circle, rgba(71, 85, 105, 0.40) 1.5px, transparent 1.5px);
+  background-size: 26px 26px;
+  background-position: 0 0;
+}
+
+.dot-grid-dense {
+  background-image: radial-gradient(circle, rgba(71, 85, 105, 0.38) 1.5px, transparent 1.5px);
+  background-size: 18px 18px;
+  background-position: 0 0;
+}
+
+.dot-grid-wide {
+  background-image: radial-gradient(circle, rgba(71, 85, 105, 0.42) 1.75px, transparent 1.75px);
+  background-size: 34px 34px;
+  background-position: 0 0;
+}
+
+.dot-grid-blueprint {
+  background-image: radial-gradient(circle, rgba(99, 102, 241, 0.42) 1.5px, transparent 1.5px);
+  background-size: 26px 26px;
+  background-position: 0 0;
+}
+
+.dot-grid-dark {
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.35) 1.5px, transparent 1.5px);
+  background-size: 26px 26px;
+  background-position: 0 0;
+}
+
+/* Gentle floating animations for 3D elements */
+@keyframes float-subtle {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(1deg);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(12px) rotate(-1deg);
+  }
+}
+
+.animate-float-subtle {
+  animation: float-subtle 8s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-reverse 10s ease-in-out infinite;
 }
 
 /* Ethereal Abstract Mesh Gradients for Header Cards */
