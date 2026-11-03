@@ -5,6 +5,7 @@ import { BranchingAgentDAG, DAGNode } from './BranchingAgentDAG';
 import {
   Play,
   Pause,
+  Square,
   RotateCcw,
   Sparkles,
   Zap,
@@ -59,6 +60,7 @@ export function AgentRadarView() {
   const [selectedNode, setSelectedNode] = useState<DAGNode | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
+  const [isStopping, setIsStopping] = useState<boolean>(false);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Poll current pipeline status on mount
@@ -157,6 +159,27 @@ export function AgentRadarView() {
       console.error('Failed to trigger pipeline', err);
     } finally {
       setIsTriggering(false);
+    }
+  };
+
+  // Stop / Abort Pipeline Execution
+  const handleStopPipeline = async () => {
+    try {
+      setIsStopping(true);
+      const res = await fetch('/api/pipeline/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      });
+      const data = await res.json();
+      if (data.success && data.run) {
+        setPipelineState(data.run);
+      }
+    } catch (err) {
+      console.error('Failed to stop pipeline:', err);
+    } finally {
+      setIsStopping(false);
+      stopPolling();
     }
   };
 
@@ -279,33 +302,43 @@ export function AgentRadarView() {
             <RotateCcw className="w-4 h-4" />
           </button>
 
-          {/* MAIN PIPELINE TRIGGER BUTTON */}
-          <button
-            onClick={handleTriggerPipeline}
-            disabled={isRunning}
-            className={`liquid-pill rounded-2xl px-5 py-2.5 flex items-center gap-2 text-xs sm:text-sm font-bold shadow-md transition-all cursor-pointer ${
-              isRunning
-                ? 'bg-purple-600 text-white cursor-wait opacity-90'
-                : 'liquid-pill-dark text-white hover:bg-zinc-900'
-            }`}
-          >
-            {isRunning ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-purple-200" />
-                <span>Running Phase 1 Pipeline...</span>
-              </>
-            ) : isDone ? (
-              <>
-                <Play className="w-4 h-4 fill-current text-emerald-400" />
-                <span>Re-Run Phase 1 Workflow</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 fill-current text-purple-400" />
-                <span>Run Complete Pipeline</span>
-              </>
-            )}
-          </button>
+          {/* PIPELINE ACTIONS: RUN & STOP CONTROLS */}
+          {isRunning ? (
+            <div className="flex items-center gap-2">
+              <div className="liquid-pill rounded-2xl px-3.5 py-2 flex items-center gap-2 text-xs font-semibold text-purple-800 bg-purple-50/90 border border-purple-200/80 shadow-xs">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-600" />
+                <span className="hidden sm:inline">Acquiring Data...</span>
+              </div>
+
+              {/* STOP PIPELINE BUTTON */}
+              <button
+                onClick={handleStopPipeline}
+                disabled={isStopping}
+                title="Halt Pipeline Execution Immediately"
+                className="liquid-pill rounded-2xl px-4 py-2 sm:py-2.5 flex items-center gap-2 text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-all cursor-pointer animate-in fade-in zoom-in-95 duration-150"
+              >
+                <Square className="w-3.5 h-3.5 fill-current text-white" />
+                <span>{isStopping ? 'Stopping...' : 'Stop'}</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleTriggerPipeline}
+              className="liquid-pill liquid-pill-dark rounded-2xl px-5 py-2.5 flex items-center gap-2 text-xs sm:text-sm font-bold text-white hover:bg-zinc-900 shadow-md transition-all cursor-pointer"
+            >
+              {isDone ? (
+                <>
+                  <Play className="w-4 h-4 fill-current text-emerald-400" />
+                  <span>Re-Run Phase 1 Workflow</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current text-purple-400" />
+                  <span>Run Complete Pipeline</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

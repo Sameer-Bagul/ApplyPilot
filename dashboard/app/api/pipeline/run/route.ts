@@ -39,6 +39,8 @@ declare global {
   var __applypilot_pipeline_run__: PipelineRunState | undefined;
   // eslint-disable-next-line no-var
   var __applypilot_process_running__: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __applypilot_active_proc__: import('node:child_process').ChildProcess | undefined;
 }
 
 function getInitialState(): PipelineRunState {
@@ -60,6 +62,7 @@ function getInitialState(): PipelineRunState {
 if (!global.__applypilot_pipeline_run__) {
   global.__applypilot_pipeline_run__ = getInitialState();
   global.__applypilot_process_running__ = false;
+  global.__applypilot_active_proc__ = undefined;
 }
 
 export async function GET() {
@@ -75,12 +78,60 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const action = body.action || 'start';
 
+    // 1. STOP PIPELINE ACTION
+    if (action === 'stop') {
+      if (global.__applypilot_active_proc__) {
+        try {
+          global.__applypilot_active_proc__.kill('SIGTERM');
+          const procRef = global.__applypilot_active_proc__;
+          setTimeout(() => {
+            try {
+              procRef.kill('SIGKILL');
+            } catch {}
+          }, 1200);
+        } catch (killErr) {
+          console.warn('Error killing pipeline process:', killErr);
+        }
+        global.__applypilot_active_proc__ = undefined;
+      }
+
+      global.__applypilot_process_running__ = false;
+      const state = global.__applypilot_pipeline_run__;
+      if (state) {
+        state.status = 'done';
+        state.goalState = 'done';
+        state.completedAt = new Date().toISOString();
+        state.goalText = 'Phase 1: Pipeline Halted by User';
+        state.nodes.forEach((n) => {
+          if (n.status === 'running') {
+            n.status = 'done';
+            n.time = 'Stopped';
+          }
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Pipeline stopped successfully',
+        run: global.__applypilot_pipeline_run__,
+        isRunning: false,
+      });
+    }
+
+    // 2. RESET PIPELINE ACTION
     if (action === 'reset') {
+      if (global.__applypilot_active_proc__) {
+        try {
+          global.__applypilot_active_proc__.kill('SIGKILL');
+        } catch {}
+        global.__applypilot_active_proc__ = undefined;
+      }
       global.__applypilot_pipeline_run__ = getInitialState();
       global.__applypilot_process_running__ = false;
       return NextResponse.json({ success: true, run: global.__applypilot_pipeline_run__ });
     }
 
+    // 3. START PIPELINE ACTION
     if (global.__applypilot_process_running__) {
       return NextResponse.json({
         success: true,
@@ -125,6 +176,7 @@ export async function POST(req: Request) {
         env: { ...process.env, PYTHONUNBUFFERED: '1' },
       }
     );
+    global.__applypilot_active_proc__ = proc;
 
     proc.stdout.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
@@ -193,6 +245,7 @@ export async function POST(req: Request) {
 
     proc.on('close', (code) => {
       global.__applypilot_process_running__ = false;
+      global.__applypilot_active_proc__ = undefined;
       const state = global.__applypilot_pipeline_run__;
       if (state) {
         state.completedAt = new Date().toISOString();
