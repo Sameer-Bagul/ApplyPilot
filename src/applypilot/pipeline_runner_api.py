@@ -278,17 +278,24 @@ def run_phase1_pipeline(
     )
 
     time.sleep(0.4)
-    # Count routes currently in DB
-    dual_count = conn.execute("SELECT COUNT(*) FROM jobs WHERE execution_route = 'DUAL_ATTACK'").fetchone()[0] or 0
-    portal_count = conn.execute("SELECT COUNT(*) FROM jobs WHERE execution_route = 'PORTAL_ONLY'").fetchone()[0] or 0
+    # Sync and count routes in DB
+    from applypilot.database import sync_execution_routes
+    route_stats = sync_execution_routes(conn=conn)
+    dual_count = route_stats.get("dual_attack", 0)
+    portal_count = route_stats.get("portal_only", 0)
+    email_count = route_stats.get("email_only", 0)
 
     emit(
         "node_update",
         id="node-scoring-dedup",
         status="done",
-        text=f"Tagged {dual_count} Dual-Attack & {portal_count} Portal routes; SQLite synced",
+        text=f"Tagged {dual_count} Dual-Attack, {email_count} Email-Only & {portal_count} Portal routes; SQLite synced",
         time=f"{time.time() - t_start:.1f}s",
-        outputs={"dual_attack_ready": dual_count, "portal_only": portal_count},
+        outputs={
+            "dual_attack_ready": dual_count,
+            "email_only_ready": email_count,
+            "portal_only": portal_count,
+        },
     )
 
     # -------------------------------------------------------------------------

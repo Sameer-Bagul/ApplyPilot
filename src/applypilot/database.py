@@ -1249,6 +1249,81 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
     return stats
 
 
+def sync_execution_routes(conn: sqlite3.Connection | None = None) -> dict[str, int]:
+    """Synchronize and classify all job and lead execution routes (DUAL_ATTACK, PORTAL_ONLY, EMAIL_ONLY).
+
+    1. Materializes recruiter leads with EMAIL_ONLY into the jobs table.
+    2. Upgrades PORTAL_ONLY jobs to DUAL_ATTACK when verified recruiter leads exist for that company.
+    3. Returns counts of all 3 execution routes.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    c = conn.cursor()
+
+    # 1. Materialize EMAIL_ONLY leads into jobs table
+    email_leads = c.execute("""
+        SELECT lead_id, company_name, company_domain, role_title, contact_email, 
+               contact_type, source_platform, source_post_url, evidence_snippet, created_at
+        FROM recruiter_leads
+        WHERE execution_route = 'EMAIL_ONLY'
+    """).fetchall()
+
+    for l in email_leads:
+        lead_id, company, domain, title, email, c_type, platform, post_url, snippet, created = l
+        clean_title = (title or "Software / Tech Role").strip()
+        clean_company = (company or "Startup").strip()
+
+        if post_url and post_url.startswith("http"):
+            url = post_url
+        else:
+            url = f"mailto:{email}?subject=Application:%20{clean_title}%20-%20ApplyPilot"
+
+        try:
+            c.execute("""
+                INSERT INTO jobs (url, title, company, site, strategy, description, execution_route, state, discovered_at)
+                VALUES (?, ?, ?, ?, 'recruiter_email_discovery', ?, 'EMAIL_ONLY', 'discovered', ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    execution_route = 'EMAIL_ONLY',
+                    company = COALESCE(excluded.company, jobs.company),
+                    title = COALESCE(excluded.title, jobs.title)
+            """, (url, clean_title, clean_company, platform or "direct_email", snippet or f"Direct email application via {email}", created))
+        except Exception:
+            pass
+
+    # 2. Upgrade PORTAL_ONLY jobs to DUAL_ATTACK for companies with verified leads
+    c.execute("""
+        UPDATE jobs
+        SET execution_route = 'DUAL_ATTACK'
+        WHERE (execution_route IS NULL OR execution_route = 'PORTAL_ONLY')
+          AND company IN (
+              SELECT DISTINCT company_name 
+              FROM recruiter_leads 
+              WHERE contact_email NOT LIKE '%@connect.linkedin.com'
+          )
+    """)
+
+    # 3. Default any remaining null routes to PORTAL_ONLY
+    c.execute("UPDATE jobs SET execution_route = 'PORTAL_ONLY' WHERE execution_route IS NULL OR execution_route = ''")
+
+    conn.commit()
+
+    dual_cnt = c.execute("SELECT COUNT(*) FROM jobs WHERE execution_route = 'DUAL_ATTACK'").fetchone()[0] or 0
+    portal_cnt = c.execute("SELECT COUNT(*) FROM jobs WHERE execution_route = 'PORTAL_ONLY'").fetchone()[0] or 0
+    email_cnt = c.execute("SELECT COUNT(*) FROM jobs WHERE execution_route = 'EMAIL_ONLY'").fetchone()[0] or 0
+
+    if should_close:
+        conn.close()
+
+    return {
+        "dual_attack": dual_cnt,
+        "portal_only": portal_cnt,
+        "email_only": email_cnt,
+    }
+
+
 def extract_company(application_url: str | None) -> str | None:
     """Extract a company name from an application URL domain.
 

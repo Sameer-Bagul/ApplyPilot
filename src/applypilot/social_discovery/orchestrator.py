@@ -154,9 +154,10 @@ def run_omni_channel_discovery(
                     conn=conn,
                 )
 
-        if ats_url:
+        target_job_url = ats_url or url or (f"mailto:{email}?subject=Application:%20{role_title}%20-%20ApplyPilot" if email else None)
+        if target_job_url:
             job_item = {
-                "url": ats_url,
+                "url": target_job_url,
                 "title": role_title,
                 "company": company or "Unknown",
                 "site": platform,
@@ -175,7 +176,7 @@ def run_omni_channel_discovery(
                             execution_route = COALESCE(excluded.execution_route, jobs.execution_route),
                             title = COALESCE(excluded.title, jobs.title)
                         """,
-                        (ats_url, role_title, company or "Unknown", platform, text[:500], route),
+                        (target_job_url, role_title, company or "Unknown", platform, text[:500], route),
                     )
                     conn.commit()
                 except Exception as e:

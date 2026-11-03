@@ -588,6 +588,15 @@ export default function DashboardPage() {
                   Dual-Attack Ready ({stats?.routes.dualAttack || 0})
                 </button>
                 <button
+                  onClick={() => {
+                    setActiveTab('jobs');
+                    setJobRoute('EMAIL_ONLY');
+                  }}
+                  className="liquid-pill rounded-full px-4 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-all cursor-pointer shadow-xs"
+                >
+                  Email-Only Outbound ({stats?.routes.emailOnly || 0})
+                </button>
+                <button
                   onClick={() => setActiveTab('leads')}
                   className="liquid-pill rounded-full px-4 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-all cursor-pointer shadow-xs"
                 >
@@ -669,7 +678,9 @@ export default function DashboardPage() {
                     {stats?.routes.dualAttack || 0}
                   </span>
                   <span className="text-sm font-medium text-zinc-600">Dual-Attack Queue</span>
-                  <span className="text-[11px] text-zinc-400 mt-0.5">Portal Form + Founder Email</span>
+                  <span className="text-[11px] text-zinc-400 mt-0.5">
+                    {stats?.routes.emailOnly || 0} direct email-only leads
+                  </span>
                 </div>
               </div>
 
@@ -737,15 +748,25 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <a
-                        href={job.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="liquid-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-xs transition-all cursor-pointer"
-                      >
-                        <span>Apply</span>
-                        <ArrowUpRight className="w-3 h-3 text-zinc-500 group-hover:text-zinc-900" />
-                      </a>
+                      {job.execution_route === 'EMAIL_ONLY' ? (
+                        <a
+                          href={job.url}
+                          className="liquid-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 flex items-center gap-1 shrink-0 shadow-xs transition-all cursor-pointer border border-indigo-200/60"
+                        >
+                          <Mail className="w-3 h-3 text-indigo-600" />
+                          <span>Email</span>
+                        </a>
+                      ) : (
+                        <a
+                          href={job.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="liquid-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-xs transition-all cursor-pointer"
+                        >
+                          <span>Apply</span>
+                          <ArrowUpRight className="w-3 h-3 text-zinc-500 group-hover:text-zinc-900" />
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -909,15 +930,25 @@ export default function DashboardPage() {
                           <RouteBadge route={job.execution_route} />
                         </td>
                         <td className="py-3 px-3 sm:px-4 text-right rounded-r-2xl">
-                          <a
-                            href={job.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="liquid-pill-dark inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer shrink-0"
-                          >
-                            <span>Apply</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </a>
+                          {job.execution_route === 'EMAIL_ONLY' ? (
+                            <a
+                              href={job.url.startsWith('mailto:') ? job.url : `mailto:${job.description?.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/)?.[0] || ''}?subject=Application for ${encodeURIComponent(job.title)}`}
+                              className="liquid-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer shrink-0 text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 border border-indigo-200/70 shadow-xs"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Email Recruiter</span>
+                            </a>
+                          ) : (
+                            <a
+                              href={job.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="liquid-pill-dark inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer shrink-0"
+                            >
+                              <span>Apply</span>
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                            </a>
+                          )}
                         </td>
                       </tr>
                     ))

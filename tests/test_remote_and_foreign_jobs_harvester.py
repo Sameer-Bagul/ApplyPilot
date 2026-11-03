@@ -82,3 +82,4 @@ def test_ingest_remote_jobs_to_db(test_db):
     c2 = test_db.execute("SELECT * FROM career_watchlist WHERE company_name = 'Supabase'").fetchone()
     assert c2 is not None
     assert c2["official_domain"] == "supabase.com"
+
