@@ -243,12 +243,12 @@ export default function DashboardPage() {
               onClick={() => setActiveTab('overview')}
               className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
                 activeTab === 'overview'
-                  ? 'bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] text-zinc-900 border border-white/80'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-white/40'
+                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
+                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center gap-3">
-                <LayoutDashboard className="w-4 h-4" />
+                <LayoutDashboard className="w-4 h-4 text-purple-600" />
                 <span>Dashboard</span>
               </div>
             </button>
@@ -257,16 +257,16 @@ export default function DashboardPage() {
               onClick={() => setActiveTab('jobs')}
               className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
                 activeTab === 'jobs'
-                  ? 'bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] text-zinc-900 border border-white/80'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-white/40'
+                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
+                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center gap-3">
-                <Briefcase className="w-4 h-4" />
+                <Briefcase className="w-4 h-4 text-blue-600" />
                 <span>All Jobs</span>
               </div>
               {stats?.totalJobs ? (
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/50">
                   {stats.totalJobs.toLocaleString()}
                 </span>
               ) : null}
@@ -276,16 +276,16 @@ export default function DashboardPage() {
               onClick={() => setActiveTab('companies')}
               className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
                 activeTab === 'companies'
-                  ? 'bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] text-zinc-900 border border-white/80'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-white/40'
+                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
+                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center gap-3">
-                <Building2 className="w-4 h-4" />
+                <Building2 className="w-4 h-4 text-amber-600" />
                 <span>Companies</span>
               </div>
               {stats?.totalCompanies ? (
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/50">
                   {stats.totalCompanies.toLocaleString()}
                 </span>
               ) : null}
@@ -295,16 +295,16 @@ export default function DashboardPage() {
               onClick={() => setActiveTab('leads')}
               className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
                 activeTab === 'leads'
-                  ? 'bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] text-zinc-900 border border-white/80'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-white/40'
+                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
+                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center gap-3">
-                <Users className="w-4 h-4" />
+                <Users className="w-4 h-4 text-emerald-600" />
                 <span>Contacts & Leads</span>
               </div>
               {stats?.totalLeads ? (
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/50">
                   {stats.totalLeads.toLocaleString()}
                 </span>
               ) : null}
@@ -314,15 +314,15 @@ export default function DashboardPage() {
               onClick={() => setActiveTab('radar')}
               className={`flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all ${
                 activeTab === 'radar'
-                  ? 'bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)] text-zinc-900 border border-white/80'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-white/40'
+                  ? 'liquid-glass shadow-[0_4px_16px_rgba(0,0,0,0.04)] text-zinc-950 font-semibold border-white/95 scale-[1.01]'
+                  : 'text-zinc-600 hover:text-zinc-950 hover:bg-white/50 hover:shadow-xs'
               }`}
             >
               <div className="flex items-center gap-3">
                 <GitBranch className="w-4 h-4 text-purple-600" />
                 <span>Agent Radar</span>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200/60 shadow-xs">
                 LIVE DAG
               </span>
             </button>
@@ -365,8 +365,9 @@ export default function DashboardPage() {
         {/* Top Header / Search & Profile Bar */}
         <header className="flex items-center justify-between gap-4">
           {/* Frosted Pill Search */}
-          <div className="liquid-glass rounded-full px-5 py-2.5 flex items-center gap-3 max-w-md w-full shadow-sm">
-            <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+          <div className="liquid-glass rounded-full px-5 py-2.5 flex items-center gap-3 max-w-md w-full shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+            <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
+            <Search className="w-4 h-4 text-zinc-400 shrink-0 group-hover:text-purple-600 transition-colors" />
             <input
               type="text"
               placeholder="Search jobs, startups, or recruiter emails..."
@@ -398,17 +399,17 @@ export default function DashboardPage() {
                 if (activeTab === 'leads') fetchLeads(leadPage);
               }}
               title="Refresh Data"
-              className="liquid-glass rounded-full w-10 h-10 flex items-center justify-center text-zinc-600 hover:text-zinc-900 hover:bg-white transition-all shadow-sm"
+              className="liquid-pill rounded-full w-10 h-10 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-sm cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
 
             {/* User Avatar */}
-            <div className="liquid-glass rounded-full pl-2 pr-4 py-1.5 flex items-center gap-2.5 shadow-sm">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-rose-400 via-amber-300 to-indigo-400 flex items-center justify-center text-white text-xs font-medium">
+            <div className="liquid-pill rounded-full pl-2 pr-4 py-1.5 flex items-center gap-2.5 shadow-sm cursor-pointer">
+              <div className="w-7 h-7 rounded-full orb-peach flex items-center justify-center text-white text-xs font-semibold shadow-inner">
                 SB
               </div>
-              <span className="text-sm font-medium text-zinc-800">Sameer Bagul</span>
+              <span className="text-sm font-semibold text-zinc-800">Sameer Bagul</span>
             </div>
           </div>
         </header>
@@ -417,7 +418,8 @@ export default function DashboardPage() {
         {activeTab === 'overview' && (
           <div className="flex flex-col gap-6">
             {/* Hero Greeting Card (Reference Image Style) */}
-            <div className="liquid-glass rounded-3xl p-8 flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
+            <div className="liquid-glass rounded-3xl p-8 flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden shadow-sm">
+              <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
               <div className="w-14 h-14 rounded-full orb-peach shrink-0 shadow-lg mb-1" />
               <div className="flex flex-col gap-1 max-w-xl">
                 <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
@@ -432,7 +434,7 @@ export default function DashboardPage() {
               <div className="flex items-center flex-wrap justify-center gap-2 mt-2">
                 <button
                   onClick={() => setActiveTab('jobs')}
-                  className="rounded-full px-4 py-1.5 text-xs font-medium bg-zinc-900 text-white shadow-sm hover:bg-zinc-800 transition-all"
+                  className="liquid-pill rounded-full px-4 py-1.5 text-xs font-semibold bg-zinc-950 text-white shadow-md hover:bg-zinc-800 transition-all cursor-pointer"
                 >
                   All Openings ({stats?.totalJobs || 0})
                 </button>
@@ -441,7 +443,7 @@ export default function DashboardPage() {
                     setActiveTab('companies');
                     setCompanyVipOnly(true);
                   }}
-                  className="rounded-full px-4 py-1.5 text-xs font-medium bg-white/80 text-zinc-700 border border-white/90 hover:bg-white transition-all shadow-sm"
+                  className="liquid-pill rounded-full px-4 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-all cursor-pointer shadow-xs"
                 >
                   VIP Watchlist ({stats?.vipCompanies || 0})
                 </button>
@@ -450,13 +452,13 @@ export default function DashboardPage() {
                     setActiveTab('jobs');
                     setJobRoute('DUAL_ATTACK');
                   }}
-                  className="rounded-full px-4 py-1.5 text-xs font-medium bg-white/80 text-zinc-700 border border-white/90 hover:bg-white transition-all shadow-sm"
+                  className="liquid-pill rounded-full px-4 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-all cursor-pointer shadow-xs"
                 >
                   Dual-Attack Ready ({stats?.routes.dualAttack || 0})
                 </button>
                 <button
                   onClick={() => setActiveTab('leads')}
-                  className="rounded-full px-4 py-1.5 text-xs font-medium bg-white/80 text-zinc-700 border border-white/90 hover:bg-white transition-all shadow-sm"
+                  className="liquid-pill rounded-full px-4 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-all cursor-pointer shadow-xs"
                 >
                   Founder & HR Leads ({stats?.totalLeads || 0})
                 </button>
@@ -468,14 +470,15 @@ export default function DashboardPage() {
               {/* Card 1: VIP Watchlist */}
               <div
                 onClick={() => setActiveTab('companies')}
-                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md transition-all relative overflow-hidden"
+                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md hover:scale-[1.01] transition-all relative overflow-hidden"
               >
+                <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
                 <div className="absolute inset-x-0 top-0 h-20 mesh-gradient-1 opacity-70 group-hover:opacity-90 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
                     <Building2 className="w-4 h-4 text-zinc-800" />
                   </div>
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                     <ArrowUpRight className="w-4 h-4 text-zinc-800" />
                   </div>
                 </div>
@@ -491,14 +494,15 @@ export default function DashboardPage() {
               {/* Card 2: Verified Leads */}
               <div
                 onClick={() => setActiveTab('leads')}
-                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md transition-all relative overflow-hidden"
+                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md hover:scale-[1.01] transition-all relative overflow-hidden"
               >
+                <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
                 <div className="absolute inset-x-0 top-0 h-20 mesh-gradient-2 opacity-70 group-hover:opacity-90 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
                     <Mail className="w-4 h-4 text-zinc-800" />
                   </div>
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                     <ArrowUpRight className="w-4 h-4 text-zinc-800" />
                   </div>
                 </div>
@@ -517,14 +521,15 @@ export default function DashboardPage() {
                   setActiveTab('jobs');
                   setJobRoute('DUAL_ATTACK');
                 }}
-                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md transition-all relative overflow-hidden"
+                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md hover:scale-[1.01] transition-all relative overflow-hidden"
               >
+                <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
                 <div className="absolute inset-x-0 top-0 h-20 mesh-gradient-3 opacity-70 group-hover:opacity-90 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
                     <Zap className="w-4 h-4 text-zinc-800" />
                   </div>
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                     <ArrowUpRight className="w-4 h-4 text-zinc-800" />
                   </div>
                 </div>
@@ -540,14 +545,15 @@ export default function DashboardPage() {
               {/* Card 4: Autonomous Agent Radar */}
               <div
                 onClick={() => setActiveTab('radar')}
-                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md transition-all relative overflow-hidden"
+                className="liquid-glass rounded-3xl p-5 flex flex-col justify-between h-48 cursor-pointer group hover:shadow-md hover:scale-[1.01] transition-all relative overflow-hidden"
               >
+                <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
                 <div className="absolute inset-x-0 top-0 h-20 mesh-gradient-4 opacity-70 group-hover:opacity-90 transition-opacity" />
                 <div className="relative z-10 flex justify-between items-start">
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm">
                     <GitBranch className="w-4 h-4 text-purple-600" />
                   </div>
-                  <div className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                  <div className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                     <ArrowUpRight className="w-4 h-4 text-zinc-800" />
                   </div>
                 </div>
@@ -562,27 +568,31 @@ export default function DashboardPage() {
             {/* Two-Column Deep Feed: Recent High-Fit Jobs + Discovered Leads */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Left Column: Recent Jobs Stream */}
-              <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-4">
-                <div className="flex items-center justify-between pb-2 border-b border-zinc-200/50">
+              <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-4 relative overflow-hidden shadow-sm">
+                <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-200/50">
                   <div className="flex items-center gap-2">
-                    <Briefcase className="w-4 h-4 text-zinc-700" />
+                    <Briefcase className="w-4 h-4 text-purple-600" />
                     <h2 className="font-semibold text-zinc-900 text-sm">Recently Discovered Roles</h2>
                   </div>
                   <button
                     onClick={() => setActiveTab('jobs')}
-                    className="text-xs font-medium text-zinc-500 hover:text-zinc-900 flex items-center gap-1 transition-colors"
+                    className="liquid-pill rounded-full px-3 py-1 text-xs font-semibold text-zinc-600 hover:text-zinc-950 flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                   >
                     <span>View all ({stats?.totalJobs || 0})</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                <div className="flex flex-col divide-y divide-zinc-200/40">
+                <div className="flex flex-col gap-2.5">
                   {stats?.recentJobs?.map((job, idx) => (
-                    <div key={idx} className="py-3.5 flex items-center justify-between gap-4 group">
+                    <div
+                      key={idx}
+                      className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-4 group cursor-default"
+                    >
                       <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm text-zinc-900 truncate">
+                          <span className="font-semibold text-sm text-zinc-900 truncate group-hover:text-purple-950 transition-colors">
                             {job.title || 'Software Role'}
                           </span>
                           <RouteBadge route={job.execution_route} compact={true} />
@@ -600,10 +610,10 @@ export default function DashboardPage() {
                         href={job.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="liquid-glass rounded-full px-3 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-sm transition-all group-hover:border-zinc-300"
+                        className="liquid-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-xs transition-all cursor-pointer"
                       >
                         <span>Apply</span>
-                        <ArrowUpRight className="w-3 h-3 text-zinc-400 group-hover:text-zinc-900" />
+                        <ArrowUpRight className="w-3 h-3 text-zinc-500 group-hover:text-zinc-900" />
                       </a>
                     </div>
                   ))}
@@ -611,37 +621,41 @@ export default function DashboardPage() {
               </div>
 
               {/* Right Column: Recent Discovered Leads */}
-              <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-4">
-                <div className="flex items-center justify-between pb-2 border-b border-zinc-200/50">
+              <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-4 relative overflow-hidden shadow-sm">
+                <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-200/50">
                   <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-zinc-700" />
+                    <Users className="w-4 h-4 text-emerald-600" />
                     <h2 className="font-semibold text-zinc-900 text-sm">Discovered Recruiters & Founders</h2>
                   </div>
                   <button
                     onClick={() => setActiveTab('leads')}
-                    className="text-xs font-medium text-zinc-500 hover:text-zinc-900 flex items-center gap-1 transition-colors"
+                    className="liquid-pill rounded-full px-3 py-1 text-xs font-semibold text-zinc-600 hover:text-zinc-950 flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                   >
                     <span>View all ({stats?.totalLeads || 0})</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                <div className="flex flex-col divide-y divide-zinc-200/40">
+                <div className="flex flex-col gap-2.5">
                   {stats?.recentLeads?.map((lead, idx) => (
-                    <div key={idx} className="py-3.5 flex items-center justify-between gap-4 group">
+                    <div
+                      key={idx}
+                      className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-4 group cursor-default"
+                    >
                       <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm text-zinc-900 truncate">
+                          <span className="font-semibold text-sm text-zinc-900 truncate">
                             {lead.contact_name || lead.role_title}
                           </span>
-                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200/60 shrink-0">
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-zinc-100/90 text-zinc-600 border border-zinc-200/60 shrink-0">
                             {lead.contact_type || 'lead'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mt-0.5">
-                          <span className="font-mono text-zinc-600 truncate">{lead.contact_email}</span>
+                        <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1">
+                          <span className="font-mono text-zinc-700 truncate">{lead.contact_email}</span>
                           <span>•</span>
-                          <span className="text-zinc-700 font-medium">{lead.company_name}</span>
+                          <span className="text-zinc-800 font-medium">{lead.company_name}</span>
                         </div>
                       </div>
 
@@ -649,7 +663,7 @@ export default function DashboardPage() {
                         <button
                           onClick={() => copyToClipboard(lead.contact_email, `email-${idx}`)}
                           title="Copy Email"
-                          className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-sm"
+                          className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-xs cursor-pointer"
                         >
                           {copiedId === `email-${idx}` ? (
                             <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -663,7 +677,7 @@ export default function DashboardPage() {
                             target="_blank"
                             rel="noreferrer"
                             title="LinkedIn Profile"
-                            className="liquid-glass rounded-full w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-sm"
+                            className="liquid-pill rounded-full w-8 h-8 flex items-center justify-center text-zinc-600 hover:text-zinc-950 transition-all shadow-xs cursor-pointer"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
@@ -679,7 +693,8 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB: ALL JOBS ----------------- */}
         {activeTab === 'jobs' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6">
+          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6 relative overflow-hidden shadow-sm">
+            <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
             {/* Header & Filter Controls */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
@@ -698,10 +713,10 @@ export default function DashboardPage() {
                       setJobRoute(route);
                       fetchJobs(1, jobSearch, route);
                     }}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                       jobRoute === route
-                        ? 'bg-zinc-900 text-white shadow-sm'
-                        : 'bg-white/80 text-zinc-600 border border-white/80 hover:bg-white'
+                        ? 'liquid-pill-dark shadow-md'
+                        : 'liquid-pill text-zinc-600 hover:text-zinc-950 shadow-xs'
                     }`}
                   >
                     {route === 'ALL' ? 'All Routes' : route}
@@ -712,7 +727,7 @@ export default function DashboardPage() {
 
             {/* Jobs Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-y-2">
+              <table className="w-full text-left text-sm border-separate border-spacing-y-2.5">
                 <thead>
                   <tr className="text-xs font-medium text-zinc-400">
                     <th className="pb-2 px-4">Role Title</th>
@@ -726,26 +741,31 @@ export default function DashboardPage() {
                 <tbody>
                   {jobsLoading ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-zinc-400 text-xs">
-                        Loading openings from local database...
+                      <td colSpan={6} className="text-center py-16 text-zinc-400 text-xs">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <div className="w-5 h-5 rounded-full border-2 border-zinc-300 border-t-zinc-800 animate-spin" />
+                          <span>Loading openings from local database...</span>
+                        </div>
                       </td>
                     </tr>
                   ) : jobs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-zinc-400 text-xs">
+                      <td colSpan={6} className="text-center py-16 text-zinc-400 text-xs">
                         No jobs found matching your criteria.
                       </td>
                     </tr>
                   ) : (
                     jobs.map((job, idx) => (
-                      <tr key={idx} className="bg-white/70 hover:bg-white transition-colors rounded-2xl group shadow-sm">
-                        <td className="py-3.5 px-4 font-medium text-zinc-900 rounded-l-2xl">
-                          <span className="truncate block max-w-xs md:max-w-md">{job.title}</span>
+                      <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
+                        <td className="py-3.5 px-4 font-semibold text-zinc-900 rounded-l-2xl">
+                          <span className="truncate block max-w-xs md:max-w-md group-hover:text-purple-950 transition-colors">
+                            {job.title}
+                          </span>
                         </td>
                         <td className="py-3.5 px-4 text-zinc-700 font-medium">{job.company || 'Company'}</td>
                         <td className="py-3.5 px-4 text-zinc-500 text-xs">
                           <div className="flex items-center gap-1.5 truncate max-w-xs">
-                            <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                             <span>{job.location || 'Remote'}</span>
                           </div>
                         </td>
@@ -760,10 +780,10 @@ export default function DashboardPage() {
                             href={job.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-900 text-white hover:bg-zinc-800 transition-all shadow-sm"
+                            className="liquid-pill-dark inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer"
                           >
                             <span>Apply</span>
-                            <ArrowUpRight className="w-3 h-3" />
+                            <ArrowUpRight className="w-3.5 h-3.5" />
                           </a>
                         </td>
                       </tr>
@@ -776,13 +796,13 @@ export default function DashboardPage() {
             {/* Pagination Controls */}
             <div className="flex items-center justify-between pt-4 border-t border-zinc-200/60 text-xs text-zinc-500">
               <span>
-                Page {jobPagination.page} of {jobPagination.totalPages}
+                Page <span className="font-semibold text-zinc-800">{jobPagination.page}</span> of {jobPagination.totalPages}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   disabled={jobPagination.page <= 1 || jobsLoading}
                   onClick={() => fetchJobs(jobPage - 1)}
-                  className="liquid-glass rounded-full px-3 py-1.5 font-medium disabled:opacity-40 hover:bg-white flex items-center gap-1 transition-all"
+                  className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                   <span>Previous</span>
@@ -790,7 +810,7 @@ export default function DashboardPage() {
                 <button
                   disabled={jobPagination.page >= jobPagination.totalPages || jobsLoading}
                   onClick={() => fetchJobs(jobPage + 1)}
-                  className="liquid-glass rounded-full px-3 py-1.5 font-medium disabled:opacity-40 hover:bg-white flex items-center gap-1 transition-all"
+                  className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <span>Next</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -802,7 +822,8 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB: COMPANIES (WATCHLIST) ----------------- */}
         {activeTab === 'companies' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6">
+          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6 relative overflow-hidden shadow-sm">
+            <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
                 <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Career Watchlist & VIP Startups</h2>
@@ -818,10 +839,10 @@ export default function DashboardPage() {
                     setCompanyVipOnly(nextVip);
                     fetchCompanies(1, companySearch, nextVip);
                   }}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
+                  className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                     companyVipOnly
-                      ? 'bg-zinc-900 text-white shadow-sm'
-                      : 'bg-white/80 text-zinc-600 border border-white/80 hover:bg-white'
+                      ? 'liquid-pill-dark shadow-md'
+                      : 'liquid-pill text-zinc-600 hover:text-zinc-950 shadow-xs'
                   }`}
                 >
                   VIP Top-500 Only
@@ -831,7 +852,7 @@ export default function DashboardPage() {
 
             {/* Companies Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-y-2">
+              <table className="w-full text-left text-sm border-separate border-spacing-y-2.5">
                 <thead>
                   <tr className="text-xs font-medium text-zinc-400">
                     <th className="pb-2 px-4">Company Name</th>
@@ -847,30 +868,33 @@ export default function DashboardPage() {
                 <tbody>
                   {companiesLoading ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-12 text-zinc-400 text-xs">
-                        Loading companies from watchlist...
+                      <td colSpan={8} className="text-center py-16 text-zinc-400 text-xs">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <div className="w-5 h-5 rounded-full border-2 border-zinc-300 border-t-zinc-800 animate-spin" />
+                          <span>Loading companies from watchlist...</span>
+                        </div>
                       </td>
                     </tr>
                   ) : companies.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-12 text-zinc-400 text-xs">
+                      <td colSpan={8} className="text-center py-16 text-zinc-400 text-xs">
                         No companies found.
                       </td>
                     </tr>
                   ) : (
                     companies.map((c, idx) => (
-                      <tr key={idx} className="bg-white/70 hover:bg-white transition-colors rounded-2xl group shadow-sm">
-                        <td className="py-3.5 px-4 font-medium text-zinc-900 rounded-l-2xl">
+                      <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
+                        <td className="py-3.5 px-4 font-semibold text-zinc-900 rounded-l-2xl">
                           <div className="flex items-center gap-2">
-                            <span>{c.company_name}</span>
+                            <span className="group-hover:text-amber-950 transition-colors">{c.company_name}</span>
                             {c.is_vip === 1 && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60 shrink-0">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60 shrink-0">
                                 VIP
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 text-xs text-zinc-600">
+                        <td className="py-3.5 px-4 text-xs text-zinc-600 font-medium">
                           {c.stage || 'Funded'}
                         </td>
                         <td className="py-3.5 px-4 text-xs text-zinc-600">{c.sector || 'Technology'}</td>
@@ -878,25 +902,25 @@ export default function DashboardPage() {
                         <td className="py-3.5 px-4 text-xs font-mono text-zinc-600">
                           {c.ats_provider || 'Direct'}
                         </td>
-                        <td className="py-3.5 px-4 text-center font-semibold text-zinc-800">
+                        <td className="py-3.5 px-4 text-center font-bold text-zinc-800">
                           {c.open_roles_count || 0}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <button
                             onClick={() => openCompanyDrilldown(c)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/60 transition-all cursor-pointer shadow-sm"
+                            className="liquid-pill inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50/80 text-rose-700 hover:bg-rose-100 border border-rose-200/60 transition-all cursor-pointer shadow-xs"
                           >
-                            <Mail className="w-3 h-3 text-rose-500" />
+                            <Mail className="w-3.5 h-3.5 text-rose-500" />
                             <span>{c.emails?.length ? `${c.emails.length} Inboxes` : '8+ Inboxes'}</span>
                           </button>
                         </td>
                         <td className="py-3.5 px-4 text-right rounded-r-2xl">
                           <button
                             onClick={() => openCompanyDrilldown(c)}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-zinc-800 hover:text-zinc-950 px-3 py-1.5 rounded-full bg-white shadow-sm hover:shadow border border-zinc-200/80 transition-all cursor-pointer"
+                            className="liquid-pill inline-flex items-center gap-1 text-xs font-semibold text-zinc-800 hover:text-zinc-950 px-3.5 py-1.5 rounded-full shadow-xs cursor-pointer"
                           >
                             <span>Explore</span>
-                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500" />
+                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-950" />
                           </button>
                         </td>
                       </tr>
@@ -909,13 +933,13 @@ export default function DashboardPage() {
             {/* Pagination Controls */}
             <div className="flex items-center justify-between pt-4 border-t border-zinc-200/60 text-xs text-zinc-500">
               <span>
-                Page {companyPagination.page} of {companyPagination.totalPages}
+                Page <span className="font-semibold text-zinc-800">{companyPagination.page}</span> of {companyPagination.totalPages}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   disabled={companyPagination.page <= 1 || companiesLoading}
                   onClick={() => fetchCompanies(companyPage - 1)}
-                  className="liquid-glass rounded-full px-3 py-1.5 font-medium disabled:opacity-40 hover:bg-white flex items-center gap-1 transition-all"
+                  className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                   <span>Previous</span>
@@ -923,7 +947,7 @@ export default function DashboardPage() {
                 <button
                   disabled={companyPagination.page >= companyPagination.totalPages || companiesLoading}
                   onClick={() => fetchCompanies(companyPage + 1)}
-                  className="liquid-glass rounded-full px-3 py-1.5 font-medium disabled:opacity-40 hover:bg-white flex items-center gap-1 transition-all"
+                  className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <span>Next</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -935,7 +959,8 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB: CONTACTS & EMAILS ----------------- */}
         {activeTab === 'leads' && (
-          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6">
+          <div className="liquid-glass rounded-3xl p-6 flex flex-col gap-6 relative overflow-hidden shadow-sm">
+            <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
                 <h2 className="text-lg font-semibold text-zinc-900 tracking-tight">Verified Recruiter & Founder Leads</h2>
@@ -952,10 +977,10 @@ export default function DashboardPage() {
                       setLeadType(type);
                       fetchLeads(1, leadSearch, type);
                     }}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-all ${
+                    className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                       leadType === type
-                        ? 'bg-zinc-900 text-white shadow-sm'
-                        : 'bg-white/80 text-zinc-600 border border-white/80 hover:bg-white'
+                        ? 'liquid-pill-dark shadow-md'
+                        : 'liquid-pill text-zinc-600 hover:text-zinc-950 shadow-xs'
                     }`}
                   >
                     {type === 'ALL' ? 'All Contacts' : type.charAt(0).toUpperCase() + type.slice(1)}
@@ -966,7 +991,7 @@ export default function DashboardPage() {
 
             {/* Leads Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm border-separate border-spacing-y-2">
+              <table className="w-full text-left text-sm border-separate border-spacing-y-2.5">
                 <thead>
                   <tr className="text-xs font-medium text-zinc-400">
                     <th className="pb-2 px-4">Contact & Title</th>
@@ -980,35 +1005,40 @@ export default function DashboardPage() {
                 <tbody>
                   {leadsLoading ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-zinc-400 text-xs">
-                        Loading leads from database...
+                      <td colSpan={6} className="text-center py-16 text-zinc-400 text-xs">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <div className="w-5 h-5 rounded-full border-2 border-zinc-300 border-t-zinc-800 animate-spin" />
+                          <span>Loading leads from database...</span>
+                        </div>
                       </td>
                     </tr>
                   ) : leads.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-zinc-400 text-xs">
+                      <td colSpan={6} className="text-center py-16 text-zinc-400 text-xs">
                         No contacts found.
                       </td>
                     </tr>
                   ) : (
                     leads.map((l, idx) => (
-                      <tr key={idx} className="bg-white/70 hover:bg-white transition-colors rounded-2xl group shadow-sm">
-                        <td className="py-3.5 px-4 font-medium text-zinc-900 rounded-l-2xl">
+                      <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
+                        <td className="py-3.5 px-4 font-semibold text-zinc-900 rounded-l-2xl">
                           <div className="flex flex-col">
-                            <span>{l.contact_name || l.role_title}</span>
+                            <span className="group-hover:text-emerald-950 transition-colors">
+                              {l.contact_name || l.role_title}
+                            </span>
                             {l.contact_name && (
                               <span className="text-xs text-zinc-500 font-normal">{l.role_title}</span>
                             )}
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 font-medium text-zinc-700">{l.company_name}</td>
+                        <td className="py-3.5 px-4 font-semibold text-zinc-700">{l.company_name}</td>
                         <td className="py-3.5 px-4 text-xs font-mono text-zinc-800">
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate max-w-[200px]">{l.contact_email}</span>
+                            <span className="truncate max-w-[200px] text-zinc-700 font-medium">{l.contact_email}</span>
                             <button
                               onClick={() => copyToClipboard(l.contact_email, `email-tab-${idx}`)}
                               title="Copy Email"
-                              className="text-zinc-400 hover:text-zinc-900 transition-colors"
+                              className="liquid-pill rounded-full w-7 h-7 flex items-center justify-center text-zinc-400 hover:text-zinc-900 shadow-xs cursor-pointer"
                             >
                               {copiedId === `email-tab-${idx}` ? (
                                 <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1019,20 +1049,20 @@ export default function DashboardPage() {
                           </div>
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200/60">
+                          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-zinc-100/90 text-zinc-700 border border-zinc-200/60">
                             {l.contact_type || 'lead'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-xs text-zinc-600 max-w-xs">
                           {l.linkedin_connection_note ? (
-                            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-zinc-50/80 border border-zinc-200/40">
-                              <span className="truncate text-[11px] text-zinc-500">
+                            <div className="flex items-center justify-between gap-2 p-2 rounded-xl liquid-glass-subtle bg-white/70 border border-white/80">
+                              <span className="truncate text-[11px] text-zinc-600">
                                 {l.linkedin_connection_note}
                               </span>
                               <button
                                 onClick={() => copyToClipboard(l.linkedin_connection_note, `note-${idx}`)}
                                 title="Copy 280-char Note"
-                                className="shrink-0 p-1 rounded-md hover:bg-zinc-200 text-zinc-600 transition-colors"
+                                className="shrink-0 p-1 rounded-md hover:bg-white text-zinc-600 transition-colors cursor-pointer"
                               >
                                 {copiedId === `note-${idx}` ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1051,7 +1081,7 @@ export default function DashboardPage() {
                               href={l.contact_linkedin_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-700 hover:text-zinc-950 px-2.5 py-1 rounded-full bg-zinc-100/80 hover:bg-zinc-200 transition-all"
+                              className="liquid-pill inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700 hover:text-zinc-950 px-3 py-1.5 rounded-full shadow-xs cursor-pointer"
                             >
                               <span>LinkedIn</span>
                               <ExternalLink className="w-3 h-3" />
@@ -1070,13 +1100,13 @@ export default function DashboardPage() {
             {/* Pagination Controls */}
             <div className="flex items-center justify-between pt-4 border-t border-zinc-200/60 text-xs text-zinc-500">
               <span>
-                Page {leadPagination.page} of {leadPagination.totalPages}
+                Page <span className="font-semibold text-zinc-800">{leadPagination.page}</span> of {leadPagination.totalPages}
               </span>
               <div className="flex items-center gap-2">
                 <button
                   disabled={leadPagination.page <= 1 || leadsLoading}
                   onClick={() => fetchLeads(leadPage - 1)}
-                  className="liquid-glass rounded-full px-3 py-1.5 font-medium disabled:opacity-40 hover:bg-white flex items-center gap-1 transition-all"
+                  className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                   <span>Previous</span>
@@ -1084,7 +1114,7 @@ export default function DashboardPage() {
                 <button
                   disabled={leadPagination.page >= leadPagination.totalPages || leadsLoading}
                   onClick={() => fetchLeads(leadPage + 1)}
-                  className="liquid-glass rounded-full px-3 py-1.5 font-medium disabled:opacity-40 hover:bg-white flex items-center gap-1 transition-all"
+                  className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <span>Next</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -1102,8 +1132,9 @@ export default function DashboardPage() {
 
       {/* ----------------- COMPANY DRILLDOWN DRAWER ----------------- */}
       {selectedCompany && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-zinc-900/25 backdrop-blur-sm transition-opacity">
-          <div className="w-full max-w-2xl h-full liquid-glass border-l border-white/80 p-6 md:p-8 flex flex-col shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-200">
+        <div className="fixed inset-0 z-50 flex justify-end bg-zinc-900/30 backdrop-blur-md transition-opacity">
+          <div className="w-full max-w-2xl h-full liquid-glass-elevated border-l border-white/95 p-6 md:p-8 flex flex-col shadow-[0_25px_60px_-15px_rgba(0,0,0,0.18)] overflow-y-auto animate-in slide-in-from-right duration-200 relative">
+            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none z-20" />
             {/* Header */}
             <div className="flex items-start justify-between pb-6 border-b border-zinc-200/60">
               <div className="flex flex-col gap-1.5">
@@ -1112,18 +1143,18 @@ export default function DashboardPage() {
                     {selectedCompany.company_name}
                   </h2>
                   {selectedCompany.is_vip === 1 && (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
                       VIP Top-500
                     </span>
                   )}
                   {drilldownData?.stats?.hasDualAttack && (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200/60">
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200/60">
                       DUAL ATTACK READY
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-zinc-500">
-                  <span className="font-mono text-zinc-700">{selectedCompany.official_domain || 'domain.com'}</span>
+                  <span className="font-mono text-zinc-700 font-medium">{selectedCompany.official_domain || 'domain.com'}</span>
                   <span>•</span>
                   <span>{selectedCompany.sector || 'Technology'}</span>
                   <span>•</span>
@@ -1136,7 +1167,7 @@ export default function DashboardPage() {
                   setSelectedCompany(null);
                   setDrilldownData(null);
                 }}
-                className="liquid-glass rounded-full p-2 text-zinc-500 hover:text-zinc-900 transition-colors shadow-sm cursor-pointer"
+                className="liquid-pill rounded-full p-2 text-zinc-500 hover:text-zinc-950 transition-all shadow-xs cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1146,7 +1177,7 @@ export default function DashboardPage() {
             <div className="py-4 flex flex-wrap items-center gap-2 border-b border-zinc-200/40">
               <button
                 onClick={() => copyAllEmails(drilldownData?.stats?.verifiedEmails || selectedCompany.emails)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold bg-zinc-900 text-white hover:bg-zinc-800 transition-all shadow-sm cursor-pointer"
+                className="liquid-pill-dark inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-semibold cursor-pointer shadow-md"
               >
                 {copiedAllEmails ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedAllEmails ? 'Copied All to Clipboard!' : `Copy All (${drilldownData?.stats?.totalLeads || 8}) Emails`}</span>
@@ -1154,7 +1185,7 @@ export default function DashboardPage() {
 
               <a
                 href={`mailto:${(drilldownData?.stats?.verifiedEmails || []).join(';')}?subject=Senior%20Software%20Engineer%20Application%20%E2%80%94%20${encodeURIComponent(selectedCompany.company_name)}`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold bg-white text-zinc-800 hover:bg-zinc-50 border border-zinc-200/80 transition-all shadow-sm"
+                className="liquid-pill inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 shadow-xs cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5 text-rose-500" />
                 <span>Compose Bulk Outreach</span>
@@ -1165,7 +1196,7 @@ export default function DashboardPage() {
                   href={selectedCompany.careers_page_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 px-3 py-2 rounded-2xl text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-white/60 hover:bg-white transition-all ml-auto"
+                  className="liquid-pill inline-flex items-center gap-1 px-3.5 py-2 rounded-2xl text-xs font-semibold text-zinc-600 hover:text-zinc-950 shadow-xs ml-auto cursor-pointer"
                 >
                   <span>Portal</span>
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -1179,8 +1210,8 @@ export default function DashboardPage() {
                 onClick={() => setDrawerTab('leads')}
                 className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'leads'
-                    ? 'bg-white shadow-sm text-zinc-900 border border-white/80'
-                    : 'text-zinc-500 hover:text-zinc-900'
+                    ? 'liquid-pill bg-white shadow-sm text-zinc-950 border border-white'
+                    : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/40'
                 }`}
               >
                 Verified Contacts & Inboxes ({drilldownData?.stats?.totalLeads || 0})
@@ -1189,8 +1220,8 @@ export default function DashboardPage() {
                 onClick={() => setDrawerTab('jobs')}
                 className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'jobs'
-                    ? 'bg-white shadow-sm text-zinc-900 border border-white/80'
-                    : 'text-zinc-500 hover:text-zinc-900'
+                    ? 'liquid-pill bg-white shadow-sm text-zinc-950 border border-white'
+                    : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/40'
                 }`}
               >
                 Live Jobs On Radar ({drilldownData?.stats?.totalJobs || 0})
@@ -1209,7 +1240,7 @@ export default function DashboardPage() {
                   {drilldownData?.leads?.map((lead: any, idx: number) => (
                     <div
                       key={idx}
-                      className="liquid-glass rounded-2xl p-4 flex flex-col gap-2.5 bg-white/70 hover:bg-white transition-all shadow-sm"
+                      className="liquid-row rounded-2xl p-4 flex flex-col gap-2.5 group cursor-default relative overflow-hidden"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex flex-col min-w-0">
@@ -1217,7 +1248,7 @@ export default function DashboardPage() {
                             <span className="font-semibold text-sm text-zinc-900">
                               {lead.contact_name || lead.role_title}
                             </span>
-                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200/60">
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200/60">
                               {lead.contact_type}
                             </span>
                           </div>
@@ -1226,7 +1257,7 @@ export default function DashboardPage() {
 
                         <button
                           onClick={() => copyToClipboard(lead.contact_email, `drawer-${lead.lead_id}`)}
-                          className="liquid-glass rounded-full px-2.5 py-1 text-xs font-mono font-medium text-zinc-800 hover:text-zinc-950 flex items-center gap-1.5 shrink-0 shadow-sm transition-all cursor-pointer"
+                          className="liquid-pill rounded-full px-3 py-1 text-xs font-mono font-medium text-zinc-800 hover:text-zinc-950 flex items-center gap-1.5 shrink-0 shadow-xs transition-all cursor-pointer"
                         >
                           {copiedId === `drawer-${lead.lead_id}` ? (
                             <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -1238,12 +1269,12 @@ export default function DashboardPage() {
                       </div>
 
                       {lead.linkedin_connection_note && (
-                        <div className="p-3 rounded-xl bg-zinc-50/80 border border-zinc-200/50 flex flex-col gap-1.5 mt-1">
-                          <div className="flex items-center justify-between text-[11px] font-medium text-zinc-500">
+                        <div className="p-3 rounded-xl liquid-glass-subtle bg-white/70 border border-white/80 flex flex-col gap-1.5 mt-1">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500">
                             <span>Tailored LinkedIn Connection Note (≤280 chars)</span>
                             <button
                               onClick={() => copyToClipboard(lead.linkedin_connection_note, `note-${lead.lead_id}`)}
-                              className="text-zinc-600 hover:text-zinc-900 flex items-center gap-1 cursor-pointer"
+                              className="text-zinc-700 hover:text-zinc-950 flex items-center gap-1 cursor-pointer font-medium"
                             >
                               {copiedId === `note-${lead.lead_id}` ? (
                                 <Check className="w-3 h-3 text-emerald-600" />
@@ -1271,7 +1302,7 @@ export default function DashboardPage() {
                     drilldownData?.jobs?.map((job: any, idx: number) => (
                       <div
                         key={idx}
-                        className="liquid-glass rounded-2xl p-4 flex items-center justify-between gap-4 bg-white/70 hover:bg-white transition-all shadow-sm"
+                        className="liquid-row rounded-2xl p-4 flex items-center justify-between gap-4 group cursor-default"
                       >
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1288,10 +1319,10 @@ export default function DashboardPage() {
                           href={job.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="liquid-glass rounded-full px-3 py-1.5 text-xs font-medium text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-sm transition-all"
+                          className="liquid-pill rounded-full px-3.5 py-1.5 text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shrink-0 shadow-xs transition-all cursor-pointer"
                         >
                           <span>Apply</span>
-                          <ExternalLink className="w-3 h-3 text-zinc-500" />
+                          <ExternalLink className="w-3 h-3 text-zinc-500 group-hover:text-zinc-950" />
                         </a>
                       </div>
                     ))

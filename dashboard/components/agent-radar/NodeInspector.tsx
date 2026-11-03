@@ -56,7 +56,8 @@ export function NodeInspector({ node }: NodeInspectorProps) {
   };
 
   return (
-    <div className="liquid-glass rounded-3xl p-5 flex flex-col gap-4 border border-white/80 shadow-sm overflow-hidden">
+    <div className="liquid-glass rounded-3xl p-5 flex flex-col gap-4 relative overflow-hidden shadow-sm">
+      <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
       {/* Node Header */}
       <div className="flex flex-col gap-2 pb-3 border-b border-zinc-200/60">
         <div className="flex items-start justify-between gap-3">
@@ -95,12 +96,12 @@ export function NodeInspector({ node }: NodeInspectorProps) {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-zinc-100/80 border border-zinc-200/50">
+      <div className="flex items-center gap-1.5 p-1 rounded-2xl liquid-glass-subtle border border-white/80">
         <button
           onClick={() => setActiveTab('action')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all ${
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             activeTab === 'action'
-              ? 'bg-white shadow-sm text-zinc-900 font-semibold'
+              ? 'liquid-pill bg-white shadow-xs text-zinc-950 font-bold'
               : 'text-zinc-500 hover:text-zinc-800'
           }`}
         >
@@ -108,9 +109,9 @@ export function NodeInspector({ node }: NodeInspectorProps) {
         </button>
         <button
           onClick={() => setActiveTab('telemetry')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all ${
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             activeTab === 'telemetry'
-              ? 'bg-white shadow-sm text-zinc-900 font-semibold'
+              ? 'liquid-pill bg-white shadow-xs text-zinc-950 font-bold'
               : 'text-zinc-500 hover:text-zinc-800'
           }`}
         >
@@ -118,9 +119,9 @@ export function NodeInspector({ node }: NodeInspectorProps) {
         </button>
         <button
           onClick={() => setActiveTab('architecture')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-all ${
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
             activeTab === 'architecture'
-              ? 'bg-white shadow-sm text-zinc-900 font-semibold'
+              ? 'liquid-pill bg-white shadow-xs text-zinc-950 font-bold'
               : 'text-zinc-500 hover:text-zinc-800'
           }`}
         >
