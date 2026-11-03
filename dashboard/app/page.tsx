@@ -621,7 +621,7 @@ export default function DashboardPage() {
               <div className="flex items-center flex-wrap justify-center gap-2 mt-2">
                 <button
                   onClick={() => setActiveTab('jobs')}
-                  className="liquid-pill rounded-full px-4 py-1.5 text-xs font-semibold bg-zinc-950 text-white shadow-md hover:bg-zinc-800 transition-all cursor-pointer"
+                  className="liquid-pill-dark rounded-full px-4 py-1.5 text-xs font-semibold shadow-md cursor-pointer hover:scale-[1.02] transition-all"
                 >
                   All Openings ({stats?.totalJobs || 0})
                 </button>
