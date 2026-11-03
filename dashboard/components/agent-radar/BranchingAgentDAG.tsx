@@ -152,7 +152,49 @@ export function BranchingAgentDAG({
         height={svgHeight}
         className="absolute left-0 top-0 pointer-events-none z-10 overflow-visible"
       >
-        {/* 1. CONTINUOUS INTRA-LANE VERTICAL TRACKS & FORK CURVES */}
+        {/* 0. CONTINUOUS GRAY DASHED TRUNK LINE (ANCHORS ALL BRANCHES) */}
+        {nodes.length > 0 && (
+          <line
+            x1={goalX}
+            y1={goalY + 8}
+            x2={goalX}
+            y2={getRowY(nodes.length)}
+            stroke="#94A3B8"
+            strokeWidth="1.75"
+            strokeDasharray="4 3"
+            strokeLinecap="round"
+            className="opacity-70 transition-all duration-300"
+          />
+        )}
+
+        {/* 1. GRAY DASHED BRANCH FORK CURVES FROM TRUNK TO EACH LANE */}
+        {nodes.map((node, idx) => {
+          if (!node.lane || node.lane === 0) return null;
+          const rowIndex = idx + 1;
+          const parentLane = typeof node.forkFromLane === 'number' ? node.forkFromLane : 0;
+          const parentX = getLaneX(parentLane);
+          const childX = getLaneX(node.lane);
+          const childY = getRowY(rowIndex);
+          const forkStartY = childY - ROW_HEIGHT * 0.75;
+
+          // Smooth cubic bezier from parent trunk down and right into the branch node
+          const d = `M ${parentX} ${forkStartY} C ${parentX} ${childY - 6}, ${childX - 6} ${childY}, ${childX} ${childY}`;
+
+          return (
+            <path
+              key={`branch-fork-${node.id}`}
+              d={d}
+              fill="none"
+              stroke="#94A3B8"
+              strokeWidth="1.75"
+              strokeDasharray="3.5 2.5"
+              strokeLinecap="round"
+              className="opacity-80 transition-all duration-300"
+            />
+          );
+        })}
+
+        {/* 2. CONTINUOUS INTRA-LANE VERTICAL TRACKS */}
         {Object.values(laneGroups).map((group) => {
           const laneDef = PIPELINE_LANES[group.category] || PIPELINE_LANES.default;
           const x = getLaneX(group.lane);
@@ -161,73 +203,24 @@ export function BranchingAgentDAG({
           const yTop = getRowY(minRow);
           const yBottom = getRowY(maxRow);
 
+          if (maxRow <= minRow) return null;
+
           return (
-            <g key={`lane-group-${group.lane}`}>
-              {/* Continuous vertical track */}
-              {maxRow > minRow && (
-                <line
-                  x1={x}
-                  y1={yTop}
-                  x2={x}
-                  y2={yBottom}
-                  stroke={laneDef.strokeColor}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  className="transition-all duration-300 opacity-80"
-                />
-              )}
-
-              {/* Fork Curve from Parent Lane */}
-              {group.lane > 0 && (() => {
-                const bottomNode = group.nodes[group.nodes.length - 1];
-                const parentLane =
-                  typeof bottomNode.forkFromLane === 'number'
-                    ? bottomNode.forkFromLane
-                    : 0;
-
-                const parentCandidates = nodes
-                  .map((n, i) => ({ ...n, rowIndex: i + 1 }))
-                  .filter((n) => (n.lane ?? 0) === parentLane && n.rowIndex > maxRow);
-
-                if (!parentCandidates.length) {
-                  // Connect to root goal or top of parent lane
-                  const parentX = getLaneX(parentLane);
-                  const parentY = yTop + 14;
-                  return (
-                    <path
-                      d={`M ${parentX} ${parentY} C ${parentX} ${yTop - 6}, ${x} ${yTop - 6}, ${x} ${yTop}`}
-                      fill="none"
-                      stroke={laneDef.strokeColor}
-                      strokeWidth="1.8"
-                      strokeDasharray="3 2"
-                      strokeOpacity="0.75"
-                    />
-                  );
-                }
-
-                const parentNode = parentCandidates[0];
-                const parentX = getLaneX(parentLane);
-                const parentY = getRowY(parentNode.rowIndex);
-                const forkTurnY = Math.min(yBottom + 16, parentY - 4);
-
-                const d = `M ${parentX} ${parentY} C ${parentX} ${forkTurnY}, ${x} ${yBottom + 12}, ${x} ${yBottom}`;
-
-                return (
-                  <path
-                    d={d}
-                    fill="none"
-                    stroke={laneDef.strokeColor}
-                    strokeWidth="1.8"
-                    strokeDasharray="3 2"
-                    strokeOpacity="0.75"
-                  />
-                );
-              })()}
-            </g>
+            <line
+              key={`lane-intra-${group.lane}`}
+              x1={x}
+              y1={yTop}
+              x2={x}
+              y2={yBottom}
+              stroke={laneDef.strokeColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+              className="transition-all duration-300 opacity-80"
+            />
           );
         })}
 
-        {/* 2. BEZIER MERGE CURVES INTO TOP GOAL CIRCLE (WHEN DONE) */}
+        {/* 3. BEZIER MERGE CURVES INTO TOP GOAL CIRCLE (WHEN DONE) */}
         {Object.values(laneGroups).map((group) => {
           const laneDef = PIPELINE_LANES[group.category] || PIPELINE_LANES.default;
           const x = getLaneX(group.lane);
@@ -275,7 +268,7 @@ export function BranchingAgentDAG({
           );
         })}
 
-        {/* 3. TOP GOAL / MERGE COMMIT CIRCLE */}
+        {/* 4. TOP GOAL / MERGE COMMIT CIRCLE */}
         {goalState === 'pending' && (
           <circle
             cx={goalX}
