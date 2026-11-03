@@ -57,6 +57,7 @@ interface StatsData {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'jobs' | 'companies' | 'leads' | 'radar'>('overview');
+  const [greeting, setGreeting] = useState('Good Evening');
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -268,6 +269,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchStats();
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      setGreeting('Good Morning');
+    } else if (hour >= 12 && hour < 17) {
+      setGreeting('Good Afternoon');
+    } else if (hour >= 17 && hour < 22) {
+      setGreeting('Good Evening');
+    } else {
+      setGreeting('Good Night');
+    }
   }, []);
 
   useEffect(() => {
@@ -610,7 +621,7 @@ export default function DashboardPage() {
               <div className="w-14 h-14 rounded-full orb-peach shrink-0 shadow-lg mb-1" />
               <div className="flex flex-col gap-1 max-w-xl">
                 <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900">
-                  Good Morning <span className="font-bold text-zinc-950">Sameer</span>, {stats?.totalJobs ? `${stats.totalJobs.toLocaleString()} live openings` : 'ready for discovery'}.
+                  {greeting} <span className="font-bold text-zinc-950">Sameer</span>, {stats?.totalJobs ? `${stats.totalJobs.toLocaleString()} live openings` : 'ready for discovery'}.
                 </h1>
                 <p className="text-sm text-zinc-500">
                   {stats?.totalLeads ? stats.totalLeads.toLocaleString() : 0} verified recruiter and founder contacts synthesized across {stats?.totalCompanies || 0} watchlist startups.
