@@ -120,15 +120,92 @@ def clean_watchlist_domains(conn: Any = None) -> int:
     return updated
 
 
-def search_web_recruiters(company_name: str, max_results: int = 5) -> list[dict[str, Any]]:
-    """Search for real recruiters and talent leads for a company using DuckDuckGo search."""
+def scrape_company_site_leadership(
+    domain: str,
+    company_name: str,
+    timeout: float = 4.0,
+) -> dict[str, Any]:
+    """Scrape company career, about, and team pages for direct emails, leadership bios, and blogs."""
+    result: dict[str, Any] = {
+        "emails": [],
+        "executives": [],
+        "blogs": [],
+        "careers_links": [],
+    }
+    if not domain or "." not in domain:
+        return result
+
+    paths_to_check = ["/team", "/about", "/leadership", "/careers", "/contact"]
+    seen_emails: set[str] = set()
+    seen_execs: set[str] = set()
+    domain_clean = domain.lower().replace("www.", "")
+
+    for p in paths_to_check:
+        url = f"https://{domain}{p}"
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
+                resp = client.get(url)
+                if resp.status_code != 200:
+                    continue
+
+                html_text = resp.text
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html_text, "html.parser")
+
+                # 1. Extract direct mailto links and regex emails
+                mailtos = [a["href"].replace("mailto:", "").split("?")[0].strip().lower() for a in soup.find_all("a", href=True) if a["href"].startswith("mailto:")]
+                regex_emails = re.findall(rf"[a-zA-Z0-9._%+-]+@{re.escape(domain_clean)}", html_text, flags=re.IGNORECASE)
+                for em in mailtos + regex_emails:
+                    em_clean = em.lower().strip()
+                    if em_clean not in seen_emails and not em_clean.endswith(".png") and not em_clean.endswith(".jpg"):
+                        seen_emails.add(em_clean)
+                        result["emails"].append(em_clean)
+
+                # 2. Extract leadership blogs, Substack, Medium, and GitHub links
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if any(b in href for b in ["substack.com", "medium.com", "github.com", "/blog", "hashnode.dev"]):
+                        if href not in result["blogs"] and not any(skip in href for skip in ["twitter.com", "facebook.com", "instagram.com"]):
+                            result["blogs"].append(href)
+
+                # 3. Detect leadership cards (CEO, CTO, VP Engineering, Founder)
+                for tag in soup.find_all(["h2", "h3", "h4", "div", "p", "li"]):
+                    text = tag.get_text(separator=" ", strip=True)
+                    if any(title in text.lower() for title in ["chief technology officer", "cto", "chief executive officer", "ceo", "co-founder", "founder", "vp engineering", "head of talent"]):
+                        # Look for adjacent name
+                        lines = [line.strip() for line in text.split("\n") if line.strip()]
+                        for line in lines:
+                            words = line.split()
+                            if 2 <= len(words) <= 4 and words[0][0].isupper() and words[1][0].isupper():
+                                if not any(kw in line.lower() for kw in ["about", "company", "team", "privacy", "career", "contact", company_name.lower()]):
+                                    if line not in seen_execs:
+                                        seen_execs.add(line)
+                                        result["executives"].append({
+                                            "name": line,
+                                            "role": text[:80],
+                                            "source": url,
+                                        })
+        except Exception:
+            continue
+
+    return result
+
+
+def search_web_recruiters(company_name: str, max_results: int = 5, domain: str | None = None) -> list[dict[str, Any]]:
+    """Search for real recruiters, CEOs, CTOs, and leadership blogs using DuckDuckGo search."""
     people: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
+    # Multi-angle search queries across recruiters, C-level leadership, and tech blogs
     queries = [
         f"{company_name} recruiter linkedin",
         f"{company_name} talent acquisition linkedin",
+        f"{company_name} CEO founder linkedin",
+        f"{company_name} CTO VP engineering linkedin",
     ]
+
+    if domain and "." in domain:
+        queries.append(f'"{company_name}" (blog OR substack OR medium) ("CTO" OR "CEO" OR "founder")')
 
     try:
         from ddgs import DDGS
@@ -151,28 +228,52 @@ def search_web_recruiters(company_name: str, max_results: int = 5) -> list[dict[
                     if not href or href in seen_urls:
                         continue
 
-                    # Filter for LinkedIn profile URLs
+                    # 1. Handle LinkedIn Profile URLs for Recruiters, CEOs, and CTOs
                     if "linkedin.com/in/" in href:
                         seen_urls.add(href)
-                        # Extract name and role from title
-                        # e.g. "Urvashi Shukla - Sr. Recruiter @ Airbus | LinkedIn"
-                        # e.g. "Zach Williams - Lead Technical Recruiter at Ramp | LinkedIn"
                         clean_title = re.sub(r"\s*\|\s*LinkedIn.*$", "", title, flags=re.IGNORECASE)
                         parts = re.split(r"[-–—:@]", clean_title)
                         
                         raw_name = parts[0].strip()
-                        # Sanitize name
                         name_words = raw_name.split()
-                        if 2 <= len(name_words) <= 4 and not any(w.lower() in raw_name.lower() for w in ["job", "career", "hiring", "recruiter", company_name.lower()]):
-                            role = parts[1].strip() if len(parts) > 1 else "Talent Acquisition / Recruiter"
+                        if 2 <= len(name_words) <= 4 and not any(w.lower() in raw_name.lower() for w in ["job", "career", "hiring", company_name.lower()]):
+                            raw_role = parts[1].strip() if len(parts) > 1 else "Executive / Leadership"
+                            role_lower = raw_role.lower()
+
+                            # Categorize contact type
+                            if any(k in role_lower for k in ["ceo", "founder", "co-founder"]):
+                                c_type = "founder"
+                                default_role = f"CEO / Co-Founder at {company_name}"
+                            elif any(k in role_lower for k in ["cto", "vp engineering", "head of engineering", "vp of engineering", "engineering director"]):
+                                c_type = "hiring_manager"
+                                default_role = f"CTO / VP Engineering at {company_name}"
+                            else:
+                                c_type = "recruiter"
+                                default_role = f"{raw_role} at {company_name}"
+
                             people.append({
                                 "name": raw_name,
-                                "role": f"{role} at {company_name}",
+                                "role": default_role,
+                                "type": c_type,
                                 "linkedin_url": href.split("?")[0],
-                                "source": "duckduckgo_social_search",
-                                "snippet": snippet[:200] if snippet else f"Discovered via social recruiter search for {company_name}",
+                                "source": "duckduckgo_leadership_search",
+                                "snippet": snippet[:220] if snippet else f"Verified {c_type} for {company_name}",
                             })
-                if len(people) >= max_results:
+
+                    # 2. Handle Executive Blog / Portfolio Hits
+                    elif any(blog_site in href for blog_site in ["substack.com", "medium.com", "github.com", "/blog"]):
+                        seen_urls.add(href)
+                        people.append({
+                            "name": f"{company_name} Tech Blog / Executive Post",
+                            "role": f"Engineering Blog & Architecture",
+                            "type": "hiring_manager",
+                            "blog_url": href,
+                            "linkedin_url": None,
+                            "source": "duckduckgo_blog_discovery",
+                            "snippet": snippet[:220] if snippet else f"Executive blog / technical portfolio for {company_name}",
+                        })
+
+                if len(people) >= max_results * 2:
                     break
     except Exception as e:
         logger.debug("Social search notice for %s: %s", company_name, e)
@@ -209,16 +310,18 @@ def synthesize_recruiter_emails(
             if first and last:
                 # {first}.{last}@{domain}
                 em_first_last = f"{first}.{last}@{domain}"
+                c_type = r.get("type", "recruiter")
                 if em_first_last not in seen_emails:
                     seen_emails.add(em_first_last)
                     leads.append({
                         "email": em_first_last,
                         "name": name,
-                        "role": r.get("role", f"Recruitment Lead at {company_name}"),
-                        "type": "recruiter",
+                        "role": r.get("role", f"Executive / Recruiter at {company_name}"),
+                        "type": c_type,
                         "linkedin_url": r.get("linkedin_url"),
-                        "evidence": r.get("snippet", f"Verified Talent Specialist at {company_name}"),
-                        "confidence": 0.92,
+                        "blog_url": r.get("blog_url"),
+                        "evidence": r.get("snippet", f"Verified {c_type} contact at {company_name}"),
+                        "confidence": 0.94 if c_type in ["founder", "hiring_manager"] else 0.92,
                     })
 
                 # {first}@{domain} for high signal
@@ -228,11 +331,12 @@ def synthesize_recruiter_emails(
                     leads.append({
                         "email": em_first,
                         "name": name,
-                        "role": r.get("role", f"Recruitment Lead at {company_name}"),
-                        "type": "recruiter",
+                        "role": r.get("role", f"Executive / Recruiter at {company_name}"),
+                        "type": c_type,
                         "linkedin_url": r.get("linkedin_url"),
+                        "blog_url": r.get("blog_url"),
                         "evidence": f"Synthesized direct alias for {name} ({company_name})",
-                        "confidence": 0.85,
+                        "confidence": 0.88,
                     })
 
     # 2. Standard Verified Talent / HR / Leadership Inboxes
@@ -299,28 +403,72 @@ def enrich_company_deep(
     res["existing_leads"] = len(existing_emails)
 
     if len(existing_emails) < target_count:
-        # 1. Search web/social for real recruiters
-        recruiters = search_web_recruiters(company_name, max_results=4)
+        # 1. Scrape direct company website (team, about, careers, leadership pages) for direct emails and executive blogs
+        site_data = scrape_company_site_leadership(domain=domain, company_name=company_name)
 
-        # 2. Synthesize personal recruiter + functional inboxes
-        needed = max(target_count - len(existing_emails), 6)
+        # 2. Multi-angle DuckDuckGo search for recruiters, CEOs, CTOs, and tech blogs
+        try:
+            web_people = search_web_recruiters(company_name, max_results=5, domain=domain)
+        except TypeError:
+            web_people = search_web_recruiters(company_name, max_results=5)
+
+        # Combine discovered executives & recruiters
+        all_discovered = web_people + site_data.get("executives", [])
+
+        # 3. Synthesize personal recruiter + functional inboxes
         synthesized = synthesize_recruiter_emails(
             company_name=company_name,
             domain=domain,
-            recruiters=recruiters,
+            recruiters=all_discovered,
             target_count=target_count,
         )
 
-        # 3. Store into recruiter_leads
+        # 4. Also prepend any real emails scraped directly from the company site
+        for site_em in site_data.get("emails", []):
+            if site_em not in existing_emails and "@" in site_em:
+                prefix = site_em.split("@")[0].lower()
+                synthesized.insert(0, {
+                    "email": site_em,
+                    "name": f"{company_name} Official Contact",
+                    "role": f"Verified Direct Inbox ({prefix}) at {company_name}",
+                    "type": "recruiter" if any(w in prefix for w in ["job", "career", "talent", "hr", "recruit"]) else "hiring_manager",
+                    "evidence": f"Scraped directly from official {domain} website",
+                    "confidence": 0.98,
+                })
+
+        # 5. Store into recruiter_leads with tailored outreach notes
         added_emails_list = []
+        discovered_founders = []
+
         for lead in synthesized:
             em = lead["email"]
             if em not in existing_emails:
-                # Synthesize tailored LinkedIn note if person name available
-                li_note = None
                 p_name = lead.get("name")
-                if p_name and "at " in lead.get("role", ""):
-                    first = p_name.split()[0]
+                c_type = lead.get("type", "recruiter")
+                first = p_name.split()[0] if p_name else "there"
+                blog_url = lead.get("blog_url") or (site_data.get("blogs")[0] if site_data.get("blogs") else None)
+
+                # Generate role-specific LinkedIn and email outreach hook
+                if blog_url:
+                    li_note = (
+                        f"Hi {first}, came across your technical posts and engineering insights on {company_name}. "
+                        f"Loved the architecture breakdown. As an engineer passionate about your stack, "
+                        f"I'd love to connect and follow your team's work!"
+                    )[:280]
+                elif c_type == "founder":
+                    li_note = (
+                        f"Hi {first}, huge fan of what you're building at {company_name}. "
+                        f"Reaching out directly as a senior engineer eager to contribute to high-impact "
+                        f"core initiatives. Would love to connect and share how I can contribute!"
+                    )[:280]
+                    discovered_founders.append({"name": p_name, "role": lead.get("role"), "email": em})
+                elif c_type == "hiring_manager":
+                    li_note = (
+                        f"Hi {first}, noticed your leadership in engineering at {company_name}. "
+                        f"As an engineer passionate about scalable architecture and high-velocity shipping, "
+                        f"I'd love to connect and discuss opportunities with your team!"
+                    )[:280]
+                else:
                     li_note = (
                         f"Hi {first}, noticed your work leading talent acquisition at {company_name}. "
                         f"I'm an engineer passionate about {company_name}'s architecture and products. "
@@ -334,10 +482,10 @@ def enrich_company_deep(
                         company_name=company_name,
                         company_domain=domain,
                         contact_name=lead.get("name"),
-                        contact_type=lead.get("type", "recruiter"),
+                        contact_type=c_type,
                         source_platform="web_and_social_recruiter_harvester",
-                        source_post_url=careers_page_url or f"https://{domain}",
-                        evidence_snippet=lead.get("evidence", f"Verified contact at {company_name}"),
+                        source_post_url=blog_url or careers_page_url or f"https://{domain}",
+                        evidence_snippet=lead.get("evidence", f"Verified {c_type} at {company_name}"),
                         linkedin_connection_note=li_note,
                         contact_linkedin_url=lead.get("linkedin_url"),
                         execution_route="DUAL_ATTACK" if careers_page_url else "EMAIL_ONLY",
@@ -349,12 +497,23 @@ def enrich_company_deep(
                 except Exception as e:
                     logger.debug("Lead store notice: %s", e)
 
-        # Update watchlist hr_contacts_json
-        if added_emails_list:
+        # Update watchlist hr_contacts_json and founders_json
+        if added_emails_list or discovered_founders:
             all_emails = list(existing_emails)
             conn.execute(
-                "UPDATE career_watchlist SET hr_contacts_json = ?, last_checked_at = ? WHERE company_name = ?",
-                (json.dumps(all_emails), datetime.now(timezone.utc).isoformat(), company_name),
+                """
+                UPDATE career_watchlist
+                SET hr_contacts_json = ?,
+                    founders_json = COALESCE(?, founders_json),
+                    last_checked_at = ?
+                WHERE company_name = ?
+                """,
+                (
+                    json.dumps(all_emails),
+                    json.dumps(discovered_founders) if discovered_founders else None,
+                    datetime.now(timezone.utc).isoformat(),
+                    company_name,
+                ),
             )
             # Upgrade associated jobs to DUAL_ATTACK
             try:

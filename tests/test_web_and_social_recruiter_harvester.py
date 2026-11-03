@@ -88,7 +88,7 @@ def test_enrich_company_deep(mock_db, monkeypatch):
     mock_db.commit()
 
     # Mock search_web_recruiters to avoid external network during unit test
-    def mock_search(c_name, max_results=4):
+    def mock_search(c_name, max_results=4, **kwargs):
         return [
             {
                 "name": "Alex Mercer",
@@ -97,6 +97,12 @@ def test_enrich_company_deep(mock_db, monkeypatch):
                 "snippet": "Talent leader hiring engineers",
             }
         ]
+
+    # Mock scrape_company_site_leadership to avoid external HTTP requests during unit test
+    monkeypatch.setattr(
+        "applypilot.discovery.web_and_social_recruiter_harvester.scrape_company_site_leadership",
+        lambda domain, company_name, timeout=4.0: {"emails": [], "executives": [], "blogs": [], "careers_links": []},
+    )
 
     monkeypatch.setattr(
         "applypilot.discovery.web_and_social_recruiter_harvester.search_web_recruiters",
