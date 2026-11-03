@@ -221,6 +221,10 @@ def search_web_recruiters(
         for c in cities[:2]:
             queries.append(f'"{company_name}" technical recruiter "{c}" site:linkedin.com/in')
 
+    # Foreign and Global Startup Executive Dorks (US, UK, Europe, Remote)
+    queries.append(f'"{company_name}" ("CEO" OR "CTO" OR "Founder" OR "VP Engineering") ("US" OR "San Francisco" OR "New York" OR "London" OR "Europe" OR "Remote") site:linkedin.com/in')
+    queries.append(f'"{company_name}" funding ("Series A" OR "Series B" OR "Seed" OR "backed by" OR "Y Combinator" OR "a16z" OR "Sequoia")')
+
     if domain and "." in domain:
         queries.append(f'"{company_name}" (blog OR substack OR medium) ("CTO" OR "CEO" OR "founder")')
 

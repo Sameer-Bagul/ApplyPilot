@@ -38,8 +38,9 @@ export const ALL_AVAILABLE_CITIES: CityHub[] = [
   { id: 'pune', name: 'Pune', short: 'PNQ', desc: 'Top SaaS & High-Scale Engineering' },
   { id: 'delhi_ncr', name: 'Delhi NCR', short: 'NCR', desc: 'Gurugram, Noida, New Delhi' },
   { id: 'mumbai', name: 'Mumbai', short: 'BOM', desc: 'Fintech & Banking Capital' },
-  { id: 'chennai', name: 'Chennai', short: 'MAA', desc: 'Enterprise SaaS & Systems' },
-  { id: 'remote', name: 'Remote', short: 'REMOTE', desc: '100% Distributed / Global' },
+  { id: 'us_sf', name: 'San Francisco / US', short: 'US / SF', desc: 'Silicon Valley & US Tech Hubs' },
+  { id: 'europe_ldn', name: 'London / Europe', short: 'EU / LDN', desc: 'UK & European Tech Startups' },
+  { id: 'remote', name: 'Remote (Global)', short: 'REMOTE', desc: '100% Distributed / Worldwide' },
 ];
 
 export interface CityPreset {
@@ -51,8 +52,18 @@ export interface CityPreset {
 export const CITY_PRESETS: CityPreset[] = [
   {
     id: 'all_hubs',
-    label: 'All Tech Hubs (BLR, HYD, PNQ, NCR, Remote)',
-    cities: ['Bengaluru', 'Hyderabad', 'Pune', 'Delhi NCR', 'Remote'],
+    label: 'All Hubs & Remote',
+    cities: ['Bengaluru', 'Hyderabad', 'Pune', 'Delhi NCR', 'Remote (Global)'],
+  },
+  {
+    id: 'us_global_remote',
+    label: 'US & Global Remote (RemoteOK, WWR, Jobicy)',
+    cities: ['Remote (Global)', 'San Francisco / US', 'London / Europe'],
+  },
+  {
+    id: 'foreign_startups',
+    label: 'YC Funded Startups & Foreign C-Suite',
+    cities: ['San Francisco / US', 'London / Europe', 'Remote (Global)', 'Bengaluru'],
   },
   {
     id: 'blr_only',
@@ -63,16 +74,6 @@ export const CITY_PRESETS: CityPreset[] = [
     id: 'golden_triangle',
     label: 'BLR + HYD + PNQ (Golden Triangle)',
     cities: ['Bengaluru', 'Hyderabad', 'Pune'],
-  },
-  {
-    id: 'ncr_mumbai',
-    label: 'Delhi NCR + Mumbai',
-    cities: ['Delhi NCR', 'Mumbai'],
-  },
-  {
-    id: 'remote_only',
-    label: 'Remote Only',
-    cities: ['Remote'],
   },
 ];
 
@@ -341,7 +342,7 @@ export function AgentRadarView() {
           </div>
 
           <p className="text-xs text-zinc-500">
-            Multi-lane DAG executing JobSpy (Indeed, Naukri, LinkedIn), 11-ATS feeds, and Deep Company Looper. <strong>Every company discovered from Indeed is automatically researched, MX-verified, and enriched with 5–10 recruiter mailboxes.</strong>
+            Multi-lane DAG harvesting RemoteOK, WeWorkRemotely, Jobicy, YC Funded Startups, JobSpy (Indeed, LinkedIn), and 11-ATS feeds. <strong>Every company discovered is automatically researched, MX-verified, and enriched with foreign & domestic CEO, CTO, and recruiter mailboxes.</strong>
           </p>
         </div>
 
@@ -464,7 +465,7 @@ export function AgentRadarView() {
           </div>
         </div>
 
-        {/* Individual City Toggle Chips */}
+        {/* Individual City Toggle Chips & Global Remote Sources */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {ALL_AVAILABLE_CITIES.map((c) => {
             const isSelected = selectedCities.includes(c.name);
@@ -485,6 +486,17 @@ export function AgentRadarView() {
               </button>
             );
           })}
+
+          <div className="hidden lg:flex items-center gap-1 pl-2 border-l border-zinc-200/60">
+            {['RemoteOK', 'WWR', 'Jobicy', 'YC'].map((s) => (
+              <span
+                key={s}
+                className="px-1.5 py-0.5 rounded-md text-[9px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -499,11 +511,11 @@ export function AgentRadarView() {
           </span>
           <span className="flex items-center gap-1.5 text-emerald-700">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Harvester (Indeed / Naukri / LinkedIn)
+            Harvester (RemoteOK / WWR / Indeed / LinkedIn)
           </span>
           <span className="flex items-center gap-1.5 text-amber-700">
             <span className="w-2 h-2 rounded-full bg-amber-500" />
-            Looper (Recruiter Emails & MX)
+            Looper (Foreign C-Suite & Recruiter Emails)
           </span>
           <span className="flex items-center gap-1.5 text-blue-700">
             <span className="w-2 h-2 rounded-full bg-blue-500" />
