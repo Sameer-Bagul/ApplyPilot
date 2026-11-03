@@ -2987,7 +2987,25 @@ def upsert_career_watchlist(
     import uuid
     if conn is None:
         conn = get_connection()
-    cid = company_id or f"comp_{uuid.uuid4().hex[:10]}"
+
+    # If company_id not explicitly provided, find existing company by name or domain
+    if not company_id:
+        existing = conn.execute(
+            """
+            SELECT company_id FROM career_watchlist 
+            WHERE LOWER(company_name) = LOWER(?)
+               OR (official_domain IS NOT NULL AND official_domain != '' AND LOWER(official_domain) = LOWER(?))
+            LIMIT 1
+            """,
+            (company_name.strip(), (official_domain or "").strip()),
+        ).fetchone()
+        if existing:
+            cid = existing[0]
+        else:
+            cid = f"comp_{uuid.uuid4().hex[:10]}"
+    else:
+        cid = company_id
+
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """
@@ -3056,6 +3074,134 @@ def get_career_watchlist(
         "last_checked_at", "last_content_hash"
     ]
     return [dict(zip(columns, row)) for row in rows]
+
+
+def sync_discovered_companies_from_jobs_and_leads(conn: sqlite3.Connection | None = None) -> dict[str, int]:
+    """Sync all distinct companies discovered in jobs & recruiter_leads into career_watchlist.
+
+    1. Enrolls missing companies from jobs & recruiter_leads into career_watchlist.
+    2. Recalculates open_roles_count for every company.
+    3. Infers official_domain and careers_page_url where missing.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    c = conn.cursor()
+
+    # 1. Fetch distinct companies with job counts from jobs table
+    job_companies = c.execute("""
+        SELECT company, COUNT(*) as cnt, MIN(url) as sample_url, MIN(location) as sample_loc
+        FROM jobs 
+        WHERE company IS NOT NULL AND TRIM(company) != ''
+        GROUP BY company
+    """).fetchall()
+
+    # 2. Fetch distinct companies from recruiter_leads
+    lead_companies = c.execute("""
+        SELECT company_name, company_domain, source_platform, MIN(evidence_snippet)
+        FROM recruiter_leads
+        WHERE company_name IS NOT NULL AND TRIM(company_name) != ''
+        GROUP BY company_name
+    """).fetchall()
+
+    leads_map: dict[str, dict] = {}
+    for r in lead_companies:
+        c_name = r[0].strip()
+        leads_map[c_name.lower()] = {
+            "name": c_name,
+            "domain": r[1],
+            "platform": r[2],
+            "evidence": r[3],
+        }
+
+    added = 0
+    updated = 0
+
+    from urllib.parse import urlparse
+
+    for jc in job_companies:
+        c_name = jc[0].strip()
+        job_count = jc[1]
+        sample_url = jc[2] or ""
+        sample_loc = jc[3] or "Remote"
+
+        domain = None
+        ats_provider = None
+        if sample_url and sample_url.startswith("http"):
+            try:
+                parsed = urlparse(sample_url)
+                host = parsed.netloc.lower()
+                for ats in ["greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com", "smartrecruiters.com"]:
+                    if ats in host:
+                        ats_provider = ats.split(".")[0]
+                        break
+                if not ats_provider:
+                    domain = host.replace("www.", "")
+            except Exception:
+                pass
+
+        # Check if company already in leads_map
+        lead_info = leads_map.get(c_name.lower())
+        if lead_info and lead_info.get("domain"):
+            domain = domain or lead_info["domain"]
+
+        # Infer sector
+        sector = "Technology"
+        lower_name = c_name.lower()
+        if any(w in lower_name for w in ["ai", "robotics", "intelligence", "neural", "deep"]):
+            sector = "AI / Machine Learning"
+        elif any(w in lower_name for w in ["pay", "credit", "bank", "wealth", "fin"]):
+            sector = "Fintech"
+        elif any(w in lower_name for w in ["health", "bio", "med", "cure", "pharma"]):
+            sector = "Healthtech"
+        elif any(w in lower_name for w in ["cloud", "dev", "data", "infra", "stack", "code"]):
+            sector = "Developer Tools & Cloud"
+
+        cid = upsert_career_watchlist(
+            company_name=c_name,
+            official_domain=domain,
+            careers_page_url=sample_url if sample_url.startswith("http") else None,
+            ats_provider=ats_provider,
+            sector=sector,
+            location=sample_loc,
+            open_roles_count=job_count,
+            priority_tier=1 if job_count >= 5 else 2,
+            conn=conn,
+        )
+        if cid:
+            updated += 1
+
+    # Also enroll any lead companies not yet in jobs
+    for c_key, l_info in leads_map.items():
+        c_name = l_info["name"]
+        existing = c.execute(
+            "SELECT company_id, open_roles_count FROM career_watchlist WHERE LOWER(company_name) = LOWER(?)",
+            (c_name,),
+        ).fetchone()
+        if not existing:
+            upsert_career_watchlist(
+                company_name=c_name,
+                official_domain=l_info.get("domain"),
+                sector="Technology / Startup",
+                priority_tier=2,
+                conn=conn,
+            )
+            added += 1
+
+    conn.commit()
+
+    total_companies = c.execute("SELECT COUNT(*) FROM career_watchlist").fetchone()[0]
+
+    if should_close:
+        conn.close()
+
+    return {
+        "total_companies": total_companies,
+        "companies_updated": updated,
+        "companies_added": added,
+    }
 
 
 def stream_jobs(

@@ -24,6 +24,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Compass,
+  Globe,
   X,
   Send,
   Layers,
@@ -72,9 +73,16 @@ export default function DashboardPage() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [companySearch, setCompanySearch] = useState('');
   const [companyVipOnly, setCompanyVipOnly] = useState(false);
+  const [companySector, setCompanySector] = useState('ALL');
   const [companyPage, setCompanyPage] = useState(1);
   const [companyPagination, setCompanyPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [companiesLoading, setCompaniesLoading] = useState(false);
+
+  // Search Engine Pipeline State
+  const [searchEngineModalOpen, setSearchEngineModalOpen] = useState(false);
+  const [searchEngineRunning, setSearchEngineRunning] = useState(false);
+  const [searchEngineResult, setSearchEngineResult] = useState<string | null>(null);
+  const [customSearchQuery, setCustomSearchQuery] = useState('');
 
   // Leads state
   const [leads, setLeads] = useState<any[]>([]);
@@ -88,8 +96,9 @@ export default function DashboardPage() {
   const [selectedCompany, setSelectedCompany] = useState<any | null>(null);
   const [drilldownData, setDrilldownData] = useState<any | null>(null);
   const [drilldownLoading, setDrilldownLoading] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<'leads' | 'jobs'>('leads');
+  const [drawerTab, setDrawerTab] = useState<'overview' | 'leads' | 'jobs'>('overview');
   const [copiedAllEmails, setCopiedAllEmails] = useState(false);
+  const [loopingCompany, setLoopingCompany] = useState(false);
 
   // Responsive Navigation State
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -98,7 +107,7 @@ export default function DashboardPage() {
   const openCompanyDrilldown = async (company: any) => {
     setSelectedCompany(company);
     setDrilldownLoading(true);
-    setDrawerTab('leads');
+    setDrawerTab('overview');
     try {
       const res = await fetch(`/api/companies/drilldown?name=${encodeURIComponent(company.company_name)}`);
       const data = await res.json();
@@ -109,6 +118,52 @@ export default function DashboardPage() {
       console.error('Failed to load company drilldown', err);
     } finally {
       setDrilldownLoading(false);
+    }
+  };
+
+  const triggerCompanyLoop = async (companyName: string) => {
+    if (!companyName) return;
+    setLoopingCompany(true);
+    try {
+      const res = await fetch('/api/companies/loop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName }),
+      });
+      const data = await res.json();
+      // Reload company drilldown and stats
+      await openCompanyDrilldown({ company_name: companyName });
+      fetchStats();
+      fetchCompanies(companyPage);
+    } catch (err) {
+      console.error('Failed to run company deep research', err);
+    } finally {
+      setLoopingCompany(false);
+    }
+  };
+
+  const triggerCompanySearchEngine = async (presetQuery?: string) => {
+    setSearchEngineRunning(true);
+    setSearchEngineResult(null);
+    try {
+      const q = presetQuery !== undefined ? presetQuery : customSearchQuery;
+      const res = await fetch('/api/companies/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, includeYc: true, limit: 30 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSearchEngineResult(`Discovered ${data.companies_discovered || 15}+ tech companies & enrolled into Watchlist!`);
+        fetchStats();
+        fetchCompanies(1);
+      } else {
+        setSearchEngineResult(data.error || 'Search completed');
+      }
+    } catch (err: any) {
+      setSearchEngineResult(err.message || 'Search execution error');
+    } finally {
+      setSearchEngineRunning(false);
     }
   };
 
@@ -161,7 +216,7 @@ export default function DashboardPage() {
   };
 
   // Load companies
-  const fetchCompanies = async (page = 1, search = companySearch, vip = companyVipOnly) => {
+  const fetchCompanies = async (page = 1, search = companySearch, vip = companyVipOnly, sector = companySector) => {
     try {
       setCompaniesLoading(true);
       const params = new URLSearchParams({
@@ -170,6 +225,7 @@ export default function DashboardPage() {
       });
       if (search) params.set('search', search);
       if (vip) params.set('vip', 'true');
+      if (sector && sector !== 'ALL') params.set('sector', sector);
 
       const res = await fetch(`/api/companies?${params.toString()}`);
       const data = await res.json();
@@ -990,18 +1046,30 @@ export default function DashboardPage() {
             <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none z-20" />
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-zinc-200/60">
               <div className="flex flex-col">
-                <h2 className="text-base sm:text-lg font-semibold text-zinc-900 tracking-tight">Career Watchlist & VIP Startups</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-semibold text-zinc-900 tracking-tight">Tech Companies Directory</h2>
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
+                    {companyPagination.total.toLocaleString()} Monitored
+                  </span>
+                </div>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Showing {companies.length} of {companyPagination.total.toLocaleString()} monitored companies
+                  Click any company row to view full collected intel: leadership, verified inboxes, careers portal & live jobs
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setSearchEngineModalOpen(true)}
+                  className="liquid-pill-dark inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-sm cursor-pointer hover:scale-[1.02] transition-all"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Search Tech Companies</span>
+                </button>
                 <button
                   onClick={() => {
                     const nextVip = !companyVipOnly;
                     setCompanyVipOnly(nextVip);
-                    fetchCompanies(1, companySearch, nextVip);
+                    fetchCompanies(1, companySearch, nextVip, companySector);
                   }}
                   className={`rounded-full px-3.5 sm:px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                     companyVipOnly
@@ -1012,6 +1080,26 @@ export default function DashboardPage() {
                   VIP Top-500 Only
                 </button>
               </div>
+            </div>
+
+            {/* Quick Sector Filter Pills */}
+            <div className="flex items-center gap-1.5 flex-wrap pb-1">
+              {['ALL', 'AI / Machine Learning', 'Enterprise SaaS', 'Fintech & Crypto', 'Developer Tools & Cloud', 'Cybersecurity'].map((sec) => (
+                <button
+                  key={sec}
+                  onClick={() => {
+                    setCompanySector(sec);
+                    fetchCompanies(1, companySearch, companyVipOnly, sec);
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+                    companySector === sec
+                      ? 'liquid-pill-dark shadow-xs'
+                      : 'liquid-pill text-zinc-600 hover:text-zinc-900 shadow-xs'
+                  }`}
+                >
+                  {sec === 'ALL' ? 'All Sectors' : sec}
+                </button>
+              ))}
             </div>
 
             {/* Companies Table */}
@@ -1042,51 +1130,77 @@ export default function DashboardPage() {
                   ) : companies.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center py-16 text-zinc-400 text-xs">
-                        No companies found.
+                        No companies found. Try clicking "Search Tech Companies" above!
                       </td>
                     </tr>
                   ) : (
                     companies.map((c, idx) => (
-                      <tr key={idx} className="liquid-row rounded-2xl group cursor-default">
+                      <tr
+                        key={idx}
+                        onClick={() => openCompanyDrilldown(c)}
+                        className="liquid-row rounded-2xl group cursor-pointer hover:shadow-md hover:bg-white/90 transition-all"
+                      >
                         <td className="py-3 px-3 sm:px-4 font-semibold text-zinc-900 rounded-l-2xl">
                           <div className="flex items-center gap-1.5 sm:gap-2">
-                            <span className="group-hover:text-amber-950 transition-colors truncate max-w-[120px] xs:max-w-[170px] sm:max-w-none">{c.company_name}</span>
+                            <span className="group-hover:text-amber-950 transition-colors truncate max-w-[130px] sm:max-w-none">
+                              {c.company_name}
+                            </span>
                             {c.is_vip === 1 && (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60 shrink-0">
                                 VIP
                               </span>
                             )}
                           </div>
+                          {c.official_domain && (
+                            <span className="text-[11px] font-mono text-zinc-400 font-normal block truncate max-w-[140px] sm:max-w-none">
+                              {c.official_domain}
+                            </span>
+                          )}
                         </td>
                         <td className="hidden lg:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-600 font-medium">
-                          {c.stage || 'Funded'}
+                          <span className="px-2 py-0.5 rounded-full bg-zinc-100/80 text-zinc-700 border border-zinc-200/50">
+                            {c.stage || 'Funded'}
+                          </span>
                         </td>
-                        <td className="hidden md:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-600">{c.sector || 'Technology'}</td>
-                        <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-500">{c.area || c.location || 'Bengaluru'}</td>
+                        <td className="hidden md:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-600">
+                          {c.sector || 'Technology'}
+                        </td>
+                        <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-xs text-zinc-500">
+                          <div className="flex items-center gap-1 truncate max-w-[120px]">
+                            <MapPin className="w-3 h-3 text-zinc-400 shrink-0" />
+                            <span className="truncate">{c.area || c.location || 'Remote'}</span>
+                          </div>
+                        </td>
                         <td className="hidden 2xl:table-cell py-3 px-2 sm:px-4 text-xs font-mono text-zinc-600">
-                          {c.ats_provider || 'Direct'}
-                        </td>
-                        <td className="py-3 px-2 sm:px-4 text-center font-bold text-zinc-800">
-                          {c.open_roles_count || 0}
+                          {c.ats_provider ? (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-50/80 text-blue-700 border border-blue-200/60 font-semibold text-[11px]">
+                              {c.ats_provider}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400 text-xs">Direct Web</span>
+                          )}
                         </td>
                         <td className="py-3 px-2 sm:px-4 text-center">
-                          <button
-                            onClick={() => openCompanyDrilldown(c)}
-                            className="liquid-pill inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full text-xs font-semibold bg-rose-50/80 text-rose-700 hover:bg-rose-100 border border-rose-200/60 transition-all cursor-pointer shadow-xs shrink-0"
-                          >
+                          <span className={`inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold ${
+                            c.open_roles_count > 0 
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                              : 'bg-zinc-100 text-zinc-500'
+                          }`}>
+                            {c.open_roles_count || 0}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 sm:px-4 text-center">
+                          <span className="liquid-pill inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50/80 text-rose-700 border border-rose-200/60 shadow-xs shrink-0">
                             <Mail className="w-3.5 h-3.5 text-rose-500" />
-                            <span>{c.emails?.length ? `${c.emails.length}` : '8+'}</span>
+                            <span>{c.leads_count || (c.emails?.length ? `${c.emails.length}` : '8+')}</span>
                             <span className="hidden sm:inline">Inboxes</span>
-                          </button>
+                          </span>
                         </td>
                         <td className="py-3 px-3 sm:px-4 text-right rounded-r-2xl">
-                          <button
-                            onClick={() => openCompanyDrilldown(c)}
-                            className="liquid-pill inline-flex items-center gap-1 text-xs font-semibold text-zinc-800 hover:text-zinc-950 px-2.5 sm:px-3.5 py-1.5 rounded-full shadow-xs cursor-pointer shrink-0"
-                          >
-                            <span>Explore</span>
-                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-950" />
-                          </button>
+                          <div className="inline-flex items-center gap-1 text-xs font-semibold text-zinc-800 group-hover:text-amber-950 px-2.5 sm:px-3 py-1.5 rounded-full liquid-pill shadow-xs transition-all">
+                            <span>Inspect</span>
+                            <ArrowUpRight className="w-3.5 h-3.5 text-zinc-500 group-hover:text-amber-950 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1103,7 +1217,7 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <button
                   disabled={companyPagination.page <= 1 || companiesLoading}
-                  onClick={() => fetchCompanies(companyPage - 1)}
+                  onClick={() => fetchCompanies(companyPage - 1, companySearch, companyVipOnly, companySector)}
                   className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -1111,7 +1225,7 @@ export default function DashboardPage() {
                 </button>
                 <button
                   disabled={companyPagination.page >= companyPagination.totalPages || companiesLoading}
-                  onClick={() => fetchCompanies(companyPage + 1)}
+                  onClick={() => fetchCompanies(companyPage + 1, companySearch, companyVipOnly, companySector)}
                   className="liquid-pill rounded-full px-3.5 py-1.5 font-medium disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                 >
                   <span>Next</span>
@@ -1343,27 +1457,49 @@ export default function DashboardPage() {
             {/* Quick Bulk Actions Bar */}
             <div className="py-4 flex flex-wrap items-center gap-2 border-b border-zinc-200/40">
               <button
+                onClick={() => triggerCompanyLoop(selectedCompany.company_name)}
+                disabled={loopingCompany}
+                className="liquid-pill inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200/60 shadow-xs cursor-pointer transition-all disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loopingCompany ? 'animate-spin' : ''}`} />
+                <span>{loopingCompany ? 'Researching Live...' : 'Run Deep Looper'}</span>
+              </button>
+
+              <button
                 onClick={() => copyAllEmails(drilldownData?.stats?.verifiedEmails || selectedCompany.emails)}
-                className="liquid-pill-dark inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-semibold cursor-pointer shadow-md"
+                className="liquid-pill-dark inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold cursor-pointer shadow-md"
               >
                 {copiedAllEmails ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedAllEmails ? 'Copied All to Clipboard!' : `Copy All (${drilldownData?.stats?.totalLeads || 8}) Emails`}</span>
+                <span>{copiedAllEmails ? 'Copied All to Clipboard!' : `Copy All (${drilldownData?.stats?.totalLeads || 8}) Inboxes`}</span>
               </button>
 
               <a
                 href={`mailto:${(drilldownData?.stats?.verifiedEmails || []).join(';')}?subject=Senior%20Software%20Engineer%20Application%20%E2%80%94%20${encodeURIComponent(selectedCompany.company_name)}`}
-                className="liquid-pill inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 shadow-xs cursor-pointer"
+                className="liquid-pill inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 shadow-xs cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5 text-rose-500" />
-                <span>Compose Bulk Outreach</span>
+                <span>Compose Outreach</span>
               </a>
+
+              {selectedCompany.official_domain && (
+                <a
+                  href={`https://${selectedCompany.official_domain}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="liquid-pill inline-flex items-center gap-1 px-3 py-2 rounded-2xl text-xs font-semibold text-zinc-600 hover:text-zinc-950 shadow-xs ml-auto cursor-pointer"
+                >
+                  <Globe className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Website</span>
+                  <ExternalLink className="w-3 h-3 text-zinc-400" />
+                </a>
+              )}
 
               {selectedCompany.careers_page_url && (
                 <a
                   href={selectedCompany.careers_page_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="liquid-pill inline-flex items-center gap-1 px-3.5 py-2 rounded-2xl text-xs font-semibold text-zinc-600 hover:text-zinc-950 shadow-xs ml-auto cursor-pointer"
+                  className="liquid-pill inline-flex items-center gap-1 px-3 py-2 rounded-2xl text-xs font-semibold text-zinc-600 hover:text-zinc-950 shadow-xs cursor-pointer"
                 >
                   <span>Portal</span>
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -1374,8 +1510,18 @@ export default function DashboardPage() {
             {/* Drawer Navigation Tabs */}
             <div className="flex items-center gap-2 pt-4">
               <button
+                onClick={() => setDrawerTab('overview')}
+                className={`px-3.5 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
+                  drawerTab === 'overview'
+                    ? 'liquid-pill bg-white shadow-sm text-zinc-950 border border-white'
+                    : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/40'
+                }`}
+              >
+                Overview & Dossier
+              </button>
+              <button
                 onClick={() => setDrawerTab('leads')}
-                className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3.5 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'leads'
                     ? 'liquid-pill bg-white shadow-sm text-zinc-950 border border-white'
                     : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/40'
@@ -1385,7 +1531,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => setDrawerTab('jobs')}
-                className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3.5 py-2 rounded-2xl text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'jobs'
                     ? 'liquid-pill bg-white shadow-sm text-zinc-950 border border-white'
                     : 'text-zinc-500 hover:text-zinc-900 hover:bg-white/40'
@@ -1401,6 +1547,78 @@ export default function DashboardPage() {
                 <div className="text-center py-16 text-zinc-400 text-xs flex flex-col items-center gap-2">
                   <div className="w-6 h-6 rounded-full border-2 border-zinc-300 border-t-zinc-800 animate-spin" />
                   <span>Loading deep company telemetry...</span>
+                </div>
+              ) : drawerTab === 'overview' ? (
+                <div className="flex flex-col gap-4">
+                  {/* Key Company Specs Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="liquid-glass-subtle rounded-2xl p-3.5 flex flex-col gap-1 border border-white/80">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Official Domain</span>
+                      <span className="text-xs font-semibold font-mono text-zinc-800 truncate">
+                        {selectedCompany.official_domain || 'Unspecified'}
+                      </span>
+                    </div>
+                    <div className="liquid-glass-subtle rounded-2xl p-3.5 flex flex-col gap-1 border border-white/80">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Tech Sector</span>
+                      <span className="text-xs font-semibold text-zinc-800 truncate">
+                        {selectedCompany.sector || 'Technology / Software'}
+                      </span>
+                    </div>
+                    <div className="liquid-glass-subtle rounded-2xl p-3.5 flex flex-col gap-1 border border-white/80">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Funding Stage</span>
+                      <span className="text-xs font-semibold text-zinc-800 truncate">
+                        {selectedCompany.stage || 'Funded Tech Startup'}
+                      </span>
+                    </div>
+                    <div className="liquid-glass-subtle rounded-2xl p-3.5 flex flex-col gap-1 border border-white/80">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Hub / Headquarters</span>
+                      <span className="text-xs font-semibold text-zinc-800 truncate">
+                        {selectedCompany.area || selectedCompany.location || 'Remote / Global'}
+                      </span>
+                    </div>
+                    <div className="liquid-glass-subtle rounded-2xl p-3.5 flex flex-col gap-1 border border-white/80">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">ATS Architecture</span>
+                      <span className="text-xs font-semibold text-zinc-800 truncate font-mono">
+                        {selectedCompany.ats_provider || 'Direct Portal / Email'}
+                      </span>
+                    </div>
+                    <div className="liquid-glass-subtle rounded-2xl p-3.5 flex flex-col gap-1 border border-white/80">
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Team Size</span>
+                      <span className="text-xs font-semibold text-zinc-800 truncate">
+                        {selectedCompany.team_size || '10 - 250 Engineers'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Summary / Intelligence Dossier */}
+                  <div className="liquid-glass-subtle rounded-2xl p-4 flex flex-col gap-2 border border-white/80">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                      Collected Research & Intelligence
+                    </span>
+                    <p className="text-xs text-zinc-700 leading-relaxed">
+                      {selectedCompany.snippet || selectedCompany.evidence_snippet || `${selectedCompany.company_name} is actively tracked on ApplyPilot's career watchlist. Monitored for real-time ETag career changes and automated recruiter acquisition.`}
+                    </p>
+                    <div className="flex items-center gap-2 pt-2 text-[11px] text-zinc-500 flex-wrap">
+                      <span>• Route: <strong className="text-zinc-800">{drilldownData?.stats?.hasDualAttack ? 'DUAL_ATTACK' : 'PORTAL_ONLY'}</strong></span>
+                      <span>• Live Jobs: <strong className="text-zinc-800">{drilldownData?.stats?.totalJobs || 0}</strong></span>
+                      <span>• Verified Inboxes: <strong className="text-zinc-800">{drilldownData?.stats?.totalLeads || 0}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* One-Click Action Banner */}
+                  <div className="liquid-glass rounded-2xl p-4 flex items-center justify-between gap-3 border border-purple-200/60 bg-purple-50/40">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-purple-950">Run Deep Looper on {selectedCompany.company_name}</span>
+                      <span className="text-[11px] text-purple-700">Triggers real-time career page scan & executive email synthesis</span>
+                    </div>
+                    <button
+                      onClick={() => triggerCompanyLoop(selectedCompany.company_name)}
+                      disabled={loopingCompany}
+                      className="liquid-pill-dark px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+                    >
+                      {loopingCompany ? 'Researching...' : 'Scan Now'}
+                    </button>
+                  </div>
                 </div>
               ) : drawerTab === 'leads' ? (
                 <div className="flex flex-col gap-3">
@@ -1497,6 +1715,87 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----------------- TECH COMPANY SEARCH ENGINE MODAL ----------------- */}
+      {searchEngineModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 backdrop-blur-md p-4">
+          <div className="w-full max-w-lg liquid-glass-elevated rounded-3xl p-6 sm:p-7 flex flex-col gap-5 shadow-2xl relative border border-white/90 animate-in zoom-in-95 duration-150">
+            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-white to-transparent pointer-events-none z-20" />
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full orb-peach flex items-center justify-center shadow-md shrink-0">
+                  <Sparkles className="w-4 h-4 text-amber-700" />
+                </div>
+                <div className="flex flex-col">
+                  <h3 className="font-bold text-base text-zinc-900">Tech Company Search Engine</h3>
+                  <span className="text-xs text-zinc-500">Autonomous discovery & downstream worker handoff</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSearchEngineModalOpen(false)}
+                className="liquid-pill rounded-full p-1.5 text-zinc-500 hover:text-zinc-950 cursor-pointer shadow-xs"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Scans DuckDuckGo search dorks, YC OSS directory, and venture networks for tech companies. Discovered startups are enrolled into your Watchlist, allowing the ATS Radar and Deep Looper to immediately hop in.
+            </p>
+
+            {/* Quick 1-Click Search Presets */}
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">1-Click Discovery Presets</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: 'Top AI & Agent Startups', q: '"top AI startups" "hiring software engineers" "careers"' },
+                  { label: 'YC 2024-2026 Batch Startups', q: '"YC W24" OR "YC S24" hiring software engineer careers' },
+                  { label: 'Remote SaaS & DevTools', q: '"series a" OR "series b" developer tools infra startups hiring' },
+                  { label: 'Bengaluru Tech Startups', q: '"fastest growing tech startups" Bengaluru "careers"' },
+                ].map((p, idx) => (
+                  <button
+                    key={idx}
+                    disabled={searchEngineRunning}
+                    onClick={() => triggerCompanySearchEngine(p.q)}
+                    className="liquid-pill rounded-full px-3 py-1 text-xs font-medium text-zinc-700 hover:text-zinc-950 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Query Input */}
+            <div className="flex flex-col gap-2 pt-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Or Custom Search Query</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder='e.g. "Series A" robotics autonomous startups careers'
+                  value={customSearchQuery}
+                  onChange={(e) => setCustomSearchQuery(e.target.value)}
+                  className="liquid-glass rounded-xl px-3.5 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 flex-1 outline-none border border-white/80"
+                />
+                <button
+                  disabled={searchEngineRunning}
+                  onClick={() => triggerCompanySearchEngine()}
+                  className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-sm disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${searchEngineRunning ? 'animate-spin' : ''}`} />
+                  <span>{searchEngineRunning ? 'Searching...' : 'Run Search'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Status & Feedback */}
+            {searchEngineResult && (
+              <div className="p-3 rounded-2xl liquid-glass bg-emerald-50/80 border border-emerald-200/70 text-xs text-emerald-800 font-medium">
+                {searchEngineResult}
+              </div>
+            )}
           </div>
         </div>
       )}

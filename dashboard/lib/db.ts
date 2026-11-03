@@ -166,39 +166,42 @@ export function getCompanies(params: {
   const offset = (page - 1) * limit;
 
   let query = `
-    SELECT company_id, company_name, official_domain, careers_page_url, 
-           ats_provider, priority_tier, is_vip, stage, sector, area, 
-           location, team_size, total_funding, founders_json, 
-           hr_contacts_json, open_roles_count, last_checked_at
-    FROM career_watchlist 
+    SELECT cw.company_id, cw.company_name, cw.official_domain, cw.careers_page_url, 
+           cw.ats_provider, cw.priority_tier, cw.is_vip, cw.stage, cw.sector, cw.area, 
+           cw.location, cw.team_size, cw.total_funding, cw.founders_json, 
+           cw.hr_contacts_json,
+           COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.company = cw.company_name), cw.open_roles_count, 0) as open_roles_count,
+           COALESCE((SELECT COUNT(*) FROM recruiter_leads rl WHERE rl.company_name = cw.company_name), 0) as leads_count,
+           cw.last_checked_at
+    FROM career_watchlist cw
     WHERE 1=1
   `;
   const queryParams: any[] = [];
 
   if (params.search) {
-    query += ` AND (company_name LIKE ? OR official_domain LIKE ? OR area LIKE ?)`;
+    query += ` AND (cw.company_name LIKE ? OR cw.official_domain LIKE ? OR cw.area LIKE ? OR cw.sector LIKE ?)`;
     const s = `%${params.search}%`;
-    queryParams.push(s, s, s);
+    queryParams.push(s, s, s, s);
   }
 
   if (params.vipOnly) {
-    query += ` AND is_vip = 1`;
+    query += ` AND cw.is_vip = 1`;
   }
 
   if (params.sector && params.sector !== 'ALL') {
-    query += ` AND sector LIKE ?`;
+    query += ` AND cw.sector LIKE ?`;
     queryParams.push(`%${params.sector}%`);
   }
 
   if (params.stage && params.stage !== 'ALL') {
-    query += ` AND stage LIKE ?`;
+    query += ` AND cw.stage LIKE ?`;
     queryParams.push(`%${params.stage}%`);
   }
 
   const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
 
-  query += ` ORDER BY is_vip DESC, open_roles_count DESC, company_name ASC LIMIT ? OFFSET ?`;
+  query += ` ORDER BY cw.is_vip DESC, open_roles_count DESC, leads_count DESC, cw.company_name ASC LIMIT ? OFFSET ?`;
   queryParams.push(limit, offset);
 
   const rawCompanies = db.prepare(query).all(...queryParams);
