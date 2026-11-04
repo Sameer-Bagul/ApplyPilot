@@ -21,6 +21,7 @@ import {
   Layers,
   ArrowRight,
 } from 'lucide-react';
+import { AutoApplyButton } from './AutoApplyButton';
 
 interface CompanyDetailDrawerProps {
   companyName: string | null;
@@ -433,7 +434,16 @@ export function CompanyDetailDrawer({
                             </div>
                           </div>
 
-                          <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
+                          <div className="flex items-center gap-2 shrink-0">
+                            <AutoApplyButton
+                              jobUrl={j.url}
+                              initialState={j.state}
+                              onApplied={() => {
+                                if (onCompanyUpdated) onCompanyUpdated();
+                              }}
+                            />
+                            <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
+                          </div>
                         </div>
                       ))}
                     </div>

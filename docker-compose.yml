@@ -18,6 +18,8 @@ services:
       - PYTHONUNBUFFERED=1
       - NODE_ENV=production
       - START_MARATHON=true
+      - DISPLAY=${DISPLAY:-:1}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
     volumes:
       - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
@@ -25,6 +27,7 @@ services:
       - ./src:/home/applypilot/app/src
       - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: ["all"]
 
   # ============================================================================
@@ -39,8 +42,10 @@ services:
     container_name: applypilot-cli
     profiles: ["modular"]
     environment:
-      - APPLYPILOT_HEADLESS=true
+      - APPLYPILOT_HEADLESS=false
       - PYTHONUNBUFFERED=1
+      - DISPLAY=${DISPLAY:-:1}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
     volumes:
       - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
@@ -48,6 +53,7 @@ services:
       - ./src:/home/applypilot/app/src
       - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: ["status"]
 
   # Standalone Autonomous parallel apply worker daemon
@@ -60,8 +66,10 @@ services:
     restart: unless-stopped
     profiles: ["modular"]
     environment:
-      - APPLYPILOT_HEADLESS=true
+      - APPLYPILOT_HEADLESS=false
       - PYTHONUNBUFFERED=1
+      - DISPLAY=${DISPLAY:-:1}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
     volumes:
       - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
@@ -69,6 +77,7 @@ services:
       - ./src:/home/applypilot/app/src
       - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: ["apply", "--workers", "2"]
 
   # Standalone Email HITL reply tracker daemon

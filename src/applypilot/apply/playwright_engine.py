@@ -61,12 +61,13 @@ def _load_candidate_profile() -> dict:
 
 async def _async_run_playwright_tier_engine(
     job: dict,
-    port: int,
+    port: int = 0,
     worker_id: int = 0,
     dry_run: bool = False,
+    headless: bool = True,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, int, list[dict]]:
-    """Execute Tier 0/1/2 Playwright flow on the active Chrome worker via CDP."""
+    """Execute Tier 0/1/2 Playwright flow on the active Chrome worker via CDP or direct browser."""
     start_time = time.time()
     if conn is None:
         conn = get_connection()
@@ -91,17 +92,38 @@ async def _async_run_playwright_tier_engine(
 
     try:
         async with async_playwright() as p:
-            cdp_url = f"http://127.0.0.1:{port}"
-            try:
-                browser = await p.chromium.connect_over_cdp(cdp_url)
-            except Exception as e:
-                logger.warning("Failed connecting to Chrome CDP on port %d: %s; falling back to agent.", port, e)
-                return "fallback_to_agent", 0, []
+            is_direct_launch = False
+            browser = None
+            if port > 0:
+                cdp_url = f"http://127.0.0.1:{port}"
+                try:
+                    browser = await p.chromium.connect_over_cdp(cdp_url)
+                except Exception as e:
+                    logger.info("Chrome CDP on port %d unavailable (%s); launching direct Chromium (headless=%s).", port, e, headless)
 
-            contexts = browser.contexts
-            context = contexts[0] if contexts else await browser.new_context()
-            pages = context.pages
-            page = pages[0] if pages else await context.new_page()
+            if browser is None:
+                is_direct_launch = True
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled",
+                    ],
+                )
+
+            if is_direct_launch:
+                context = await browser.new_context(
+                    viewport={"width": 1280, "height": 900},
+                    user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                )
+                page = await context.new_page()
+            else:
+                contexts = browser.contexts
+                context = contexts[0] if contexts else await browser.new_context()
+                pages = context.pages
+                page = pages[0] if pages else await context.new_page()
 
             domain = urlparse(target_url).netloc
             ats_type = detect_form_ats(target_url)
@@ -230,11 +252,19 @@ async def _async_run_playwright_tier_engine(
                     conn=conn,
                 )
                 logger.info("[W%d] Parked job %s with HITL ticket #%d", worker_id, job["url"][:60], ticket_id)
+                if is_direct_launch:
+                    if not headless:
+                        await page.wait_for_timeout(3500)
+                    await browser.close()
                 return "parked_awaiting_email", duration_ms, remaining_unresolved
 
             # Step 4: All required fields resolved! Submit or dry run.
             if dry_run:
                 logger.info("[W%d] Dry run mode enabled. Tier 0/1/2 filled all fields successfully.", worker_id)
+                if is_direct_launch:
+                    if not headless:
+                        await page.wait_for_timeout(3500)
+                    await browser.close()
                 return "applied", duration_ms, []
 
             # Look for submit button
@@ -304,10 +334,18 @@ async def _async_run_playwright_tier_engine(
                     label="Submit Application",
                     validation_passed=True,
                 )
+                if is_direct_launch:
+                    if not headless:
+                        await page.wait_for_timeout(3500)
+                    await browser.close()
                 return "applied", duration_ms, []
 
             # If form was filled but no standard submit button was recognized, fall back to agent
             logger.info("[W%d] Form fields filled, but submit button ambiguous. Delegating to agent.", worker_id)
+            if is_direct_launch:
+                if not headless:
+                    await page.wait_for_timeout(3500)
+                await browser.close()
             return "fallback_to_agent", duration_ms, []
 
     except Exception as e:
@@ -317,9 +355,10 @@ async def _async_run_playwright_tier_engine(
 
 def run_playwright_tier_engine(
     job: dict,
-    port: int,
+    port: int = 0,
     worker_id: int = 0,
     dry_run: bool = False,
+    headless: bool = True,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, int, list[dict]]:
     """Synchronous entry point to run the Playwright Tier 0/1/2 engine."""
@@ -329,6 +368,7 @@ def run_playwright_tier_engine(
             port=port,
             worker_id=worker_id,
             dry_run=dry_run,
+            headless=headless,
             conn=conn,
         )
     )

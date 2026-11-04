@@ -7,25 +7,27 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { job_url, mode = 'headless', dry_run = false } = body;
+    const targetUrl = body.job_url || body.jobUrl;
+    const isHeadless = body.headless === true || (body.mode === 'headless' && body.headless !== false);
+    const dryRun = Boolean(body.dry_run || body.dryRun);
 
-    if (!job_url) {
-      return NextResponse.json({ success: false, error: 'job_url is required' }, { status: 400 });
+    if (!targetUrl) {
+      return NextResponse.json({ success: false, error: 'job_url or jobUrl is required' }, { status: 400 });
     }
 
     const db = getDb();
-    const job = db.prepare('SELECT * FROM jobs WHERE url = ?').get(job_url) as any;
+    const job = db.prepare('SELECT * FROM jobs WHERE url = ?').get(targetUrl) as any;
 
     if (!job) {
       return NextResponse.json({ success: false, error: 'Job not found in database' }, { status: 404 });
     }
 
     // Build CLI args for ApplyPilot apply command
-    const args = ['apply', '--url', job_url];
-    if (mode === 'headless') {
+    const args = ['apply', '--url', targetUrl];
+    if (isHeadless) {
       args.push('--headless');
     }
-    if (dry_run) {
+    if (dryRun) {
       args.push('--dry-run');
     }
 
@@ -38,11 +40,13 @@ export async function POST(request: Request) {
         env: {
           ...process.env,
           PYTHONUNBUFFERED: '1',
-          APPLYPILOT_HEADLESS: mode === 'headless' ? 'true' : 'false',
+          DISPLAY: process.env.DISPLAY || ':1',
+          APPLYPILOT_HEADLESS: isHeadless ? 'true' : 'false',
         },
       });
 
-      // Set timeout in case it's waiting on something
+      // 45-second window for headed visual feedback & form navigation
+      const timeoutMs = isHeadless ? 20000 : 45000;
       const timer = setTimeout(() => {
         try {
           proc.kill();
@@ -50,8 +54,8 @@ export async function POST(request: Request) {
 
         // Check if a HITL ticket was created
         const hitlTicket = db.prepare(
-          'SELECT * FROM hitl_tickets WHERE job_url = ? ORDER BY id DESC LIMIT 1'
-        ).get(job_url) as any;
+          'SELECT * FROM hitl_tickets WHERE job_url = ? ORDER BY ticket_id DESC LIMIT 1'
+        ).get(targetUrl) as any;
 
         if (hitlTicket) {
           resolve(
@@ -59,7 +63,7 @@ export async function POST(request: Request) {
               success: true,
               status: 'needs_human',
               message: 'Encountered application blocker or screening question. Intervention ticket created.',
-              ticket_id: hitlTicket.id,
+              ticket_id: hitlTicket.ticket_id,
               output: stdout.slice(-1000),
             })
           );
@@ -68,12 +72,14 @@ export async function POST(request: Request) {
             NextResponse.json({
               success: true,
               status: 'running',
-              message: 'Application execution started in background.',
+              message: isHeadless
+                ? 'Application running in background.'
+                : 'Headed browser launched on your screen with candidate profile data.',
               output: stdout.slice(-1000),
             })
           );
         }
-      }, 15000); // 15-second response window for immediate UI feedback
+      }, timeoutMs);
 
       proc.stdout.on('data', (d) => {
         stdout += d.toString();
@@ -88,18 +94,18 @@ export async function POST(request: Request) {
 
         // Check if HITL ticket was created
         const hitlTicket = db.prepare(
-          'SELECT * FROM hitl_tickets WHERE job_url = ? ORDER BY id DESC LIMIT 1'
-        ).get(job_url) as any;
+          'SELECT * FROM hitl_tickets WHERE job_url = ? ORDER BY ticket_id DESC LIMIT 1'
+        ).get(targetUrl) as any;
 
         // Check latest job state
-        const updatedJob = db.prepare('SELECT state FROM jobs WHERE url = ?').get(job_url) as any;
+        const updatedJob = db.prepare('SELECT state FROM jobs WHERE url = ?').get(targetUrl) as any;
 
-        if (hitlTicket && hitlTicket.status === 'pending') {
+        if (hitlTicket && (hitlTicket.status === 'pending' || hitlTicket.status === 'sent')) {
           resolve(
             NextResponse.json({
               success: true,
               status: 'needs_human',
-              ticket_id: hitlTicket.id,
+              ticket_id: hitlTicket.ticket_id,
               message: 'Screening question requires human input. Check HITL Tickets.',
               output: stdout.slice(-2000),
             })
@@ -139,3 +145,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+

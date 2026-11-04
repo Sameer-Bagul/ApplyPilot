@@ -775,7 +775,63 @@ def apply(
     from applypilot.apply.launcher import set_doc_format
     set_doc_format(doc_format)
 
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
+    # Fast-path for single job application via autonomous Playwright engine
+    if url:
+        import sqlite3
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        job_row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+        if not job_row:
+            console.print(f"[red]Job with URL {url} not found in database.[/red]")
+            raise typer.Exit(code=1)
+
+        job_dict = dict(job_row)
+        mode_label = "Headed (Visible Desktop Browser Window)" if not headless else "Headless (Background Stealth)"
+        console.print(f"\n[bold cyan]🚀 Launching Autonomous Auto-Apply on {mode_label}...[/bold cyan]")
+        console.print(f"  Role:      {job_dict.get('title')}")
+        console.print(f"  Company:   {job_dict.get('company')}")
+        console.print(f"  Target:    {url}")
+        console.print(f"  Mode:      {mode_label}")
+
+        from applypilot.apply.playwright_engine import run_playwright_tier_engine
+        tier_status, duration_ms, remaining = run_playwright_tier_engine(
+            job=job_dict,
+            port=0,
+            headless=headless,
+            dry_run=dry_run,
+            conn=conn,
+        )
+
+        if tier_status == "applied":
+            console.print(f"[bold green]✓ Application submitted successfully in {duration_ms}ms![/bold green]")
+            conn.execute("UPDATE jobs SET state = 'applied', applied_at = CURRENT_TIMESTAMP WHERE url = ?", (url,))
+            conn.commit()
+            return
+        elif tier_status == "parked_awaiting_email":
+            console.print(f"[bold yellow]⚠ Application parked: {len(remaining)} unresolved screening question(s). HITL ticket created.[/bold yellow]")
+            return
+        elif tier_status == "fallback_to_agent":
+            from applypilot.hitl.checkpoint import serialize_form_checkpoint
+            from applypilot.hitl.email_notifier import dispatch_hitl_email_and_park
+            checkpoint = serialize_form_checkpoint(
+                page_url=url,
+                step_index=1,
+                filled_fields={},
+                unresolved_questions=[{"label": "Final Submission Review", "field_type": "submit", "required": True}],
+            )
+            ticket_id = dispatch_hitl_email_and_park(
+                job=job_dict,
+                unanswered_questions=[{"label": "Form fields filled from profile. Final submission review needed.", "field_type": "submit"}],
+                dom_checkpoint=checkpoint,
+                conn=conn,
+            )
+            console.print(f"[bold yellow]Form filled. HITL Ticket #{ticket_id} created for confirmation.[/bold yellow]")
+            return
+        else:
+            console.print(f"[yellow]Autonomous runner status: {tier_status}[/yellow]")
+            return
+
+    # Check 1: Tier 3 required (Claude Code CLI + Chrome) for bulk autonomous agent runs
     check_tier(3, "auto-apply")
 
     # Check 2: Profile exists

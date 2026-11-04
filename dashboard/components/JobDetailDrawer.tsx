@@ -73,10 +73,13 @@ export function JobDetailDrawer({
       });
       const resJson = await res.json();
       if (resJson.success) {
+        const statusVal = resJson.status || resJson.data?.status || 'applied';
+        const messageVal = resJson.message || resJson.data?.message || (statusVal === 'applied' ? 'Application submitted successfully!' : 'Application requires human review.');
+        const ticketIdVal = resJson.ticket_id || resJson.data?.ticket_id;
         setApplyResult({
-          status: resJson.data.status,
-          message: resJson.data.message || (resJson.data.status === 'applied' ? 'Application submitted successfully!' : 'Application requires human review.'),
-          ticket_id: resJson.data.ticket_id,
+          status: statusVal,
+          message: messageVal,
+          ticket_id: ticketIdVal,
         });
         if (onJobUpdated) onJobUpdated();
       } else {

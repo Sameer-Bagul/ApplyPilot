@@ -63,6 +63,7 @@ import { ProfileView } from '@/components/ProfileView';
 import { AddJobModal } from '@/components/AddJobModal';
 import { AddCompanyModal } from '@/components/AddCompanyModal';
 import { AddLeadModal } from '@/components/AddLeadModal';
+import { AutoApplyButton } from '@/components/AutoApplyButton';
 
 interface StatsData {
   totalJobs: number;
@@ -795,13 +796,22 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
+                      <AutoApplyButton
+                        jobUrl={j.url}
+                        initialState={j.state}
+                        onApplied={() => fetchStats()}
+                        onOpenTicket={(ticketId) => {
+                          setSelectedJobUrl(null);
+                          setSelectedTicketId(ticketId);
+                        }}
+                      />
                       <a
                         href={j.url}
                         target="_blank"
                         rel="noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="p-1 rounded text-zinc-400 hover:text-zinc-800 transition"
+                        className="p-1.5 rounded-xl liquid-pill text-zinc-400 hover:text-zinc-800 transition"
                         title="Open Official Job Board"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
@@ -912,13 +922,25 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <AutoApplyButton
+                          jobUrl={j.url}
+                          initialState={j.state}
+                          onApplied={() => {
+                            fetchStats();
+                            fetchJobs(jobPage);
+                          }}
+                          onOpenTicket={(ticketId) => {
+                            setSelectedJobUrl(null);
+                            setSelectedTicketId(ticketId);
+                          }}
+                        />
                         <a
                           href={j.url}
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="p-1 rounded text-zinc-400 hover:text-zinc-800 transition"
+                          className="p-1.5 rounded-xl liquid-pill text-zinc-400 hover:text-zinc-800 transition"
                           title="Open Official Job Board"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
