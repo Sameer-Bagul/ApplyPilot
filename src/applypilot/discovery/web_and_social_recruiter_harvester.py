@@ -197,49 +197,29 @@ def search_web_recruiters(
     domain: str | None = None,
     cities: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Search for real recruiters, CEOs, CTOs, and leadership blogs using DuckDuckGo search.
+    """Search for real recruiters, CEOs, CTOs using web search engines.
     
-    Supports city-targeted queries (e.g. Bengaluru, Hyderabad, Pune, Delhi NCR, Remote)
-    to discover local recruiting desks, HR partners, and engineering leadership.
+    Uses fast fail-safe timeouts to avoid blocking continuous pipeline runs.
     """
     people: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
 
-    # Multi-angle search queries across recruiters, C-level leadership, and tech blogs
+    # Compact, high-signal search queries
     queries = [
-        f"{company_name} recruiter linkedin",
-        f"{company_name} talent acquisition linkedin",
-        f"{company_name} CEO founder linkedin",
-        f"{company_name} CTO VP engineering linkedin",
+        f'"{company_name}" recruiter OR "talent acquisition" site:linkedin.com/in',
+        f'"{company_name}" "founder" OR "CEO" OR "CTO" site:linkedin.com/in',
     ]
-
-    # City-specific queries to capture regional tech hub talent partners & engineering heads
-    if cities and len(cities) > 0:
-        cities_or = " OR ".join(f'"{c}"' for c in cities)
-        queries.insert(0, f'"{company_name}" (recruiter OR "talent acquisition" OR "HR") ({cities_or}) site:linkedin.com/in')
-        queries.append(f'"{company_name}" ("Engineering Manager" OR "Head of Engineering" OR "Director") ({cities_or}) site:linkedin.com/in')
-        for c in cities[:2]:
-            queries.append(f'"{company_name}" technical recruiter "{c}" site:linkedin.com/in')
-
-    # Foreign and Global Startup Executive Dorks (US, UK, Europe, Remote)
-    queries.append(f'"{company_name}" ("CEO" OR "CTO" OR "Founder" OR "VP Engineering") ("US" OR "San Francisco" OR "New York" OR "London" OR "Europe" OR "Remote") site:linkedin.com/in')
-    queries.append(f'"{company_name}" funding ("Series A" OR "Series B" OR "Seed" OR "backed by" OR "Y Combinator" OR "a16z" OR "Sequoia")')
-
-    if domain and "." in domain:
-        queries.append(f'"{company_name}" (blog OR substack OR medium) ("CTO" OR "CEO" OR "founder")')
 
     try:
         from ddgs import DDGS
-        with DDGS(timeout=8) as ddgs_client:
+        with DDGS(timeout=3) as ddgs_client:
             for q in queries:
                 hits = []
-                for b in ["duckduckgo", "auto", "startpage", "brave"]:
-                    try:
-                        hits = list(ddgs_client.text(q, backend=b, max_results=max_results))
-                        if hits:
-                            break
-                    except Exception:
-                        continue
+                try:
+                    hits = list(ddgs_client.text(q, backend="auto", max_results=max_results))
+                except Exception as e:
+                    logger.debug("DDGS search fast fallback on query '%s': %s", q, e)
+                    break  # Break early on rate-limit / 429 to avoid blocking pipeline
 
                 for h in hits:
                     href = h.get("href", "")

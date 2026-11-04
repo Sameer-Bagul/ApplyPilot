@@ -164,7 +164,7 @@ def _run_cover_slice(min_score: int = 8, limit: int = 10, workers: int = 1, doc_
     return 0
 
 
-def _run_company_deep_loop_slice(cities: list[str], limit: int = 15, conn: sqlite3.Connection | None = None) -> int:
+def _run_company_deep_loop_slice(cities: list[str], limit: int = 5, conn: sqlite3.Connection | None = None) -> int:
     """Run company deep looper on watchlist to pull direct inboxes & jobs."""
     try:
         from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
@@ -346,7 +346,7 @@ def run_marathon_pipeline(
         # -------------------------------------------------------------
         if not session.is_time_up and not session.stop_requested:
             try:
-                leads_added = _run_company_deep_loop_slice(cities=session.cities, limit=10, conn=conn)
+                leads_added = _run_company_deep_loop_slice(cities=session.cities, limit=5, conn=conn)
                 session.metrics["leads_acquired"] += leads_added
                 if leads_added > 0:
                     console.print(f"  [green]Watchlist Looper:[/green] {leads_added} verified HR leads enriched")

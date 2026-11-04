@@ -20,6 +20,9 @@ import {
   ArrowRight,
   Clock,
   Send,
+  Play,
+  Monitor,
+  ShieldAlert,
 } from 'lucide-react';
 import { RouteBadge } from './ui/RouteBadge';
 
@@ -28,6 +31,7 @@ interface JobDetailDrawerProps {
   onClose: () => void;
   onJobUpdated?: () => void;
   onOpenLead?: (lead: any) => void;
+  onOpenTicket?: (ticketId: number) => void;
 }
 
 export function JobDetailDrawer({
@@ -35,11 +39,16 @@ export function JobDetailDrawer({
   onClose,
   onJobUpdated,
   onOpenLead,
+  onOpenTicket,
 }: JobDetailDrawerProps) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'description' | 'scoring' | 'leads' | 'edit'>('description');
+  
+  // Application runner state (Phase 2)
+  const [applyingMode, setApplyingMode] = useState<'headless' | 'headed' | null>(null);
+  const [applyResult, setApplyResult] = useState<{ status: string; message: string; ticket_id?: number } | null>(null);
   
   // Editable form fields
   const [editState, setEditState] = useState('');
@@ -48,6 +57,43 @@ export function JobDetailDrawer({
   const [editSalary, setEditSalary] = useState('');
   const [editLocation, setEditLocation] = useState('');
   const [editReasoning, setEditReasoning] = useState('');
+
+  const handleApply = async (mode: 'headless' | 'headed') => {
+    if (!jobUrl) return;
+    setApplyingMode(mode);
+    setApplyResult(null);
+    try {
+      const res = await fetch('/api/apply/job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobUrl,
+          headless: mode === 'headless',
+        }),
+      });
+      const resJson = await res.json();
+      if (resJson.success) {
+        setApplyResult({
+          status: resJson.data.status,
+          message: resJson.data.message || (resJson.data.status === 'applied' ? 'Application submitted successfully!' : 'Application requires human review.'),
+          ticket_id: resJson.data.ticket_id,
+        });
+        if (onJobUpdated) onJobUpdated();
+      } else {
+        setApplyResult({
+          status: 'error',
+          message: resJson.error || 'Failed to trigger application run.',
+        });
+      }
+    } catch (err: any) {
+      setApplyResult({
+        status: 'error',
+        message: err.message || 'Network error triggering application run.',
+      });
+    } finally {
+      setApplyingMode(null);
+    }
+  };
 
   useEffect(() => {
     if (!jobUrl) {
@@ -531,6 +577,75 @@ export function JobDetailDrawer({
               )}
             </>
           )}
+        </div>
+
+        {/* Phase 2: Action Bar for Autonomous Application */}
+        <div className="p-4 border-t border-zinc-200/80 bg-white/80 backdrop-blur-md space-y-3">
+          {applyResult && (
+            <div className={`p-3 rounded-2xl text-xs flex items-center justify-between gap-3 border shadow-2xs ${
+              applyResult.status === 'applied'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : applyResult.status === 'needs_human' || applyResult.ticket_id
+                ? 'bg-amber-50 border-amber-200 text-amber-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              <div className="flex items-center gap-2 min-w-0">
+                {applyResult.status === 'applied' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : applyResult.status === 'needs_human' || applyResult.ticket_id ? (
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span className="truncate">{applyResult.message}</span>
+              </div>
+
+              {applyResult.ticket_id && onOpenTicket && (
+                <button
+                  type="button"
+                  onClick={() => onOpenTicket(applyResult.ticket_id!)}
+                  className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs shrink-0 cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  Open HITL Ticket #{applyResult.ticket_id}
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-zinc-500">
+              <span className="font-semibold text-zinc-800 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-600" />
+                Autonomous Engine
+              </span>
+              <span className="text-[11px] text-zinc-400">Playwright stealth + candidate profile fill</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={applyingMode !== null}
+                onClick={() => handleApply('headed')}
+                className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 cursor-pointer shadow-2xs transition disabled:opacity-50"
+                title="Launch visible browser window for live interaction"
+              >
+                <Monitor className="w-3.5 h-3.5 text-indigo-600" />
+                {applyingMode === 'headed' ? 'Running Headed...' : 'Apply Headed'}
+              </button>
+
+              <button
+                type="button"
+                disabled={applyingMode !== null}
+                onClick={() => handleApply('headless')}
+                className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                title="Execute application in background without visible window"
+              >
+                <Play className="w-3.5 h-3.5 text-cyan-300 fill-cyan-300" />
+                {applyingMode === 'headless' ? 'Applying (Headless)...' : 'Apply Headless'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

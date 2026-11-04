@@ -43,6 +43,7 @@ import {
   Cpu,
   Star,
   Paperclip,
+  User,
   HelpCircle,
   Clock,
   Terminal,
@@ -58,6 +59,7 @@ import { CompanyDetailDrawer } from '@/components/CompanyDetailDrawer';
 import { LeadDetailDrawer } from '@/components/LeadDetailDrawer';
 import { HitlTicketModal } from '@/components/HitlTicketModal';
 import { ArchitectureView } from '@/components/ArchitectureView';
+import { ProfileView } from '@/components/ProfileView';
 import { AddJobModal } from '@/components/AddJobModal';
 import { AddCompanyModal } from '@/components/AddCompanyModal';
 import { AddLeadModal } from '@/components/AddLeadModal';
@@ -82,7 +84,7 @@ interface StatsData {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'architecture' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar'
+    'overview' | 'architecture' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile'
   >('overview');
   const [greeting, setGreeting] = useState('Good Day');
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -357,6 +359,14 @@ export default function DashboardPage() {
       badgeColor: stats?.hitlCount
         ? 'bg-rose-50 text-rose-800 border-rose-200/80 animate-pulse'
         : 'bg-zinc-100 text-zinc-600 border-zinc-200',
+    },
+    {
+      id: 'profile',
+      label: 'Candidate Profile',
+      icon: User,
+      color: 'text-indigo-600',
+      badge: 'PHASE 2',
+      badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200/80',
     },
     {
       id: 'radar',
@@ -1267,6 +1277,9 @@ export default function DashboardPage() {
 
         {/* ----------------- TAB 7: AGENT RADAR LIVE DAG ----------------- */}
         {activeTab === 'radar' && <AgentRadarView />}
+
+        {/* ----------------- TAB 8: CANDIDATE PROFILE & CREDENTIALS (PHASE 2) ----------------- */}
+        {activeTab === 'profile' && <ProfileView />}
       </main>
 
       {/* ----------------- DRAWERS & MODALS ----------------- */}
@@ -1281,6 +1294,10 @@ export default function DashboardPage() {
           setSelectedJobUrl(null);
           setSelectedLeadId(lead.lead_id);
           setActiveTab('leads');
+        }}
+        onOpenTicket={(ticketId) => {
+          setSelectedJobUrl(null);
+          setSelectedTicketId(ticketId);
         }}
       />
 

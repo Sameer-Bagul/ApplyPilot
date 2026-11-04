@@ -114,16 +114,9 @@ def loop_and_enrich_single_company(
                 pass
 
         if len(existing_emails) < target_emails:
-            deep_res = enrich_company_deep(
-                company_name=c_name,
-                domain=c_domain,
-                careers_page_url=careers_url,
-                target_count=target_emails,
-                cities=cities,
-                conn=conn,
-            )
-            added = deep_res.get("new_leads_added", 0)
-            if added == 0 and c_domain:
+            added = 0
+            # Tier 1: Fast deterministic cascade (DNS MX, website contact/careers pages, and GitHub commit logs)
+            if c_domain:
                 try:
                     from applypilot.discovery.email_hunter import harvest_company_emails_cascade
                     h_res = harvest_company_emails_cascade(
@@ -136,6 +129,22 @@ def loop_and_enrich_single_company(
                     added = h_res.get("leads_stored_to_db", 0)
                 except Exception as e:
                     logger.debug("Cascade email harvest notice: %s", e)
+
+            # Tier 2: Search engine dork enrichment if still below target
+            if len(existing_emails) + added < target_emails:
+                try:
+                    deep_res = enrich_company_deep(
+                        company_name=c_name,
+                        domain=c_domain,
+                        careers_page_url=careers_url,
+                        target_count=target_emails,
+                        cities=cities,
+                        conn=conn,
+                    )
+                    added += deep_res.get("new_leads_added", 0)
+                except Exception as e:
+                    logger.debug("Web enrichment notice: %s", e)
+
             res["emails_added"] += added
             res["total_emails"] = len(existing_emails) + added
 

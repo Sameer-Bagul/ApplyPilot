@@ -940,3 +940,217 @@ export function getPipelineTelemetry() {
     },
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 👤 CANDIDATE PROFILE & Q&A KNOWLEDGE BASE (Phase 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function getProfileFilePath(): string {
+  const customDir = process.env.APPLYPILOT_DIR;
+  if (customDir) return path.join(customDir, 'profile.json');
+  return path.join(os.homedir(), '.applypilot', 'profile.json');
+}
+
+export function getResumeFilePath(ext = 'pdf'): string {
+  const customDir = process.env.APPLYPILOT_DIR;
+  const baseDir = customDir || path.join(os.homedir(), '.applypilot');
+  return path.join(baseDir, `resume.${ext}`);
+}
+
+export function getCandidateProfile(): { profile: any; hasResume: boolean; resumePath: string | null } {
+  const fs = require('node:fs');
+  const profilePath = getProfileFilePath();
+  const resumePdf = getResumeFilePath('pdf');
+  const resumeTxt = getResumeFilePath('txt');
+  const resumeDocx = getResumeFilePath('docx');
+
+  let hasResume = false;
+  let resumePath: string | null = null;
+  if (fs.existsSync(resumePdf)) {
+    hasResume = true;
+    resumePath = resumePdf;
+  } else if (fs.existsSync(resumeDocx)) {
+    hasResume = true;
+    resumePath = resumeDocx;
+  } else if (fs.existsSync(resumeTxt)) {
+    hasResume = true;
+    resumePath = resumeTxt;
+  }
+
+  let resumeText = '';
+  if (fs.existsSync(resumeTxt)) {
+    try {
+      resumeText = fs.readFileSync(resumeTxt, 'utf-8');
+    } catch {}
+  }
+
+  let profileData: any = null;
+  if (fs.existsSync(profilePath)) {
+    try {
+      profileData = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+    } catch {}
+  }
+
+  if (!profileData) {
+    // Default template
+    profileData = {
+      name: 'Sameer Bagul',
+      first_name: 'Sameer',
+      last_name: 'Bagul',
+      email: 'sameerbagul2004@gmail.com',
+      phone: '+91 98765 43210',
+      current_title: 'Full-Stack & Autonomous AI Systems Engineer',
+      current_company: 'Independent / Open Source',
+      years_of_experience: 3,
+      notice_period: 'Immediate',
+      location: {
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        country: 'India',
+        postal_code: '560001',
+      },
+      urls: {
+        linkedin: 'https://www.linkedin.com/in/sameer-bagul',
+        github: 'https://github.com/Sameer-Bagul',
+        portfolio: 'https://sameerbagul.dev',
+      },
+      work_authorization: {
+        citizenship: 'India',
+        authorized_in_target: 'Yes',
+        requires_sponsorship: 'No',
+        security_clearance: 'None',
+      },
+      compensation: {
+        target_salary: '₹35,00,000 - ₹50,00,000',
+        min_salary: '₹30,00,000',
+        currency: 'INR',
+      },
+      preferences: {
+        remote_preference: 'Remote / Hybrid',
+        willing_to_relocate: 'Yes',
+        default_apply_mode: 'headless',
+        auto_submit: false,
+      },
+      eeo: {
+        gender: 'Male',
+        veteran_status: 'I am not a protected veteran',
+        disability_status: 'No, I do not have a disability',
+      },
+      summary:
+        'Software Engineer specializing in autonomous multi-agent systems, Next.js, TypeScript, Python, and high-throughput scraping/CDP automation engines.',
+      skills: [
+        'Python',
+        'TypeScript',
+        'React',
+        'Next.js',
+        'FastAPI',
+        'Playwright',
+        'Docker',
+        'SQLite',
+        'PostgreSQL',
+        'Tailwind CSS',
+        'AI Agents',
+      ],
+      resume_text: resumeText,
+    };
+  }
+
+  return {
+    profile: profileData,
+    hasResume,
+    resumePath,
+  };
+}
+
+export function saveCandidateProfile(data: any): { success: boolean; error?: string } {
+  const fs = require('node:fs');
+  const profilePath = getProfileFilePath();
+  const dir = path.dirname(profilePath);
+
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(profilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+    // If resume_text is supplied, write it to resume.txt as well
+    if (data.resume_text) {
+      const txtPath = getResumeFilePath('txt');
+      fs.writeFileSync(txtPath, data.resume_text, 'utf-8');
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export function getQaKnowledgeList(limit = 100): any[] {
+  const db = getDb();
+  try {
+    const rows = db.prepare(
+      `SELECT id, question_text, question_key, canonical_question, answer_text, answer_source, field_type, options_json, use_count, updated_at
+       FROM qa_knowledge
+       ORDER BY use_count DESC, id DESC
+       LIMIT ?`
+    ).all(limit);
+    return rows;
+  } catch (err) {
+    return [];
+  }
+}
+
+export function saveQaKnowledgeItem(item: {
+  question_text: string;
+  answer_text: string;
+  question_key?: string;
+  field_type?: string;
+}): { success: boolean; id?: number; error?: string } {
+  const db = getDb();
+  const crypto = require('node:crypto');
+
+  const questionKey =
+    item.question_key ||
+    item.question_text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .slice(0, 50);
+
+  const qHash = crypto.createHash('sha256').update(item.question_text.trim().toLowerCase()).digest('hex');
+  const now = new Date().toISOString();
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO qa_knowledge (question_text, question_key, canonical_question, question_hash, answer_text, answer_source, field_type, updated_at, created_at, use_count)
+      VALUES (?, ?, ?, ?, ?, 'user_input', ?, ?, ?, 1)
+      ON CONFLICT(question_key, answer_text) DO UPDATE SET
+        question_text = excluded.question_text,
+        updated_at = excluded.updated_at,
+        use_count = qa_knowledge.use_count + 1
+    `);
+    const res = stmt.run(
+      item.question_text,
+      questionKey,
+      item.question_text,
+      qHash,
+      item.answer_text,
+      item.field_type || 'text',
+      now,
+      now
+    );
+    return { success: true, id: Number(res.lastInsertRowid) };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export function deleteQaKnowledgeItem(id: number): { success: boolean; error?: string } {
+  const db = getDb();
+  try {
+    db.prepare('DELETE FROM qa_knowledge WHERE id = ?').run(id);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
