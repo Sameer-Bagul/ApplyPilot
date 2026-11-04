@@ -29,6 +29,11 @@ services:
       - .:/home/applypilot/data:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: ["all"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   # ============================================================================
   # 🛠️ MODULAR SERVICES (Optional / Standalone mode)

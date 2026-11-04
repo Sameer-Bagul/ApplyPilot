@@ -500,8 +500,7 @@ export default function DashboardPage() {
 
             <div className="space-y-0.5">
               <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-900 flex items-center gap-2">
-                <span>{greeting}, Architect</span>
-                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>{greeting}, Sameer !</span>
               </h2>
               <p className="text-xs text-zinc-500">
                 Autonomous Career Acquisition & Dual-Attack Execution Studio
