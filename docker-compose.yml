@@ -14,12 +14,16 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - NODE_ENV=production
       - START_MARATHON=true
       - DISPLAY=${DISPLAY:-:1}
       - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
+      - TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
+      - TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}
     volumes:
       - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp

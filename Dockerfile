@@ -57,7 +57,7 @@ WORKDIR /home/applypilot/app
 
 # Pre-install Playwright and Chromium browser engine
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install playwright>=1.40.0 patchright>=1.50.0 && \
+    pip install playwright>=1.40.0 patchright>=1.50.0 libsql-experimental>=0.0.55 && \
     playwright install --with-deps chromium && \
     chown -R applypilot:applypilot /ms-playwright
 

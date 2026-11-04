@@ -103,6 +103,26 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     if not hasattr(_local, 'connections'):
         _local.connections = {}
 
+    turso_url = os.environ.get("TURSO_DATABASE_URL") or os.environ.get("LIBSQL_URL")
+    turso_token = os.environ.get("TURSO_AUTH_TOKEN") or os.environ.get("LIBSQL_AUTH_TOKEN")
+    if turso_url and not db_path:
+        cache_key = f"turso:{turso_url}"
+        conn = _local.connections.get(cache_key)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                pass
+        try:
+            import libsql_experimental as libsql
+            conn = libsql.connect(turso_url, auth_token=turso_token)
+            conn.row_factory = sqlite3.Row
+            _local.connections[cache_key] = conn
+            return conn
+        except Exception as e:
+            _log.warning("Could not connect to Turso cloud (%s), using local SQLite: %s", turso_url, e)
+
     conn = _local.connections.get(path)
     if conn is not None:
         try:
