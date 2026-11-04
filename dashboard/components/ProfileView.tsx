@@ -1100,7 +1100,7 @@ export function ProfileView() {
         <div className="liquid-glass rounded-3xl p-6 border border-white/90 shadow-xs space-y-5">
           <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
             <Sliders className="w-4 h-4 text-cyan-600" />
-            <span>Phase 2 Autonomous Application Execution Modes</span>
+            <span>Autonomous Application Execution Modes</span>
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

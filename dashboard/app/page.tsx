@@ -366,8 +366,6 @@ export default function DashboardPage() {
       label: 'Candidate Profile',
       icon: User,
       color: 'text-indigo-600',
-      badge: 'PHASE 2',
-      badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200/80',
     },
     {
       id: 'radar',
