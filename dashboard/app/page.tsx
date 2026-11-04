@@ -1,7 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { LandingPage } from '@/components/LandingPage';
+import { PaginationControls } from '@/components/ui/PaginationControls';
 import {
+  LogOut,
   LayoutDashboard,
   Briefcase,
   Building2,
@@ -83,10 +87,19 @@ interface StatsData {
   pendingReviewsCount?: number;
 }
 
-export default function DashboardPage() {
+interface DashboardPageProps {
+  initialTab?: 'overview' | 'architecture' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile';
+}
+
+function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
+  const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<
     'overview' | 'architecture' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile'
-  >('overview');
+  >(initialTab);
+  const [jobLimit, setJobLimit] = useState(25);
+  const [companyLimit, setCompanyLimit] = useState(25);
+  const [leadLimit, setLeadLimit] = useState(25);
+  const [ticketLimit, setTicketLimit] = useState(25);
   const [greeting, setGreeting] = useState('Good Day');
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -151,6 +164,129 @@ export default function DashboardPage() {
     else setGreeting('Good Evening');
   }, []);
 
+  const switchTab = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const nextPath = tab === 'overview' ? '/' : `/${tab}`;
+      window.history.pushState({ tab }, '', nextPath);
+    }
+  };
+
+  const openJob = (url: string) => {
+    setSelectedJobUrl(url);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.set('job', url);
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const closeJob = () => {
+    setSelectedJobUrl(null);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('job');
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const openCompany = (companyName: string) => {
+    setSelectedCompany(companyName);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.set('company', companyName);
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const closeCompany = () => {
+    setSelectedCompany(null);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('company');
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const openLead = (leadId: string) => {
+    setSelectedLeadId(leadId);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.set('lead', leadId);
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const closeLead = () => {
+    setSelectedLeadId(null);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('lead');
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const openTicket = (ticketId: number) => {
+    setSelectedTicketId(ticketId);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.set('ticket', ticketId.toString());
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  const closeTicket = () => {
+    setSelectedTicketId(null);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('ticket');
+      window.history.pushState(null, '', u.toString());
+    }
+  };
+
+  // Sync with browser URL slugs & deep link query parameters
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const validTabs: Array<typeof activeTab> = [
+      'overview',
+      'architecture',
+      'jobs',
+      'companies',
+      'leads',
+      'hitl',
+      'radar',
+      'profile',
+    ];
+
+    const syncFromUrl = () => {
+      const path = window.location.pathname.replace(/^\//, '');
+      if (validTabs.includes(path as any)) {
+        setActiveTab(path as any);
+      } else {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tabParam = urlParams.get('tab');
+        if (tabParam && validTabs.includes(tabParam as any)) {
+          setActiveTab(tabParam as any);
+        }
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const jobParam = params.get('job');
+      if (jobParam) setSelectedJobUrl(jobParam);
+      const companyParam = params.get('company');
+      if (companyParam) setSelectedCompany(companyParam);
+      const leadParam = params.get('lead');
+      if (leadParam) setSelectedLeadId(leadParam);
+      const ticketParam = params.get('ticket');
+      if (ticketParam) setSelectedTicketId(parseInt(ticketParam, 10));
+    };
+
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
+
   const fetchStats = async () => {
     try {
       setLoading(true);
@@ -170,11 +306,11 @@ export default function DashboardPage() {
     fetchStats();
   }, []);
 
-  const fetchJobs = async (page = 1) => {
+  const fetchJobs = async (page = jobPage, limit = jobLimit) => {
     setJobsLoading(true);
     try {
       const res = await fetch(
-        `/api/jobs?page=${page}&limit=25&search=${encodeURIComponent(jobSearch)}&route=${jobRoute}&state=${jobState}&minScore=${jobMinScore}`
+        `/api/jobs?page=${page}&limit=${limit}&search=${encodeURIComponent(jobSearch)}&route=${jobRoute}&state=${jobState}&minScore=${jobMinScore}`
       );
       const data = await res.json();
       if (data.success) {
@@ -189,11 +325,11 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchCompanies = async (page = 1) => {
+  const fetchCompanies = async (page = companyPage, limit = companyLimit) => {
     setCompaniesLoading(true);
     try {
       const res = await fetch(
-        `/api/companies?page=${page}&limit=25&search=${encodeURIComponent(companySearch)}&vip=${companyVipOnly}&sector=${companySector}`
+        `/api/companies?page=${page}&limit=${limit}&search=${encodeURIComponent(companySearch)}&vip=${companyVipOnly}&sector=${companySector}`
       );
       const data = await res.json();
       if (data.success) {
@@ -208,11 +344,11 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchLeads = async (page = 1) => {
+  const fetchLeads = async (page = leadPage, limit = leadLimit) => {
     setLeadsLoading(true);
     try {
       const res = await fetch(
-        `/api/leads?page=${page}&limit=25&search=${encodeURIComponent(leadSearch)}&status=${leadStatus}&type=${leadType}`
+        `/api/leads?page=${page}&limit=${limit}&search=${encodeURIComponent(leadSearch)}&status=${leadStatus}&type=${leadType}`
       );
       const data = await res.json();
       if (data.success) {
@@ -227,10 +363,10 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchTickets = async (page = 1) => {
+  const fetchTickets = async (page = ticketPage, limit = ticketLimit) => {
     setTicketsLoading(true);
     try {
-      const res = await fetch(`/api/hitl?page=${page}&limit=25&status=${ticketStatus}`);
+      const res = await fetch(`/api/hitl?page=${page}&limit=${limit}&status=${ticketStatus}`);
       const data = await res.json();
       if (data.success) {
         setTickets(data.tickets);
@@ -377,6 +513,19 @@ export default function DashboardPage() {
     },
   ];
 
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-zinc-950/20 border-t-zinc-950 animate-spin" />
+        <span className="text-xs font-semibold text-zinc-500">Connecting to Mission Control...</span>
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return <LandingPage />;
+  }
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen p-2.5 sm:p-3 md:p-4 lg:p-5 2xl:p-7 gap-3 sm:gap-4 lg:gap-6 w-full max-w-none text-zinc-900">
       {/* ----------------- DESKTOP SIDEBAR (Liquid Glass Card) ----------------- */}
@@ -430,7 +579,7 @@ export default function DashboardPage() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveTab(item.id as any)}
+                    onClick={() => switchTab(item.id as any)}
                     className={`liquid-row rounded-2xl flex items-center gap-3 transition-all cursor-pointer ${
                       sidebarCollapsed ? 'p-2.5 justify-center' : 'p-2.5 sm:px-3 justify-between'
                     } ${
@@ -508,13 +657,43 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Right: Actions, Live Indicator & Studio Grid Switcher */}
+          {/* Right: Actions, Live Indicator, User Auth & Studio Grid Switcher */}
           <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
             {/* Active Continuous Looper Pill */}
             <div className="liquid-pill rounded-full px-3 py-1.5 flex items-center gap-2 text-xs font-semibold text-zinc-800 shadow-2xs">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="hidden sm:inline">Marathon Continuous Looper</span>
+              <span className="hidden sm:inline">Marathon Looper</span>
             </div>
+
+            {/* Authenticated User Pill & Sign Out */}
+            {session?.user && (
+              <div className="flex items-center gap-2 liquid-pill rounded-full pl-2 pr-2.5 py-1 text-xs font-semibold text-zinc-800 shadow-2xs">
+                {session.user.image ? (
+                  <img
+                    src={session.user.image}
+                    alt={session.user.name || 'User'}
+                    className="w-5 h-5 rounded-full object-cover border border-zinc-200"
+                  />
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-zinc-950 text-white text-[10px] flex items-center justify-center font-bold">
+                    {session.user.name ? session.user.name.charAt(0) : 'S'}
+                  </div>
+                )}
+                <span className="hidden sm:inline text-xs font-bold text-zinc-900 truncate max-w-[120px]">
+                  {session.user.name || 'Sameer'}
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 uppercase font-bold tracking-wider">
+                  Admin
+                </span>
+                <button
+                  onClick={() => signOut({ callbackUrl: '/login' })}
+                  title="Sign Out of Mission Control"
+                  className="ml-1 text-zinc-400 hover:text-rose-600 transition cursor-pointer p-0.5 rounded-full hover:bg-rose-50"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Studio Grid & Pearl Spheres Backdrop Switcher */}
             <WallpaperSwitcher />
@@ -531,7 +710,7 @@ export default function DashboardPage() {
                 <button
                   key={item.id}
                   onClick={() => {
-                    setActiveTab(item.id as any);
+                    switchTab(item.id as any);
                     setMobileMenuOpen(false);
                   }}
                   className={`w-full liquid-row rounded-2xl p-3 flex items-center justify-between text-xs font-semibold ${
@@ -756,7 +935,7 @@ export default function DashboardPage() {
                 </div>
 
                 <button
-                  onClick={() => setActiveTab('jobs')}
+                  onClick={() => switchTab('jobs')}
                   className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1 cursor-pointer shadow-2xs"
                 >
                   <span>Explore All</span>
@@ -768,7 +947,7 @@ export default function DashboardPage() {
                 {(stats?.recentJobs || []).slice(0, 5).map((j: any) => (
                   <div
                     key={j.url}
-                    onClick={() => setSelectedJobUrl(j.url)}
+                    onClick={() => openJob(j.url)}
                     className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer group"
                   >
                     <div className="space-y-1 min-w-0">
@@ -891,7 +1070,7 @@ export default function DashboardPage() {
                   {jobs.map((j) => (
                     <div
                       key={j.url}
-                      onClick={() => setSelectedJobUrl(j.url)}
+                      onClick={() => openJob(j.url)}
                       className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer group"
                     >
                       <div className="space-y-1 min-w-0">
@@ -949,26 +1128,20 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Pagination Bar */}
-              <div className="pt-3 border-t border-zinc-200/60 flex items-center justify-between">
-                <button
-                  disabled={jobPage <= 1}
-                  onClick={() => fetchJobs(jobPage - 1)}
-                  className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40 cursor-pointer shadow-2xs"
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-zinc-500">
-                  Page {jobPage} / {jobPagination.totalPages}
-                </span>
-                <button
-                  disabled={jobPage >= jobPagination.totalPages}
-                  onClick={() => fetchJobs(jobPage + 1)}
-                  className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40 cursor-pointer shadow-2xs"
-                >
-                  Next
-                </button>
-              </div>
+              {/* Smart Pagination Bar */}
+              <PaginationControls
+                page={jobPage}
+                totalPages={jobPagination.totalPages}
+                total={jobPagination.total}
+                limit={jobPagination.limit}
+                onPageChange={(p) => fetchJobs(p, jobPagination.limit)}
+                onLimitChange={(l) => {
+                  setJobLimit(l);
+                  setJobPagination((prev) => ({ ...prev, limit: l }));
+                  fetchJobs(1, l);
+                }}
+                itemName="listings"
+              />
             </div>
           </div>
         )}
@@ -1030,7 +1203,7 @@ export default function DashboardPage() {
                   {companies.map((c) => (
                     <div
                       key={c.company_name}
-                      onClick={() => setSelectedCompany(c.company_name)}
+                      onClick={() => openCompany(c.company_name)}
                       className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer group"
                     >
                       <div className="space-y-1 min-w-0">
@@ -1066,26 +1239,20 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Pagination Bar */}
-              <div className="pt-3 border-t border-zinc-200/60 flex items-center justify-between">
-                <button
-                  disabled={companyPage <= 1}
-                  onClick={() => fetchCompanies(companyPage - 1)}
-                  className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40 cursor-pointer shadow-2xs"
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-zinc-500">
-                  Page {companyPage} / {companyPagination.totalPages}
-                </span>
-                <button
-                  disabled={companyPage >= companyPagination.totalPages}
-                  onClick={() => fetchCompanies(companyPage + 1)}
-                  className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40 cursor-pointer shadow-2xs"
-                >
-                  Next
-                </button>
-              </div>
+              {/* Smart Pagination Bar */}
+              <PaginationControls
+                page={companyPage}
+                totalPages={companyPagination.totalPages}
+                total={companyPagination.total}
+                limit={companyPagination.limit}
+                onPageChange={(p) => fetchCompanies(p, companyPagination.limit)}
+                onLimitChange={(l) => {
+                  setCompanyLimit(l);
+                  setCompanyPagination((prev) => ({ ...prev, limit: l }));
+                  fetchCompanies(1, l);
+                }}
+                itemName="companies"
+              />
             </div>
           </div>
         )}
@@ -1171,7 +1338,7 @@ export default function DashboardPage() {
                   {leads.map((l) => (
                     <div
                       key={l.lead_id}
-                      onClick={() => setSelectedLeadId(l.lead_id)}
+                      onClick={() => openLead(l.lead_id)}
                       className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer group"
                     >
                       <div className="space-y-1 min-w-0">
@@ -1205,26 +1372,20 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Pagination Bar */}
-              <div className="pt-3 border-t border-zinc-200/60 flex items-center justify-between">
-                <button
-                  disabled={leadPage <= 1}
-                  onClick={() => fetchLeads(leadPage - 1)}
-                  className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40 cursor-pointer shadow-2xs"
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-zinc-500">
-                  Page {leadPage} / {leadPagination.totalPages}
-                </span>
-                <button
-                  disabled={leadPage >= leadPagination.totalPages}
-                  onClick={() => fetchLeads(leadPage + 1)}
-                  className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40 cursor-pointer shadow-2xs"
-                >
-                  Next
-                </button>
-              </div>
+              {/* Smart Pagination Bar */}
+              <PaginationControls
+                page={leadPage}
+                totalPages={leadPagination.totalPages}
+                total={leadPagination.total}
+                limit={leadPagination.limit}
+                onPageChange={(p) => fetchLeads(p, leadPagination.limit)}
+                onLimitChange={(l) => {
+                  setLeadLimit(l);
+                  setLeadPagination((prev) => ({ ...prev, limit: l }));
+                  fetchLeads(1, l);
+                }}
+                itemName="leads"
+              />
             </div>
           </div>
         )}
@@ -1266,7 +1427,7 @@ export default function DashboardPage() {
                   {tickets.map((t) => (
                     <div
                       key={t.ticket_id}
-                      onClick={() => setSelectedTicketId(t.ticket_id)}
+                      onClick={() => openTicket(t.ticket_id)}
                       className="liquid-row rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer group"
                     >
                       <div className="space-y-1 min-w-0">
@@ -1290,6 +1451,21 @@ export default function DashboardPage() {
                   ))}
                 </div>
               )}
+
+              {/* Smart Pagination Bar */}
+              <PaginationControls
+                page={ticketPage}
+                totalPages={ticketPagination.totalPages}
+                total={ticketPagination.total}
+                limit={ticketPagination.limit}
+                onPageChange={(p) => fetchTickets(p, ticketPagination.limit)}
+                onLimitChange={(l) => {
+                  setTicketLimit(l);
+                  setTicketPagination((prev) => ({ ...prev, limit: l }));
+                  fetchTickets(1, l);
+                }}
+                itemName="tickets"
+              />
             </div>
           </div>
         )}
@@ -1304,7 +1480,7 @@ export default function DashboardPage() {
       {/* ----------------- DRAWERS & MODALS ----------------- */}
       <JobDetailDrawer
         jobUrl={selectedJobUrl}
-        onClose={() => setSelectedJobUrl(null)}
+        onClose={closeJob}
         onJobUpdated={() => {
           fetchStats();
           if (activeTab === 'jobs') fetchJobs(jobPage);
@@ -1322,7 +1498,7 @@ export default function DashboardPage() {
 
       <CompanyDetailDrawer
         companyName={selectedCompany}
-        onClose={() => setSelectedCompany(null)}
+        onClose={closeCompany}
         onCompanyUpdated={() => {
           fetchStats();
           if (activeTab === 'companies') fetchCompanies(companyPage);
@@ -1341,7 +1517,7 @@ export default function DashboardPage() {
 
       <LeadDetailDrawer
         leadId={selectedLeadId}
-        onClose={() => setSelectedLeadId(null)}
+        onClose={closeLead}
         onLeadUpdated={() => {
           fetchStats();
           if (activeTab === 'leads') fetchLeads(leadPage);
@@ -1355,7 +1531,7 @@ export default function DashboardPage() {
 
       <HitlTicketModal
         ticketId={selectedTicketId}
-        onClose={() => setSelectedTicketId(null)}
+        onClose={closeTicket}
         onTicketResolved={() => {
           fetchStats();
           fetchTickets(ticketPage);
@@ -1389,5 +1565,21 @@ export default function DashboardPage() {
         }}
       />
     </div>
+  );
+}
+
+
+export default function DashboardPage(props: DashboardPageProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex flex-col items-center justify-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-zinc-950/20 border-t-zinc-950 animate-spin" />
+          <span className="text-xs font-semibold text-zinc-500">Loading ApplyPilot Studio...</span>
+        </div>
+      }
+    >
+      <DashboardContent {...props} />
+    </Suspense>
   );
 }
