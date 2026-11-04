@@ -265,31 +265,36 @@ def _build_candidate_summary(profile: dict) -> str:
     return " ".join(parts)
 
 
-def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
+def score_job(resume_text: str, job: dict, profile: dict | None = None, use_algo_only: bool = False) -> dict:
     """Score a single job against the resume.
 
-    Args:
-        resume_text: The candidate's full resume text.
-        job: Job dict with keys: title, site, location, full_description.
-
-    Returns:
-        {"score": int, "keywords": str, "reasoning": str}
+    Uses deterministic local algorithmic scoring when use_algo_only is True
+    or when no external LLM API key is configured.
     """
-    if profile is None:
-        profile = load_profile()
+    import os
+    from applypilot.scoring.local_matcher import calculate_local_fit_score
 
-    # Rule-based pre-filter: catch obvious non-US ineligible jobs before LLM call.
-    # Tags eligibility=non_us_only so downstream stages skip the job; the score
-    # is still recorded so audit views can see the original LLM-style severity.
-    ineligible_reason = _check_ineligible(job)
-    if ineligible_reason:
-        log.info("Pre-filter INELIGIBLE (non_us_only): %s — %s", (job.get("title") or "?")[:60], ineligible_reason)
+    has_llm_key = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
+
+    # Local Algorithmic Matcher execution
+    if use_algo_only or not has_llm_key:
+        local_res = calculate_local_fit_score(
+            title=job.get("title") or "",
+            description=job.get("full_description") or job.get("description"),
+            location=job.get("location"),
+        )
         return {
-            "score": 2,
-            "keywords": "",
-            "reasoning": f"Ineligible: {ineligible_reason}. Candidate is US-based.",
-            "eligibility": "non_us_only",
+            "score": local_res["fit_score"],
+            "keywords": ", ".join(local_res["matched_keywords"]),
+            "reasoning": local_res["score_reasoning"],
+            "eligibility": local_res["eligibility"],
         }
+
+    if profile is None:
+        try:
+            profile = load_profile()
+        except Exception:
+            profile = {}
 
     try:
         candidate_summary = _build_candidate_summary(profile)
@@ -311,9 +316,18 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
         response = client.chat(messages, max_tokens=8192, temperature=0.2)
         return _parse_score_response(response)
     except Exception as e:
-        log.error("LLM error scoring job '%s': %s", (job or {}).get("title") or "?", e)
-        return {"score": None, "keywords": "", "reasoning": "", "eligibility": None,
-                "error": f"LLM error: {e}"}
+        log.warning("LLM scoring notice (%s), falling back to local deterministic algorithm...", e)
+        local_res = calculate_local_fit_score(
+            title=job.get("title") or "",
+            description=job.get("full_description") or job.get("description"),
+            location=job.get("location"),
+        )
+        return {
+            "score": local_res["fit_score"],
+            "keywords": ", ".join(local_res["matched_keywords"]),
+            "reasoning": f"[Local Algorithm] {local_res['score_reasoning']}",
+            "eligibility": local_res["eligibility"],
+        }
 
 
 MAX_SCORE_RETRIES = 5
@@ -346,21 +360,14 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                 (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
                  r["url"]),
             )
-            # Eligibility-driven state transition. Non-US roles go straight to
-            # `archived` (terminal) so tailor/cover/apply never pick them up,
-            # bypassing the scored→tailored→ready_to_apply chain entirely.
-            if eligibility == "non_us_only":
-                transition_state(conn, r["url"], "archived",
-                                 reason="non_us_only employer/role",
-                                 metadata={"score": r["score"],
-                                           "eligibility": eligibility},
-                                 force=True)
-            else:
-                to_state = "scored" if r["score"] >= _min_score else "low_score"
-                transition_state(conn, r["url"], to_state,
-                                 reason=f"scored {r['score']}/10",
-                                 metadata={"score": r["score"],
-                                           "eligibility": eligibility})
+            # Universal retention: never drop or delete!
+            # High score goes to 'scored' for personal apply
+            # Low score stays in database as 'low_score' for general archive & referrals
+            to_state = "scored" if r["score"] >= _min_score else "low_score"
+            transition_state(conn, r["url"], to_state,
+                             reason=f"scored {r['score']}/10",
+                             metadata={"score": r["score"],
+                                       "eligibility": eligibility})
         else:
             # LLM failure — keep fit_score NULL so it stays in pending_score
             row = conn.execute(
@@ -392,18 +399,19 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
 
 
 def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
-                max_age_days: int | None = None) -> dict:
+                max_age_days: int | None = None, use_algo_only: bool = False) -> dict:
     """Score unscored jobs that have full descriptions.
 
     Args:
         limit: Maximum number of jobs to score in this run.
         rescore: If True, re-score all jobs (not just unscored ones).
         workers: Parallel LLM threads (default 1 = sequential).
+        use_algo_only: If True, use local deterministic matcher with 0 external LLM calls.
 
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = RESUME_PATH.read_text(encoding="utf-8") if RESUME_PATH.exists() else ""
     conn = get_connection()
 
     if rescore:
@@ -436,7 +444,7 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
 
     def _score_one(job: dict) -> dict:
         try:
-            result = score_job(resume_text, job)
+            result = score_job(resume_text, job, use_algo_only=use_algo_only)
             result["url"] = job["url"]
         except Exception as e:
             log.error("Unexpected error scoring '%s': %s", (job or {}).get("title") or "?", e)

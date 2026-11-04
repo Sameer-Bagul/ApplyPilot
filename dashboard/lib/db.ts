@@ -10,7 +10,8 @@ export function getDb(): DatabaseSync {
   const dbPath = process.env.APPLYPILOT_DB_PATH || path.join(os.homedir(), '.applypilot', 'applypilot.db');
   
   try {
-    _db = new DatabaseSync(dbPath, { readOnly: true });
+    // Open in read-write mode to support interactive CRUD operations
+    _db = new DatabaseSync(dbPath);
     return _db;
   } catch (err) {
     throw new Error(`ApplyPilot database could not be opened at ${dbPath}: ${err}`);
@@ -31,6 +32,8 @@ export interface StatsData {
   topSectors: Array<{ sector: string; count: number }>;
   recentJobs: any[];
   recentLeads: any[];
+  hitlCount: number;
+  pendingReviewsCount: number;
 }
 
 export function getDashboardStats(): StatsData {
@@ -44,6 +47,9 @@ export function getDashboardStats(): StatsData {
   const dualAttack = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'DUAL_ATTACK'").get() as any)?.c || 0;
   const portalOnly = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'PORTAL_ONLY'").get() as any)?.c || 0;
   const emailOnly = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'EMAIL_ONLY'").get() as any)?.c || 0;
+
+  const hitlCount = (db.prepare("SELECT COUNT(*) as c FROM hitl_tickets WHERE status != 'resolved'").get() as any)?.c || 0;
+  const pendingReviewsCount = (db.prepare("SELECT COUNT(*) as c FROM recruiter_leads WHERE outreach_status IN ('pending_review', 'queued', 'drafted')").get() as any)?.c || 0;
 
   const topAts = db.prepare(`
     SELECT COALESCE(ats_provider, 'custom') as provider, COUNT(*) as count 
@@ -72,7 +78,8 @@ export function getDashboardStats(): StatsData {
 
   const recentLeads = db.prepare(`
     SELECT lead_id, company_name, contact_name, contact_email, role_title, contact_type, 
-           contact_linkedin_url, linkedin_connection_note, outreach_status, created_at
+           contact_linkedin_url, linkedin_connection_note, outreach_status, created_at,
+           email_draft_subject, email_draft_body, approved_at, approved_by
     FROM recruiter_leads 
     ORDER BY created_at DESC 
     LIMIT 8
@@ -92,12 +99,16 @@ export function getDashboardStats(): StatsData {
     topSectors,
     recentJobs,
     recentLeads,
+    hitlCount,
+    pendingReviewsCount,
   };
 }
 
 export function getJobs(params: {
   search?: string;
   route?: string;
+  state?: string;
+  minScore?: number;
   ats?: string;
   location?: string;
   page?: number;
@@ -110,21 +121,31 @@ export function getJobs(params: {
 
   let query = `
     SELECT url, title, company, location, site, execution_route, fit_score, 
-           discovered_at, state, description
+           discovered_at, state, description, salary, score_reasoning
     FROM jobs 
     WHERE 1=1
   `;
   const queryParams: any[] = [];
 
   if (params.search) {
-    query += ` AND (title LIKE ? OR company LIKE ? OR description LIKE ?)`;
+    query += ` AND (title LIKE ? OR company LIKE ? OR description LIKE ? OR location LIKE ?)`;
     const s = `%${params.search}%`;
-    queryParams.push(s, s, s);
+    queryParams.push(s, s, s, s);
   }
 
   if (params.route && params.route !== 'ALL') {
     query += ` AND execution_route = ?`;
     queryParams.push(params.route);
+  }
+
+  if (params.state && params.state !== 'ALL') {
+    query += ` AND state = ?`;
+    queryParams.push(params.state);
+  }
+
+  if (params.minScore !== undefined && !isNaN(params.minScore)) {
+    query += ` AND fit_score >= ?`;
+    queryParams.push(params.minScore);
   }
 
   if (params.location) {
@@ -150,6 +171,126 @@ export function getJobs(params: {
       totalPages: Math.ceil(total / limit),
     },
   };
+}
+
+export function getJobDetail(url: string) {
+  const db = getDb();
+  const job: any = db.prepare('SELECT * FROM jobs WHERE url = ?').get(url);
+  if (!job) return null;
+
+  // Get state transitions
+  let transitions: any[] = [];
+  try {
+    transitions = db.prepare(`
+      SELECT from_state, to_state, at, reason, metadata 
+      FROM job_state_transitions 
+      WHERE job_url = ? 
+      ORDER BY at DESC
+    `).all(url);
+  } catch {}
+
+  // Get recruiter leads associated with this company or job
+  let leads: any[] = [];
+  try {
+    leads = db.prepare(`
+      SELECT lead_id, company_name, contact_name, contact_email, role_title, contact_type, 
+             contact_linkedin_url, outreach_status, email_draft_subject, email_draft_body, created_at
+      FROM recruiter_leads 
+      WHERE (job_id = ? OR company_name = ?)
+      ORDER BY created_at DESC
+    `).all(url, job.company);
+  } catch {}
+
+  // Get company watchlist info if available
+  let companyInfo: any = null;
+  if (job.company) {
+    try {
+      companyInfo = db.prepare('SELECT * FROM career_watchlist WHERE company_name = ?').get(job.company);
+    } catch {}
+  }
+
+  return {
+    job,
+    transitions,
+    leads,
+    companyInfo,
+  };
+}
+
+export function createJob(data: {
+  url: string;
+  title: string;
+  company: string;
+  location?: string;
+  salary?: string;
+  description?: string;
+  full_description?: string;
+  execution_route?: string;
+  fit_score?: number;
+  score_reasoning?: string;
+  state?: string;
+  site?: string;
+}) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const route = data.execution_route || 'PORTAL_ONLY';
+  const state = data.state || 'discovered';
+
+  db.prepare(`
+    INSERT OR REPLACE INTO jobs (
+      url, title, company, location, salary, description, full_description,
+      execution_route, fit_score, score_reasoning, state, site, discovered_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.url,
+    data.title,
+    data.company,
+    data.location || 'Remote',
+    data.salary || null,
+    data.description || data.full_description || '',
+    data.full_description || data.description || '',
+    route,
+    data.fit_score ?? null,
+    data.score_reasoning ?? null,
+    state,
+    data.site || 'direct',
+    now
+  );
+
+  return getJobDetail(data.url);
+}
+
+export function updateJob(url: string, updates: Partial<{
+  title: string;
+  company: string;
+  location: string;
+  salary: string;
+  state: string;
+  fit_score: number;
+  score_reasoning: string;
+  execution_route: string;
+  full_description: string;
+}>) {
+  const db = getDb();
+  const fields: string[] = [];
+  const params: any[] = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    fields.push(`${key} = ?`);
+    params.push(value);
+  }
+
+  if (fields.length === 0) return getJobDetail(url);
+
+  params.push(url);
+  db.prepare(`UPDATE jobs SET ${fields.join(', ')} WHERE url = ?`).run(...params);
+
+  return getJobDetail(url);
+}
+
+export function deleteJob(url: string) {
+  const db = getDb();
+  return db.prepare('DELETE FROM jobs WHERE url = ?').run(url);
 }
 
 export function getCompanies(params: {
@@ -234,63 +375,6 @@ export function getCompanies(params: {
   };
 }
 
-export function getLeads(params: {
-  search?: string;
-  type?: string;
-  status?: string;
-  page?: number;
-  limit?: number;
-}) {
-  const db = getDb();
-  const page = Math.max(1, params.page || 1);
-  const limit = Math.min(100, Math.max(1, params.limit || 20));
-  const offset = (page - 1) * limit;
-
-  let query = `
-    SELECT lead_id, job_id, company_name, company_domain, role_title, 
-           contact_name, contact_email, contact_type, contact_linkedin_url, 
-           linkedin_connection_note, source_platform, evidence_snippet, 
-           execution_route, outreach_status, created_at
-    FROM recruiter_leads 
-    WHERE 1=1
-  `;
-  const queryParams: any[] = [];
-
-  if (params.search) {
-    query += ` AND (company_name LIKE ? OR contact_name LIKE ? OR contact_email LIKE ? OR role_title LIKE ?)`;
-    const s = `%${params.search}%`;
-    queryParams.push(s, s, s, s);
-  }
-
-  if (params.type && params.type !== 'ALL') {
-    query += ` AND contact_type = ?`;
-    queryParams.push(params.type);
-  }
-
-  if (params.status && params.status !== 'ALL') {
-    query += ` AND outreach_status = ?`;
-    queryParams.push(params.status);
-  }
-
-  const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
-  const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
-
-  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(limit, offset);
-
-  const leads = db.prepare(query).all(...queryParams);
-
-  return {
-    leads,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
-}
-
 export function getCompanyDetail(params: { id?: string; name?: string }) {
   const db = getDb();
   let company: any = null;
@@ -324,7 +408,8 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
       `SELECT lead_id, job_id, company_name, company_domain, role_title,
               contact_name, contact_email, contact_type, contact_linkedin_url,
               linkedin_connection_note, source_platform, evidence_snippet,
-              execution_route, outreach_status, created_at
+              execution_route, outreach_status, created_at,
+              email_draft_subject, email_draft_body, approved_at, approved_by
        FROM recruiter_leads
        WHERE company_name = ?
        ORDER BY contact_type ASC, created_at DESC`
@@ -335,7 +420,7 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
   const jobs = db
     .prepare(
       `SELECT url, title, company, location, site, execution_route,
-              fit_score, discovered_at, state
+              fit_score, discovered_at, state, salary
        FROM jobs
        WHERE company = ?
        ORDER BY discovered_at DESC
@@ -358,6 +443,349 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
       hasDualAttack: leads.length > 0 && (jobs.length > 0 || Boolean(company.careers_page_url)),
     },
   };
+}
+
+export function createCompany(data: {
+  company_name: string;
+  official_domain?: string;
+  careers_page_url?: string;
+  ats_provider?: string;
+  sector?: string;
+  stage?: string;
+  location?: string;
+  priority_tier?: number;
+  is_vip?: number;
+}) {
+  const db = getDb();
+  const company_id = `comp_${Math.random().toString(36).substring(2, 10)}`;
+  const slug = data.company_name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  db.prepare(`
+    INSERT INTO career_watchlist (
+      company_id, company_name, slug, official_domain, careers_page_url,
+      ats_provider, sector, stage, location, priority_tier, is_vip, open_roles_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+  `).run(
+    company_id,
+    data.company_name,
+    slug,
+    data.official_domain || null,
+    data.careers_page_url || null,
+    data.ats_provider || 'custom',
+    data.sector || 'Technology',
+    data.stage || 'Growth',
+    data.location || 'Remote',
+    data.priority_tier ?? 2,
+    data.is_vip ?? 0
+  );
+
+  return getCompanyDetail({ id: company_id });
+}
+
+export function updateCompany(company_id: string, updates: Partial<{
+  company_name: string;
+  official_domain: string;
+  careers_page_url: string;
+  ats_provider: string;
+  sector: string;
+  stage: string;
+  location: string;
+  priority_tier: number;
+  is_vip: number;
+}>) {
+  const db = getDb();
+  const fields: string[] = [];
+  const params: any[] = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    fields.push(`${key} = ?`);
+    params.push(value);
+  }
+
+  if (fields.length === 0) return getCompanyDetail({ id: company_id });
+
+  params.push(company_id);
+  db.prepare(`UPDATE career_watchlist SET ${fields.join(', ')} WHERE company_id = ?`).run(...params);
+
+  return getCompanyDetail({ id: company_id });
+}
+
+export function deleteCompany(company_id: string) {
+  const db = getDb();
+  return db.prepare('DELETE FROM career_watchlist WHERE company_id = ?').run(company_id);
+}
+
+export function getLeads(params: {
+  search?: string;
+  type?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const db = getDb();
+  const page = Math.max(1, params.page || 1);
+  const limit = Math.min(100, Math.max(1, params.limit || 20));
+  const offset = (page - 1) * limit;
+
+  let query = `
+    SELECT lead_id, job_id, company_name, company_domain, role_title, 
+           contact_name, contact_email, contact_type, contact_linkedin_url, 
+           linkedin_connection_note, source_platform, evidence_snippet, 
+           execution_route, outreach_status, created_at,
+           email_draft_subject, email_draft_body, approved_at, approved_by
+    FROM recruiter_leads 
+    WHERE 1=1
+  `;
+  const queryParams: any[] = [];
+
+  if (params.search) {
+    query += ` AND (company_name LIKE ? OR contact_name LIKE ? OR contact_email LIKE ? OR role_title LIKE ?)`;
+    const s = `%${params.search}%`;
+    queryParams.push(s, s, s, s);
+  }
+
+  if (params.type && params.type !== 'ALL') {
+    query += ` AND contact_type = ?`;
+    queryParams.push(params.type);
+  }
+
+  if (params.status && params.status !== 'ALL') {
+    if (params.status === 'pending_review') {
+      query += ` AND outreach_status IN ('pending_review', 'queued', 'drafted')`;
+    } else {
+      query += ` AND outreach_status = ?`;
+      queryParams.push(params.status);
+    }
+  }
+
+  const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
+  const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
+
+  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  queryParams.push(limit, offset);
+
+  const leads = db.prepare(query).all(...queryParams);
+
+  return {
+    leads,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
+export function getLeadDetail(lead_id: string) {
+  const db = getDb();
+  const lead: any = db.prepare(`
+    SELECT * FROM recruiter_leads WHERE lead_id = ? OR lead_id LIKE (? || '%')
+  `).get(lead_id, lead_id);
+
+  if (!lead) return null;
+
+  // Linked company info
+  let companyInfo: any = null;
+  if (lead.company_name) {
+    try {
+      companyInfo = db.prepare('SELECT * FROM career_watchlist WHERE company_name = ?').get(lead.company_name);
+    } catch {}
+  }
+
+  // Linked open jobs
+  let openJobs: any[] = [];
+  if (lead.company_name) {
+    try {
+      openJobs = db.prepare('SELECT url, title, location, fit_score FROM jobs WHERE company = ? LIMIT 10').all(lead.company_name);
+    } catch {}
+  }
+
+  return {
+    lead,
+    companyInfo,
+    openJobs,
+  };
+}
+
+export function createLead(data: {
+  company_name: string;
+  contact_email: string;
+  contact_name?: string;
+  role_title?: string;
+  contact_type?: string;
+  contact_linkedin_url?: string;
+  company_domain?: string;
+  execution_route?: string;
+  email_draft_subject?: string;
+  email_draft_body?: string;
+}) {
+  const db = getDb();
+  const lead_id = `lead_${Math.random().toString(36).substring(2, 12)}`;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    INSERT OR REPLACE INTO recruiter_leads (
+      lead_id, company_name, contact_email, contact_name, role_title,
+      contact_type, contact_linkedin_url, company_domain, execution_route,
+      outreach_status, email_draft_subject, email_draft_body, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?)
+  `).run(
+    lead_id,
+    data.company_name,
+    data.contact_email,
+    data.contact_name || 'Hiring Manager',
+    data.role_title || 'Engineering Lead',
+    data.contact_type || 'talent_partner',
+    data.contact_linkedin_url || null,
+    data.company_domain || (data.contact_email.split('@')[1] || null),
+    data.execution_route || 'DUAL_ATTACK',
+    data.email_draft_subject || `Application & Introduction: ${data.role_title || 'Software Engineer'}`,
+    data.email_draft_body || `Hi ${data.contact_name || 'Hiring Team'},\n\nI noticed the open role at ${data.company_name} and wanted to reach out directly with my background in high-performance distributed systems and AI agents.`,
+    now
+  );
+
+  return getLeadDetail(lead_id);
+}
+
+export function updateLead(lead_id: string, updates: Partial<{
+  contact_name: string;
+  contact_email: string;
+  role_title: string;
+  contact_type: string;
+  contact_linkedin_url: string;
+  outreach_status: string;
+  email_draft_subject: string;
+  email_draft_body: string;
+  approved_at: string;
+  approved_by: string;
+}>) {
+  const db = getDb();
+  const fields: string[] = [];
+  const params: any[] = [];
+
+  for (const [key, value] of Object.entries(updates)) {
+    fields.push(`${key} = ?`);
+    params.push(value);
+  }
+
+  if (fields.length === 0) return getLeadDetail(lead_id);
+
+  params.push(lead_id, lead_id);
+  db.prepare(`UPDATE recruiter_leads SET ${fields.join(', ')} WHERE lead_id = ? OR lead_id LIKE (? || '%')`).run(...params);
+
+  return getLeadDetail(lead_id);
+}
+
+export function approveLead(lead_id: string, approvedBy: string = 'admin') {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE recruiter_leads 
+    SET outreach_status = 'approved', approved_at = ?, approved_by = ?
+    WHERE lead_id = ? OR lead_id LIKE (? || '%')
+  `).run(now, approvedBy, lead_id, lead_id);
+
+  return getLeadDetail(lead_id);
+}
+
+export function rejectLead(lead_id: string) {
+  const db = getDb();
+  db.prepare(`
+    UPDATE recruiter_leads 
+    SET outreach_status = 'rejected'
+    WHERE lead_id = ? OR lead_id LIKE (? || '%')
+  `).run(lead_id, lead_id);
+
+  return getLeadDetail(lead_id);
+}
+
+export function deleteLead(lead_id: string) {
+  const db = getDb();
+  return db.prepare("DELETE FROM recruiter_leads WHERE lead_id = ? OR lead_id LIKE (? || '%')").run(lead_id, lead_id);
+}
+
+// HITL Tickets
+export function getHitlTickets(params: { status?: string; page?: number; limit?: number }) {
+  const db = getDb();
+  const page = Math.max(1, params.page || 1);
+  const limit = Math.min(100, Math.max(1, params.limit || 20));
+  const offset = (page - 1) * limit;
+
+  let query = `
+    SELECT ticket_id, job_url, lead_id, company, role_title, blocker_type, 
+           status, unanswered_questions_json, created_at, resolved_at
+    FROM hitl_tickets
+    WHERE 1=1
+  `;
+  const queryParams: any[] = [];
+
+  if (params.status && params.status !== 'ALL') {
+    query += ` AND status = ?`;
+    queryParams.push(params.status);
+  }
+
+  const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
+  const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
+
+  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  queryParams.push(limit, offset);
+
+  const rawTickets = db.prepare(query).all(...queryParams);
+
+  const tickets = rawTickets.map((t: any) => {
+    let questions = [];
+    try {
+      if (t.unanswered_questions_json) questions = JSON.parse(t.unanswered_questions_json);
+    } catch {}
+    return {
+      ...t,
+      questions,
+    };
+  });
+
+  return {
+    tickets,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
+export function getHitlTicketDetail(ticket_id: number) {
+  const db = getDb();
+  const ticket: any = db.prepare('SELECT * FROM hitl_tickets WHERE ticket_id = ?').get(ticket_id);
+  if (!ticket) return null;
+
+  let questions = [];
+  try {
+    if (ticket.unanswered_questions_json) questions = JSON.parse(ticket.unanswered_questions_json);
+  } catch {}
+
+  return {
+    ...ticket,
+    questions,
+  };
+}
+
+export function resolveHitlTicket(ticket_id: number, answers: any) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE hitl_tickets 
+    SET status = 'resolved', resolved_at = ?
+    WHERE ticket_id = ?
+  `).run(now, ticket_id);
+
+  return getHitlTicketDetail(ticket_id);
+}
+
+export function deleteHitlTicket(ticket_id: number) {
+  const db = getDb();
+  return db.prepare('DELETE FROM hitl_tickets WHERE ticket_id = ?').run(ticket_id);
 }
 
 export function getPipelineTelemetry() {
@@ -414,30 +842,30 @@ export function getPipelineTelemetry() {
   // Map real database events into DAG nodes
   const liveNodes: any[] = [];
 
-  // Anchor root node (Master Brain)
+  // Root orchestrator
   liveNodes.push({
     id: 'root-orchestrator',
     lane: 0,
     text: 'Autonomous Pipeline Engine',
-    desc: 'Master brain coordinating Omni-Harvester, Deep Looper, 11-ATS Radar, and Dual-Attack Apply',
+    desc: 'Master brain coordinating FreeHire Direct ATS, Local Matcher, Marathon Looper, and HITL Mailer',
     category: 'system',
     status: 'done',
     time: 'Running',
-    command: 'applypilot run-daily --autonomous',
+    command: 'applypilot marathon --loop-minutes 60',
     agent: 'applypilot-brain',
     route: 'DUAL_ATTACK',
-    inputs: { watchlist_monitored: watchlistStats.total, target_locations: ['Bengaluru', 'Remote'] },
+    inputs: { watchlist_monitored: watchlistStats.total, target_locations: ['Bengaluru', 'Remote', 'Global'] },
     outputs: { active_lanes: 5, status: 'operational' },
   });
 
-  // Add ATS Radar nodes from latest jobs
+  // Latest jobs
   latestJobs.slice(0, 4).forEach((j, idx) => {
     liveNodes.push({
       id: `ats-job-${idx}`,
       lane: 3,
       forkFromLane: 0,
       text: `Captured ${j.title.slice(0, 32)}...`,
-      desc: `Real-time role launch detected at ${j.company} (${j.location || 'Bengaluru'})`,
+      desc: `Direct ATS role launch detected at ${j.company} (${j.location || 'Remote'})`,
       category: 'ats_radar',
       status: 'done',
       time: j.discovered_at ? new Date(j.discovered_at).toLocaleTimeString() : 'Recent',
@@ -449,7 +877,7 @@ export function getPipelineTelemetry() {
     });
   });
 
-  // Add Deep Looper email nodes from latest leads
+  // Latest leads
   latestLeads.slice(0, 5).forEach((l, idx) => {
     liveNodes.push({
       id: `lead-enrich-${idx}`,
@@ -460,7 +888,7 @@ export function getPipelineTelemetry() {
       category: 'deep_looper',
       status: 'done',
       time: l.created_at ? new Date(l.created_at).toLocaleTimeString() : 'Recent',
-      command: `enrich_company_deep('${l.company_name}', domain='${l.contact_email.split('@')[1] || ''}')`,
+      command: `harvest_company_emails_cascade('${l.company_name}', domain='${l.contact_email.split('@')[1] || ''}')`,
       agent: 'web_and_social_looper',
       route: l.execution_route || 'DUAL_ATTACK',
       inputs: { company: l.company_name, source: l.source_platform },
@@ -468,58 +896,38 @@ export function getPipelineTelemetry() {
     });
   });
 
-  // Add parallel worker nodes from apply_traces if any exist, or active worker templates
-  if (traces.length > 0) {
-    traces.slice(0, 3).forEach((t, idx) => {
-      liveNodes.push({
-        id: `trace-apply-${idx}`,
-        lane: 4,
-        forkFromLane: 3,
-        text: `Playwright ${t.action} on ${t.ats_type}`,
-        desc: `CDP Worker 0 interacted with selector: ${t.selector || 'field'} (${t.duration_ms || 120}ms)`,
-        category: 'apply_worker',
-        status: t.status === 'success' ? 'done' : 'running',
-        time: t.created_at ? new Date(t.created_at).toLocaleTimeString() : 'Active',
-        command: `fill_field('${t.selector}', value=profile['candidate'])`,
-        agent: 'playwright_cdp_worker_0',
-        route: 'DUAL_ATTACK',
-        inputs: { ats: t.ats_type, step: t.step_index, job_url: t.job_url },
-        outputs: { result: t.status, duration_ms: t.duration_ms },
-      });
-    });
-  } else {
-    liveNodes.push({
-      id: 'worker-cdp-0',
-      lane: 4,
-      forkFromLane: 3,
-      text: 'Parallel Apply Worker 0 (Port 9222)',
-      desc: 'Isolated Chrome CDP session executing zero-token Tier 0 autofill and Playwright forms',
-      category: 'apply_worker',
-      status: 'done',
-      time: 'Standby / Ready',
-      command: 'applypilot apply --workers 2',
-      agent: 'playwright_cdp_worker_0',
-      route: 'DUAL_ATTACK',
-      inputs: { cdp_port: 9222, profile: 'Sameer Bagul', status: 'ready' },
-      outputs: { workers_online: 2, cdp_sessions: ['9222', '9223'] },
-    });
-  }
+  // Parallel worker
+  liveNodes.push({
+    id: 'worker-cdp-0',
+    lane: 4,
+    forkFromLane: 3,
+    text: 'Zero-Token Local Matcher & CDP Worker',
+    desc: 'Local 4-factor scoring engine with universal job retention and sub-millisecond execution',
+    category: 'apply_worker',
+    status: 'done',
+    time: 'Ready',
+    command: 'applypilot match-jobs --re-score-all',
+    agent: 'local_deterministic_matcher',
+    route: 'DUAL_ATTACK',
+    inputs: { candidate_profile: 'Sameer Bagul', status: 'ready' },
+    outputs: { scoring_mode: 'zero_token_local', retention: 'universal' },
+  });
 
   // Dual-Attack Outreach node
   liveNodes.push({
     id: 'outreach-hitl-sync',
     lane: 5,
     forkFromLane: 2,
-    text: 'Dual-Attack Outreach & HITL Sync',
-    desc: 'Simultaneous cold recruiter outreach + asynchronous Gmail 2FA/screening listener',
+    text: 'Dual-Attack Outreach & HITL Gate',
+    desc: 'Strict Admin Safety Gate: emails staged in pending_review requiring explicit approval',
     category: 'outreach',
     status: 'done',
     time: 'Listening',
-    command: 'applypilot track --poll-hitl --interval 60',
+    command: 'applypilot outreach review',
     agent: 'dual_attack_hitl_agent',
     route: 'DUAL_ATTACK',
-    inputs: { outreach_mode: 'draft', poll_interval_sec: 60 },
-    outputs: { verified_leads_ready: latestLeads.length, status: 'synced' },
+    inputs: { outreach_mode: 'draft', pending_reviews: latestLeads.length },
+    outputs: { gate_status: 'enforced', safety: 'human_in_the_loop' },
   });
 
   return {

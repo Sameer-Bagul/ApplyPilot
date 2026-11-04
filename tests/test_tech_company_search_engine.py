@@ -38,3 +38,4 @@ def test_fetch_yc_tech_startups():
         assert "official_domain" in c
         assert "sector" in c
         assert c["source"] == "yc_oss_api"
+

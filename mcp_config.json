@@ -5,6 +5,20 @@
       "args": ["run", "applypilot", "mcp"],
       "description": "Core ApplyPilot brain, 5-Tier cache, Omni-Channel harvesters, Email HITL, and Deep Looper"
     },
+    "freehire": {
+      "url": "https://freehire.me/api/v1/mcp",
+      "description": "Direct employer ATS job catalogue (4.7M+ live postings from Greenhouse, Lever, Ashby, Workday)"
+    },
+    "jobspy": {
+      "command": "uvx",
+      "args": ["mcp-jobspy@latest"],
+      "description": "Official JobSpy cross-board aggregator (LinkedIn, Indeed, Glassdoor, ZipRecruiter, Naukri)"
+    },
+    "foundrole": {
+      "command": "npx",
+      "args": ["-y", "@foundrole/ai-job-search-mcp"],
+      "description": "FoundRole live job intelligence, salary benchmarking, ghost-job risk filter, and ATS resume checker"
+    },
     "playwright": {
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest"],
@@ -52,6 +66,44 @@
       "command": "uvx",
       "args": ["google-workspace-mcp"],
       "description": "Live Google Sheets tracking, Gmail draft/reply management, and Google Calendar interview checks"
+    },
+    "hunter": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.hunter.io/mcp",
+        "--header",
+        "X-API-KEY:${HUNTER_API_KEY}"
+      ],
+      "env": {
+        "HUNTER_API_KEY": "${HUNTER_API_KEY}"
+      },
+      "description": "Hunter.io B2B corporate domain email search, recruiter email finder, and SMTP deliverability verification"
+    },
+    "evaboot": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.evaboot.com/mcp",
+        "--header",
+        "Authorization:Bearer ${EVABOOT_API_KEY}"
+      ],
+      "env": {
+        "EVABOOT_API_KEY": "${EVABOOT_API_KEY}"
+      },
+      "description": "Evaboot LinkedIn & domain email finder with deliverability verification"
+    },
+    "crawl4ai": {
+      "command": "uvx",
+      "args": ["crawl4ai-mcp"],
+      "description": "High-speed local open-source markdown crawler for dynamic JS/React career pages (100% Free, Zero-Token)"
+    },
+    "openings": {
+      "command": "uvx",
+      "args": ["openings-mcp"],
+      "description": "Direct ATS company career board crawler across Workday, Ashby, Greenhouse, Lever (100% Free)"
     }
   }
 }

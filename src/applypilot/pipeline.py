@@ -83,9 +83,12 @@ _UPSTREAM: dict[str, str | None] = {
 
 # Canonical name → description. Order determines default execution order.
 DISCOVERY_SOURCES: dict[str, str] = {
+    "freehire":     "FreeHire IT jobs catalogue (4.7M+ postings straight from company ATS)",
+    "wellfound":    "Wellfound (AngelList) startup jobs (via FreeHire)",
     "jobspy":       "JobSpy aggregator (LinkedIn, Indeed, Naukri, Glassdoor, ZipRecruiter)",
     "linkedin":     "LinkedIn only (via JobSpy)",
     "indeed":       "Indeed only (via JobSpy)",
+    "glassdoor":    "Glassdoor only (via JobSpy)",
     "naukri":       "Naukri India only (via JobSpy)",
     "workday":      "Workday corporate career sites",
     "greenhouse":   "Greenhouse ATS public board API",
@@ -100,17 +103,22 @@ DISCOVERY_SOURCES: dict[str, str] = {
 
 # Alias → canonical name for CLI convenience
 _SOURCE_ALIASES: dict[str, str] = {
-    "hn":    "hackernews",
-    "smart": "smartextract",
-    "dice":  "smartextract",  # dice is scraped via smartextract + sites.yaml
-    "nk":    "naukri",
+    "fh":        "freehire",
+    "wf":        "wellfound",
+    "angellist": "wellfound",
+    "gd":        "glassdoor",
+    "hn":        "hackernews",
+    "smart":     "smartextract",
+    "dice":      "smartextract",  # dice is scraped via smartextract + sites.yaml
+    "nk":        "naukri",
 }
 
 # Sources that are jobspy with a specific site filter
 _JOBSPY_SITE_SOURCES: dict[str, list[str]] = {
-    "linkedin": ["linkedin"],
-    "indeed":   ["indeed"],
-    "naukri":   ["naukri"],
+    "linkedin":  ["linkedin"],
+    "indeed":    ["indeed"],
+    "glassdoor": ["glassdoor"],
+    "naukri":    ["naukri"],
 }
 
 
@@ -144,6 +152,32 @@ def _run_discover(workers: int = 1, sources: list[str] | None = None) -> dict:
     run_all = sources is None
     active = list(DISCOVERY_SOURCES.keys()) if run_all else sources
     stats: dict = {s: None for s in active}
+
+    if "freehire" in active:
+        console.print("  [cyan]FreeHire catalogue harvester (direct ATS feeds)...[/cyan]")
+        try:
+            from applypilot.discovery.freehire_harvester import loop_all_freehire_domains
+            fh_res = loop_all_freehire_domains(limit_per_category=20)
+            new_cnt = fh_res.get("total_new_jobs", 0)
+            console.print(f"  [dim]FreeHire: {new_cnt} new jobs ingested across {fh_res.get('total_domains_scanned', 0)} tech domains[/dim]")
+            stats["freehire"] = "ok"
+        except Exception as e:
+            log.error("FreeHire harvester failed: %s", e)
+            console.print(f"  [red]FreeHire error:[/red] {e}")
+            stats["freehire"] = f"error: {e}"
+
+    if "wellfound" in active:
+        console.print("  [cyan]Wellfound (AngelList) startup harvester...[/cyan]")
+        try:
+            from applypilot.discovery.freehire_harvester import harvest_freehire_domain
+            wf_res = harvest_freehire_domain(sources=["wellfound"], limit=50)
+            new_cnt = wf_res.get("ingested_new", 0)
+            console.print(f"  [dim]Wellfound: {new_cnt} new startup jobs ingested ({wf_res.get('scraped', 0)} retrieved)[/dim]")
+            stats["wellfound"] = "ok"
+        except Exception as e:
+            log.error("Wellfound harvester failed: %s", e)
+            console.print(f"  [red]Wellfound error:[/red] {e}")
+            stats["wellfound"] = f"error: {e}"
 
     if "jobspy" in active:
         console.print("  [cyan]JobSpy full crawl...[/cyan]")

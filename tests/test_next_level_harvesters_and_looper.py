@@ -363,7 +363,7 @@ def test_company_deep_looper_single_and_all(mem_db):
 
     company = dict(mem_db.execute("SELECT * FROM career_watchlist WHERE company_name = 'SuperTech'").fetchone())
 
-    def mock_deep_enrich(company_name, domain, careers_page_url=None, target_count=8, conn=None):
+    def mock_deep_enrich(company_name, domain, careers_page_url=None, target_count=8, conn=None, cities=None, **kwargs):
         from applypilot.database import store_recruiter_lead
         for em in ["saurabh@supertech.io", "careers@supertech.io", "talent@supertech.io"]:
             store_recruiter_lead(

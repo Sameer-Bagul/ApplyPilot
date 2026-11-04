@@ -16,6 +16,7 @@ import os
 import re
 import sqlite3
 import urllib.request
+from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -378,8 +379,32 @@ def run_hr_outreach(
             has_submitted_portal=has_submitted_portal,
         )
 
+        # Persist draft subject & text body for Admin HITL review
+        conn.execute(
+            """
+            UPDATE recruiter_leads
+            SET email_draft_subject = ?, email_draft_body = ?
+            WHERE lead_id = ?
+            """,
+            (subject, text_body, lead_id),
+        )
+        conn.commit()
+
         # Execute based on mode
         if mode == "auto_send":
+            # Safety gate: check if lead is approved
+            row_app = conn.execute("SELECT outreach_status FROM recruiter_leads WHERE lead_id = ?", (lead_id,)).fetchone()
+            if row_app and row_app[0] != "approved":
+                logger.info("Outreach lead %s not approved by admin; keeping in pending_review", lead_id)
+                conn.execute(
+                    "UPDATE recruiter_leads SET outreach_status = 'pending_review' WHERE lead_id = ?",
+                    (lead_id,),
+                )
+                conn.commit()
+                drafted += 1
+                processed += 1
+                continue
+
             success, msg_id, th_id = send_gmail_api(
                 to_email=to_email,
                 subject=subject,
@@ -397,7 +422,7 @@ def run_hr_outreach(
             else:
                 update_recruiter_lead_status(lead_id=lead_id, status="error_sending", conn=conn)
         else:
-            # Draft mode (default safety mode)
+            # Draft mode (Strict Human-in-the-Loop default)
             success, draft_id = create_gmail_draft(
                 to_email=to_email,
                 subject=subject,
@@ -405,14 +430,14 @@ def run_hr_outreach(
                 html_body=html_body,
                 attachment_path=resume_pdf,
             )
-            if success:
-                update_recruiter_lead_status(
-                    lead_id=lead_id,
-                    status="drafted",
-                    gmail_draft_id=draft_id,
-                    conn=conn,
-                )
-                drafted += 1
+            status_val = "drafted" if success else "pending_review"
+            update_recruiter_lead_status(
+                lead_id=lead_id,
+                status=status_val,
+                gmail_draft_id=draft_id if success else None,
+                conn=conn,
+            )
+            drafted += 1
 
         processed += 1
 
@@ -424,3 +449,117 @@ def run_hr_outreach(
         "skipped_dual_attack": skipped_dual_attack,
         "mode": mode,
     }
+
+
+def get_pending_outreach_leads(limit: int = 50, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Retrieve all leads that have generated email drafts awaiting admin review."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT lead_id, company_name, company_domain, role_title, contact_name,
+               contact_email, email_draft_subject, email_draft_body, outreach_status,
+               execution_route, created_at
+        FROM recruiter_leads
+        WHERE outreach_status IN ('pending_review', 'drafted', 'queued')
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def approve_outreach_lead(lead_id: str, approved_by: str = "admin", conn: sqlite3.Connection | None = None) -> bool:
+    """Approve a drafted outreach email for dispatch (matches exact or prefix ID)."""
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+    now = datetime.now(timezone.utc).isoformat()
+    cursor = conn.execute(
+        """
+        UPDATE recruiter_leads
+        SET outreach_status = 'approved', approved_at = ?, approved_by = ?
+        WHERE lead_id = ? OR lead_id LIKE (? || '%')
+        """,
+        (now, approved_by, lead_id, lead_id),
+    )
+    conn.commit()
+    matched = cursor.rowcount > 0
+    if should_close:
+        conn.close()
+    return matched
+
+
+def reject_outreach_lead(lead_id: str, reason: str = "rejected_by_admin", conn: sqlite3.Connection | None = None) -> bool:
+    """Reject and cancel a drafted outreach email (matches exact or prefix ID)."""
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+    cursor = conn.execute(
+        """
+        UPDATE recruiter_leads
+        SET outreach_status = 'rejected', evidence_snippet = COALESCE(evidence_snippet, '') || ' [Admin Rejected]'
+        WHERE lead_id = ? OR lead_id LIKE (? || '%')
+        """,
+        (lead_id, lead_id),
+    )
+    conn.commit()
+    matched = cursor.rowcount > 0
+    if should_close:
+        conn.close()
+    return matched
+
+
+def dispatch_approved_leads(limit: int = 10, conn: sqlite3.Connection | None = None) -> dict[str, int]:
+    """Send ONLY admin-approved outreach emails via Gmail API or SMTP."""
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    approved_rows = conn.execute(
+        """
+        SELECT lead_id, contact_email, company_name, role_title, email_draft_subject, email_draft_body
+        FROM recruiter_leads
+        WHERE outreach_status = 'approved'
+        ORDER BY approved_at ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    sent = 0
+    errors = 0
+    for r in approved_rows:
+        lead_id = r["lead_id"]
+        to_email = r["contact_email"]
+        subject = r["email_draft_subject"] or f"Software Engineering - {r['company_name']}"
+        body = r["email_draft_body"] or ""
+
+        success, msg_id, th_id = send_gmail_api(
+            to_email=to_email,
+            subject=subject,
+            text_body=body,
+            html_body=f"<pre style='font-family: sans-serif; white-space: pre-wrap;'>{body}</pre>",
+        )
+        if success:
+            conn.execute(
+                "UPDATE recruiter_leads SET outreach_status = 'sent', gmail_thread_id = ? WHERE lead_id = ?",
+                (th_id, lead_id),
+            )
+            sent += 1
+        else:
+            conn.execute(
+                "UPDATE recruiter_leads SET outreach_status = 'error_sending' WHERE lead_id = ?",
+                (lead_id,),
+            )
+            errors += 1
+        conn.commit()
+
+    if should_close:
+        conn.close()
+
+    return {"approved_found": len(approved_rows), "sent": sent, "errors": errors}

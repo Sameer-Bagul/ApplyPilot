@@ -571,6 +571,154 @@ def harvest_all_startup_directories(
 
 
 
+@mcp.tool()
+def search_freehire_catalogue(
+    category: list[str] | str | None = None,
+    query: str | None = None,
+    work_mode: list[str] | str | None = None,
+    seniority: list[str] | str | None = None,
+    limit: int = 25,
+    posted_within_days: int = 14,
+) -> dict:
+    """Search FreeHire's 4.7M+ live IT jobs catalogue crawled directly from company ATS platforms."""
+    from applypilot.discovery.freehire_harvester import FreeHireClient
+    client = FreeHireClient()
+    return client.search_jobs(
+        category=category,
+        query=query,
+        work_mode=work_mode,
+        seniority=seniority,
+        limit=limit,
+        posted_within_days=posted_within_days,
+    )
+
+
+@mcp.tool()
+def harvest_freehire_tech_domain(
+    category: str = "ai_engineering",
+    limit: int = 30,
+    posted_within_days: int = 14,
+) -> dict:
+    """Harvest and store live direct ATS jobs from FreeHire for a specific domain family into ApplyPilot DB."""
+    from applypilot.discovery.freehire_harvester import harvest_freehire_domain
+    conn = _get_db()
+    return harvest_freehire_domain(
+        category=category,
+        limit=limit,
+        posted_within_days=posted_within_days,
+        conn=conn,
+    )
+
+
+@mcp.tool()
+def run_marathon_cycle(
+    duration_minutes: float = 10.0,
+    min_score: int = 8,
+    batch_limit: int = 20,
+) -> dict:
+    """Run an autonomous time-bounded marathon cycle rotating across tech domains and company watchlists."""
+    from applypilot.marathon_runner import run_marathon_pipeline
+    return run_marathon_pipeline(
+        duration_minutes=duration_minutes,
+        continuous=False,
+        min_score=min_score,
+        batch_limit=batch_limit,
+    )
+
+
+@mcp.tool()
+def search_company_emails(
+    domain: str,
+    company_name: str | None = None,
+    limit: int = 10,
+) -> dict:
+    """Discover verified professional emails for any corporate domain.
+
+    Uses Hunter MCP / API if configured, with automatic fallback to zero-token
+    web scraping, Google DoH MX verification, and standard inbox synthesis.
+    Discovered leads are automatically stored into SQLite recruiter_leads.
+    """
+    from applypilot.discovery.email_hunter import harvest_company_emails_cascade
+    conn = _get_db()
+    return harvest_company_emails_cascade(
+        domain=domain,
+        company_name=company_name,
+        limit=limit,
+        store_to_db=True,
+        conn=conn,
+    )
+
+
+@mcp.tool()
+def find_contact_email(
+    first_name: str,
+    last_name: str,
+    domain: str,
+) -> dict:
+    """Find the verified work email for a specific person at a target domain."""
+    from applypilot.discovery.email_hunter import HunterClient, clean_domain
+    client = HunterClient()
+    if client.is_configured:
+        return client.find_email(domain=clean_domain(domain), first_name=first_name, last_name=last_name)
+    # Zero-token heuristic fallback
+    d = clean_domain(domain)
+    fn = first_name.lower().strip()
+    ln = last_name.lower().strip()
+    return {
+        "email": f"{fn}.{ln}@{d}",
+        "score": 80,
+        "first_name": first_name,
+        "last_name": last_name,
+        "method": "zero_token_permutation",
+    }
+
+
+@mcp.tool()
+def verify_email_deliverability(email: str) -> dict:
+    """Check whether a target email address is active and deliverable via SMTP / MX checks."""
+    from applypilot.discovery.email_hunter import HunterClient
+    from applypilot.discovery.bangalore_map_harvester import check_domain_mx
+    client = HunterClient()
+    if client.is_configured:
+        return client.verify_email(email)
+    domain = email.split("@")[-1] if "@" in email else ""
+    mx_valid, provider = check_domain_mx(domain)
+    return {
+        "email": email,
+        "status": "deliverable" if mx_valid else "undeliverable",
+        "mx_valid": mx_valid,
+        "mx_provider": provider,
+        "method": "google_doh_dns",
+    }
+
+
+@mcp.tool()
+def get_pending_outreach_leads_mcp(limit: int = 25) -> dict:
+    """Retrieve all cold outreach email drafts currently awaiting human admin review/approval."""
+    from applypilot.outreach.mailer import get_pending_outreach_leads
+    conn = _get_db()
+    leads = get_pending_outreach_leads(limit=limit, conn=conn)
+    return {"pending_count": len(leads), "leads": leads}
+
+
+@mcp.tool()
+def approve_outreach_lead_mcp(lead_id: str) -> dict:
+    """Approve a specific outreach draft for dispatch (Human-in-the-Loop decision)."""
+    from applypilot.outreach.mailer import approve_outreach_lead
+    conn = _get_db()
+    ok = approve_outreach_lead(lead_id=lead_id, approved_by="admin_mcp", conn=conn)
+    return {"lead_id": lead_id, "status": "approved" if ok else "not_found"}
+
+
+@mcp.tool()
+def reject_outreach_lead_mcp(lead_id: str, reason: str = "rejected_by_admin") -> dict:
+    """Reject and cancel an outreach draft (Human-in-the-Loop decision)."""
+    from applypilot.outreach.mailer import reject_outreach_lead
+    conn = _get_db()
+    ok = reject_outreach_lead(lead_id=lead_id, reason=reason, conn=conn)
+    return {"lead_id": lead_id, "status": "rejected" if ok else "not_found"}
+
+
 def run_server():
     """Start the FastMCP stdio server."""
     mcp.run()

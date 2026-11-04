@@ -84,6 +84,13 @@ from applypilot.discovery.multi_directory_orchestrator import (
     run_omni_startup_harvest,
     loop_and_enrich_watchlist,
 )
+from applypilot.discovery.freehire_harvester import (
+    FreeHireClient,
+    harvest_freehire_domain,
+    loop_all_freehire_domains,
+    ingest_freehire_jobs,
+    FREEHIRE_TECH_CATEGORIES,
+)
 
 __all__ = [
     # ATS direct feeds

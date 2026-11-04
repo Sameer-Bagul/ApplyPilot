@@ -67,20 +67,38 @@ def run_daily_pipeline(
         logger.warning("Discovery warning: %s", e)
         report["discovery"] = {"error": str(e)}
 
+    # Step 2.2: FreeHire IT Catalogue Ingestion
+    logger.info("Step 2.2/7: Harvesting FreeHire IT Catalogue...")
+    if dry_run:
+        report["freehire"] = {"status": "skipped_dry_run"}
+    else:
+        try:
+            from applypilot.discovery.freehire_harvester import loop_all_freehire_domains
+            report["freehire"] = loop_all_freehire_domains(
+                limit_per_category=min(limit, 20),
+                conn=conn,
+            )
+        except Exception as e:
+            logger.warning("FreeHire daily runner notice: %s", e)
+            report["freehire"] = {"error": str(e)}
+
     # Step 2.5: Deep Company Looper (Maximum Emails & Real-Time Job Launch Radar)
     logger.info("Step 3/7: Running Deep Company Looper on VIP Watchlist...")
-    try:
-        from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
-        report["company_looper"] = loop_all_watchlist_companies(
-            priority_tier=1,
-            limit=limit * 2,
-            enrich_emails=not dry_run,
-            poll_jobs=True,
-            conn=conn,
-        )
-    except Exception as e:
-        logger.warning("Company looper warning: %s", e)
-        report["company_looper"] = {"error": str(e)}
+    if dry_run:
+        report["company_looper"] = {"status": "skipped_dry_run"}
+    else:
+        try:
+            from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
+            report["company_looper"] = loop_all_watchlist_companies(
+                priority_tier=1,
+                limit=limit * 2,
+                enrich_emails=True,
+                poll_jobs=True,
+                conn=conn,
+            )
+        except Exception as e:
+            logger.warning("Company looper warning: %s", e)
+            report["company_looper"] = {"error": str(e)}
 
     # Step 3: Score & Tailor queue
     logger.info("Step 4/7: Scoring and tailoring queue...")

@@ -1,26 +1,54 @@
 name: applypilot
 
 services:
-  # Primary CLI utility service for ad-hoc commands (e.g. run, init, status, learn)
-  applypilot:
+  # ============================================================================
+  # 🚀 ALL-IN-ONE UNIFIED STACK (Default)
+  # Launches Next.js Dashboard UI (Port 3000), All REST APIs, and background Marathon Looper
+  # ============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: applypilot:latest
+    container_name: applypilot-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NODE_ENV=production
+      - START_MARATHON=true
+    volumes:
+      - ${HOME}/.applypilot:/home/applypilot/.applypilot
+      - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - ./dashboard:/home/applypilot/app/dashboard
+      - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
+      - .:/home/applypilot/data:ro
+    command: ["all"]
+
+  # ============================================================================
+  # 🛠️ MODULAR SERVICES (Optional / Standalone mode)
+  # ============================================================================
+  # Standalone CLI utility service (e.g. status, match-jobs, harvest-emails)
+  cli:
     build:
       context: .
       dockerfile: Dockerfile
     image: applypilot:latest
     container_name: applypilot-cli
-    env_file:
-      - path: .env
-        required: false
+    profiles: ["modular"]
     environment:
       - APPLYPILOT_HEADLESS=true
       - PYTHONUNBUFFERED=1
     volumes:
-      - applypilot_home:/home/applypilot/.applypilot
+      - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - ./dashboard:/home/applypilot/app/dashboard
+      - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
     command: ["status"]
 
-  # Autonomous parallel apply worker daemon
+  # Standalone Autonomous parallel apply worker daemon
   worker:
     build:
       context: .
@@ -28,19 +56,19 @@ services:
     image: applypilot:latest
     container_name: applypilot-worker
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    profiles: ["modular"]
     environment:
       - APPLYPILOT_HEADLESS=true
       - PYTHONUNBUFFERED=1
     volumes:
-      - applypilot_home:/home/applypilot/.applypilot
+      - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - ./dashboard:/home/applypilot/app/dashboard
+      - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
     command: ["apply", "--workers", "2"]
 
-  # Asynchronous Email HITL reply tracker daemon
+  # Standalone Email HITL reply tracker daemon
   tracker:
     build:
       context: .
@@ -48,32 +76,18 @@ services:
     image: applypilot:latest
     container_name: applypilot-tracker
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    profiles: ["modular"]
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      - applypilot_home:/home/applypilot/.applypilot
+      - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - ./dashboard:/home/applypilot/app/dashboard
+      - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
     command: ["track", "--poll-hitl", "--interval", "60"]
 
-  # Live Next.js Liquid-Glass UI Dashboard
-  dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: applypilot:latest
-    container_name: applypilot-dashboard
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      - applypilot_home:/home/applypilot/.applypilot
-    command: ["dashboard", "--host", "0.0.0.0", "--port", "3000"]
-
-  # FastMCP server for AI agent integrations (e.g. Claude Desktop, IDE, Cursor)
+  # FastMCP server for AI agent integrations (e.g. Claude Desktop, Cursor)
   mcp:
     build:
       context: .
@@ -81,16 +95,17 @@ services:
     image: applypilot:latest
     container_name: applypilot-mcp
     restart: unless-stopped
+    profiles: ["modular"]
     stdin_open: true
     tty: true
     volumes:
-      - applypilot_home:/home/applypilot/.applypilot
+      - ${HOME}/.applypilot:/home/applypilot/.applypilot
       - applypilot_gmail:/home/applypilot/.gmail-mcp
+      - ./dashboard:/home/applypilot/app/dashboard
+      - ./docker/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       - .:/home/applypilot/data:ro
     command: ["mcp"]
 
 volumes:
-  applypilot_home:
-    name: applypilot_home_data
   applypilot_gmail:
     name: applypilot_gmail_creds

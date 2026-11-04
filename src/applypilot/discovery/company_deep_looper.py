@@ -122,8 +122,22 @@ def loop_and_enrich_single_company(
                 cities=cities,
                 conn=conn,
             )
-            res["emails_added"] += deep_res.get("new_leads_added", 0)
-            res["total_emails"] = deep_res.get("total_leads", len(existing_emails))
+            added = deep_res.get("new_leads_added", 0)
+            if added == 0 and c_domain:
+                try:
+                    from applypilot.discovery.email_hunter import harvest_company_emails_cascade
+                    h_res = harvest_company_emails_cascade(
+                        domain=c_domain,
+                        company_name=c_name,
+                        limit=target_emails,
+                        store_to_db=True,
+                        conn=conn,
+                    )
+                    added = h_res.get("leads_stored_to_db", 0)
+                except Exception as e:
+                    logger.debug("Cascade email harvest notice: %s", e)
+            res["emails_added"] += added
+            res["total_emails"] = len(existing_emails) + added
 
     # Step 2: Real-Time Job Launch Radar
     discovered_jobs: list[dict[str, Any]] = []
@@ -244,7 +258,11 @@ def loop_all_watchlist_companies(
     # Clean and normalize any malformed domains in watchlist
     clean_watchlist_domains(conn=conn)
 
-    query = "SELECT * FROM career_watchlist WHERE 1=1"
+    query = """
+        SELECT *,
+               (SELECT COUNT(*) FROM recruiter_leads r WHERE LOWER(r.company_name) = LOWER(career_watchlist.company_name)) AS current_leads_count
+        FROM career_watchlist WHERE 1=1
+    """
     params: list[Any] = []
     if vip_only:
         query += " AND is_vip = 1"
@@ -252,7 +270,7 @@ def loop_all_watchlist_companies(
         query += " AND priority_tier <= ?"
         params.append(priority_tier)
 
-    query += " ORDER BY is_vip DESC, priority_tier ASC, last_checked_at ASC NULLS FIRST LIMIT ?"
+    query += " ORDER BY current_leads_count ASC, is_vip DESC, priority_tier ASC, last_checked_at ASC NULLS FIRST LIMIT ?"
     params.append(limit)
 
     rows = conn.execute(query, params).fetchall()

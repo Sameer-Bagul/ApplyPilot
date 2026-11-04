@@ -212,6 +212,10 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
     _add_column_if_missing(conn, "recruiter_leads", "contact_name", "TEXT")
     _add_column_if_missing(conn, "recruiter_leads", "contact_linkedin_url", "TEXT")
     _add_column_if_missing(conn, "recruiter_leads", "linkedin_connection_note", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "email_draft_subject", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "email_draft_body", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "approved_at", "TIMESTAMP")
+    _add_column_if_missing(conn, "recruiter_leads", "approved_by", "TEXT")
 
     # 6. career_watchlist
     conn.execute("""

@@ -56,7 +56,7 @@ def run_omni_channel_discovery(
     if conn is None and not dry_run:
         conn = get_connection()
 
-    selected_sources = set(sources or ["hn", "reddit", "dorks", "watchlist"])
+    selected_sources = set(sources if sources is not None else ["hn", "reddit", "dorks", "watchlist"])
     discovered_leads: list[dict[str, Any]] = []
     discovered_jobs: list[dict[str, Any]] = []
     route_counts = {"EMAIL_ONLY": 0, "PORTAL_ONLY": 0, "DUAL_ATTACK": 0, "UNKNOWN": 0}
@@ -94,8 +94,30 @@ def run_omni_channel_discovery(
         except Exception as e:
             logger.warning("Search dorks warning: %s", e)
 
+    # 3.5. FreeHire Catalogue Direct Ingestion
+    fh_posts: list[dict[str, Any]] = []
+    if "freehire" in selected_sources:
+        try:
+            from applypilot.discovery.freehire_harvester import FreeHireClient
+            fh_client = FreeHireClient()
+            fh_data = fh_client.search_jobs(
+                category=["ai_engineering", "software_engineering", "fullstack"],
+                limit=min(limit, 30),
+            )
+            for j in fh_data.get("jobs", []):
+                fh_posts.append({
+                    "title": j.get("title", ""),
+                    "text": j.get("summary", ""),
+                    "url": j.get("official_job_url") or j.get("url", ""),
+                    "platform": f"freehire/{j.get('source', 'ats')}",
+                    "company": j.get("company", ""),
+                })
+            _track_stat("freehire", "posts", len(fh_posts))
+        except Exception as e:
+            logger.warning("FreeHire omni-channel warning: %s", e)
+
     # Combine social posts
-    all_social_posts = hn_posts + reddit_posts + dork_posts + (extra_posts or [])
+    all_social_posts = hn_posts + reddit_posts + dork_posts + fh_posts + (extra_posts or [])
 
     for post in all_social_posts:
         title = post.get("title", "")

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCompanies } from '@/lib/db';
+import { getCompanies, createCompany } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,3 +23,22 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    if (!body.company_name) {
+      return NextResponse.json(
+        { success: false, error: 'company_name is required' },
+        { status: 400 }
+      );
+    }
+
+    const created = createCompany(body);
+    return NextResponse.json({ success: true, company: created }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to create company' },
+      { status: 500 }
+    );
+  }
+}

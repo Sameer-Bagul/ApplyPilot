@@ -160,11 +160,11 @@ def run(
         console.print(f"[red]Invalid --doc-format:[/red] '{doc_format}'. Must be one of: {', '.join(VALID_DOC_FORMATS)}")
         raise typer.Exit(code=1)
 
-    # Gate AI stages behind Tier 2
-    llm_stages = {"score", "tailor", "cover"}
-    if any(s in stage_list for s in llm_stages) or "all" in stage_list:
+    # Gate LLM generation stages behind Tier 2 (scoring can run with local algorithmic matcher)
+    llm_stages = {"tailor", "cover"}
+    if any(s in stage_list for s in llm_stages) and "score" not in stage_list:
         from applypilot.config import check_tier
-        check_tier(2, "AI scoring/tailoring")
+        check_tier(2, "AI tailoring")
 
     result = run_pipeline(
         stages=stage_list,
@@ -559,6 +559,117 @@ def run_daily(
     console.print("[bold green]Daily pipeline run complete![/bold green]")
     if dry_run:
         console.print("[dim](Dry run mode: changes were not committed)[/dim]")
+
+
+@app.command("marathon")
+def marathon(
+    duration: float = typer.Option(60.0, "--duration", "-d", help="Execution duration in minutes (default: 60 min)."),
+    continuous: bool = typer.Option(False, "--continuous", "-c", help="Run indefinitely without time limit."),
+    min_score: int = typer.Option(
+        config.DEFAULTS["min_score"], "--min-score",
+        help=f"Minimum fit score for job tailoring (default: {config.DEFAULTS['min_score']}).",
+    ),
+    limit: int = typer.Option(25, "--limit", "-l", help="Max jobs per domain slice."),
+    workers: int = typer.Option(2, "--workers", "-w", help="Worker threads for enrichment and scoring."),
+    doc_format: str = typer.Option("docx", "--doc-format", help="Document format for resumes/cover letters (docx/pdf)."),
+    cities: Optional[list[str]] = typer.Option(None, "--city", help="Target city hubs (repeatable)."),
+) -> None:
+    """Run continuous 60+ min autonomous marathon pipeline with domain looping."""
+    _bootstrap()
+    from applypilot.marathon_runner import run_marathon_pipeline
+    run_marathon_pipeline(
+        duration_minutes=duration,
+        continuous=continuous,
+        min_score=min_score,
+        batch_limit=limit,
+        workers=workers,
+        doc_format=doc_format,
+        cities=cities,
+    )
+
+
+@app.command("harvest-freehire")
+def harvest_freehire(
+    category: Optional[str] = typer.Option(None, "--category", "-c", help="Specific tech domain (e.g. ai_engineering, fullstack, backend). If omitted, loops all."),
+    limit: int = typer.Option(30, "--limit", "-l", help="Number of postings to fetch per domain."),
+    days: int = typer.Option(14, "--days", help="Only fetch jobs posted within this many days."),
+    work_modes: Optional[list[str]] = typer.Option(None, "--mode", help="Work modes: remote, hybrid, onsite."),
+    regions: Optional[list[str]] = typer.Option(None, "--region", help="Regions: global, north_america, eu, apac, uk."),
+) -> None:
+    """Harvest massive IT jobs from FreeHire's 4.7M+ live ATS catalogue."""
+    _bootstrap()
+    from applypilot.discovery.freehire_harvester import harvest_freehire_domain, loop_all_freehire_domains
+
+    if category:
+        console.print(f"[bold blue]Harvesting FreeHire domain: {category}...[/bold blue]")
+        stats = harvest_freehire_domain(
+            category=category,
+            work_modes=work_modes,
+            regions=regions,
+            limit=limit,
+            posted_within_days=days,
+        )
+        console.print(f"[bold green]Harvest complete![/bold green]")
+        console.print(f"  • Scraped from FreeHire: {stats['scraped']}")
+        console.print(f"  • Ingested brand new to DB: {stats['ingested_new']}")
+        console.print(f"  • Already existing in DB: {stats['existing']}")
+        console.print(f"  • Companies added to Watchlist: {stats['companies_added']}")
+    else:
+        console.print(f"[bold blue]Looping across all tech categories in FreeHire catalogue...[/bold blue]")
+        summary = loop_all_freehire_domains(
+            limit_per_category=limit,
+            posted_within_days=days,
+        )
+        console.print(f"[bold green]Full FreeHire domain loop completed![/bold green]")
+        console.print(f"  • Domains Scanned: {summary['total_domains_scanned']}")
+        console.print(f"  • Total Jobs Scraped: {summary['total_jobs_scraped']}")
+        console.print(f"  • New Jobs Stored: {summary['total_new_jobs']}")
+        console.print(f"  • Dupes Deduplicated: {summary['total_existing_jobs']}")
+        console.print(f"  • Watchlist Companies Added: {summary['total_companies_watchlist_added']}")
+
+
+@app.command("harvest-emails")
+def harvest_emails_cmd(
+    domain: str = typer.Option(..., "--domain", "-d", help="Target corporate domain (e.g. stripe.com)."),
+    company: Optional[str] = typer.Option(None, "--company", "-c", help="Company name (optional)."),
+    limit: int = typer.Option(10, "--limit", "-l", help="Maximum emails to discover."),
+) -> None:
+    """Discover verified B2B emails for any corporate domain (Hunter MCP + Zero-Token OSINT)."""
+    _bootstrap()
+    from applypilot.discovery.email_hunter import harvest_company_emails_cascade
+
+    console.print(f"[bold blue]Discovering corporate emails for domain:[/bold blue] [cyan]{domain}[/cyan]")
+    res = harvest_company_emails_cascade(
+        domain=domain,
+        company_name=company,
+        limit=limit,
+        store_to_db=True,
+    )
+
+    console.print(f"\n[bold green]Enrichment Complete for {res['company']} ({res['domain']})[/bold green]")
+    console.print(f"  • Primary Source: {res['primary_source']}")
+    console.print(f"  • Google DoH MX Valid: {'[green]YES[/green]' if res['mx_valid'] else '[red]NO[/red]'} ({res['mx_provider']})")
+    console.print(f"  • Total Emails Found: {res['total_emails_found']}")
+    console.print(f"  • Stored to DB: {res['leads_stored_to_db']}")
+
+    if res["leads"]:
+        tbl = Table(title=f"Discovered Contacts for {res['company']}", show_header=True)
+        tbl.add_column("Email", style="bold")
+        tbl.add_column("Contact Name")
+        tbl.add_column("Role / Title")
+        tbl.add_column("Confidence", justify="right")
+        tbl.add_column("Source")
+
+        for lead in res["leads"]:
+            tbl.add_row(
+                lead["email"],
+                lead.get("name") or "—",
+                lead.get("role") or "—",
+                f"{lead.get('confidence', 0.8) * 100:.0f}%",
+                lead.get("source", "—"),
+            )
+        console.print(tbl)
+
 
 
 @app.command()
@@ -1163,6 +1274,224 @@ def dashboard(
 # ---------------------------------------------------------------------------
 # Q&A knowledge base commands
 # ---------------------------------------------------------------------------
+
+outreach_app = typer.Typer(name="outreach", help="Human-in-the-Loop Admin Control for Cold Email Outreach.")
+app.add_typer(outreach_app)
+
+
+@outreach_app.command("list")
+def outreach_list(
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status ('pending_review', 'approved', 'drafted', 'sent')."),
+    limit: int = typer.Option(30, "--limit", "-l", help="Maximum leads to show."),
+) -> None:
+    """List cold email leads and their review/approval status."""
+    _bootstrap()
+    from applypilot.database import get_connection
+
+    conn = get_connection()
+    query = """
+        SELECT lead_id, company_name, role_title, contact_name, contact_email,
+               email_draft_subject, outreach_status, created_at
+        FROM recruiter_leads
+        WHERE 1=1
+    """
+    params = []
+    if status:
+        query += " AND outreach_status = ?"
+        params.append(status)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+    if not rows:
+        console.print("[yellow]No outreach leads found matching criteria.[/yellow]")
+        return
+
+    table = Table(title=f"Recruiter Outreach Leads ({len(rows)} shown)", show_header=True)
+    table.add_column("Lead ID", style="dim", width=12)
+    table.add_column("Company", style="bold")
+    table.add_column("Recipient")
+    table.add_column("Role / Subject")
+    table.add_column("Status", justify="center")
+
+    for r in rows:
+        st = r["outreach_status"]
+        if st == "approved":
+            st_fmt = "[bold green]APPROVED[/bold green]"
+        elif st in ("pending_review", "drafted"):
+            st_fmt = "[yellow]PENDING REVIEW[/yellow]"
+        elif st == "sent":
+            st_fmt = "[cyan]SENT[/cyan]"
+        elif st == "rejected":
+            st_fmt = "[red]REJECTED[/red]"
+        else:
+            st_fmt = f"[dim]{st}[/dim]"
+
+        subj = r["email_draft_subject"] or r["role_title"] or "Software Engineer"
+        table.add_row(
+            r["lead_id"][:10],
+            r["company_name"] or "—",
+            f"{r['contact_name'] or ''} <{r['contact_email']}>",
+            subj[:40],
+            st_fmt,
+        )
+    console.print(table)
+
+
+@outreach_app.command("draft")
+def outreach_draft(
+    limit: int = typer.Option(10, "--limit", "-l", help="Number of leads to draft."),
+) -> None:
+    """Generate cold outreach drafts from queued leads without sending."""
+    _bootstrap()
+    from applypilot.outreach.mailer import run_hr_outreach
+    console.print(f"[bold blue]Composing cold email drafts for up to {limit} queued leads...[/bold blue]")
+    res = run_hr_outreach(mode="draft", limit=limit)
+    console.print(f"[bold green]Draft generation complete![/bold green]")
+    console.print(f"  • Drafted (Pending Admin Review): {res['drafted']}")
+    console.print(f"  • Skipped (Dual Attack Pending Portal): {res['skipped_dual_attack']}")
+    console.print(f"  • Parked for HITL Questions: {res['parked_hitl']}")
+
+
+@outreach_app.command("review")
+def outreach_review(
+    limit: int = typer.Option(10, "--limit", "-l", help="Maximum drafts to review."),
+) -> None:
+    """Interactive Human-in-the-Loop review of pending outreach drafts."""
+    _bootstrap()
+    from applypilot.database import get_connection
+    from applypilot.outreach.mailer import approve_outreach_lead, reject_outreach_lead
+
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT lead_id, company_name, company_domain, role_title, contact_name,
+               contact_email, email_draft_subject, email_draft_body, outreach_status
+        FROM recruiter_leads
+        WHERE outreach_status IN ('pending_review', 'drafted', 'queued')
+        ORDER BY created_at ASC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    if not rows:
+        console.print("[green]No drafts pending review! All caught up.[/green]")
+        return
+
+    console.print(f"\n[bold blue]=== Starting Admin Outreach Review ({len(rows)} pending) ===[/bold blue]")
+    console.print("[dim]For each email, decide whether to approve, reject, skip, or quit.[/dim]\n")
+
+    approved_cnt = 0
+    rejected_cnt = 0
+
+    for idx, r in enumerate(rows, 1):
+        lead_id = r["lead_id"]
+        c_name = r["company_name"] or "Company"
+        to_em = r["contact_email"]
+        contact_n = r["contact_name"] or "Hiring Team"
+        subj = r["email_draft_subject"] or f"Software Engineering - {c_name}"
+        body = r["email_draft_body"] or "(No body generated yet)"
+
+        console.print(f"\n[bold cyan]------------------------------------------------------------[/bold cyan]")
+        console.print(f"[bold cyan]Draft [{idx}/{len(rows)}] — {c_name}[/bold cyan] (ID: {lead_id[:10]})")
+        console.print(f"  [bold]To:[/bold] {contact_n} <{to_em}>")
+        console.print(f"  [bold]Subject:[/bold] {subj}")
+        console.print(f"\n[dim]--- Email Body Preview ---[/dim]\n{body}\n[dim]--------------------------[/dim]")
+
+        action = typer.prompt(
+            "Action [a=Approve, r=Reject, s=Skip, q=Quit]",
+            default="s",
+        ).strip().lower()
+
+        if action == "a":
+            approve_outreach_lead(lead_id, approved_by="admin", conn=conn)
+            console.print(f"  [green]✓ Approved for dispatch[/green]")
+            approved_cnt += 1
+        elif action == "r":
+            reject_outreach_lead(lead_id, reason="rejected_by_admin", conn=conn)
+            console.print(f"  [red]✗ Rejected and cancelled[/red]")
+            rejected_cnt += 1
+        elif action == "q":
+            console.print("[dim]Exiting review session.[/dim]")
+            break
+        else:
+            console.print("  [yellow]Skipped (remains pending)[/yellow]")
+
+    console.print(f"\n[bold green]Review Complete:[/bold green] {approved_cnt} approved, {rejected_cnt} rejected.")
+
+
+@outreach_app.command("approve")
+def outreach_approve(
+    lead_id: Optional[str] = typer.Argument(None, help="Lead ID to approve."),
+    all_pending: bool = typer.Option(False, "--all", "-a", help="Approve ALL pending drafts at once."),
+) -> None:
+    """Approve a specific draft or all pending drafts."""
+    _bootstrap()
+    from applypilot.database import get_connection
+    from applypilot.outreach.mailer import approve_outreach_lead
+
+    conn = get_connection()
+    if all_pending:
+        rows = conn.execute(
+            "SELECT lead_id FROM recruiter_leads WHERE outreach_status IN ('pending_review', 'drafted')"
+        ).fetchall()
+        for r in rows:
+            approve_outreach_lead(r[0], approved_by="admin", conn=conn)
+        console.print(f"[bold green]Successfully approved all {len(rows)} pending drafts![/bold green]")
+    elif lead_id:
+        approve_outreach_lead(lead_id, approved_by="admin", conn=conn)
+        console.print(f"[bold green]Lead {lead_id} approved for dispatch![/bold green]")
+    else:
+        console.print("[yellow]Please specify a lead ID or pass --all.[/yellow]")
+
+
+@outreach_app.command("reject")
+def outreach_reject(
+    lead_id: str = typer.Argument(..., help="Lead ID to reject."),
+    reason: str = typer.Option("admin_rejected", "--reason", "-r", help="Rejection reason."),
+) -> None:
+    """Reject and cancel an outreach lead."""
+    _bootstrap()
+    from applypilot.database import get_connection
+    from applypilot.outreach.mailer import reject_outreach_lead
+
+    conn = get_connection()
+    reject_outreach_lead(lead_id, reason=reason, conn=conn)
+    console.print(f"[bold red]Lead {lead_id} rejected and cancelled.[/bold red]")
+
+
+@outreach_app.command("send")
+def outreach_send(
+    limit: int = typer.Option(10, "--limit", "-l", help="Maximum approved emails to send."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Dispatch ONLY admin-approved outreach emails via Gmail/SMTP."""
+    _bootstrap()
+    from applypilot.database import get_connection
+    from applypilot.outreach.mailer import dispatch_approved_leads
+
+    conn = get_connection()
+    approved_count = conn.execute(
+        "SELECT COUNT(*) FROM recruiter_leads WHERE outreach_status = 'approved'"
+    ).fetchone()[0]
+
+    if approved_count == 0:
+        console.print("[yellow]No approved emails found! Use 'applypilot outreach review' or 'approve' first.[/yellow]")
+        return
+
+    console.print(f"[bold blue]Found {approved_count} admin-approved emails ready for sending.[/bold blue]")
+    if not yes:
+        confirm = typer.confirm(f"Are you sure you want to send up to {min(limit, approved_count)} approved emails?")
+        if not confirm:
+            console.print("[dim]Send cancelled by user.[/dim]")
+            return
+
+    res = dispatch_approved_leads(limit=limit, conn=conn)
+    console.print(f"\n[bold green]Dispatch Summary:[/bold green]")
+    console.print(f"  • Successfully Sent: {res['sent']}")
+    console.print(f"  • Errors: {res['errors']}")
+
 
 qa_app = typer.Typer(name="qa", help="Manage the Q&A knowledge base for screening questions.")
 app.add_typer(qa_app)
