@@ -952,9 +952,21 @@ export function getProfileFilePath(): string {
 }
 
 export function getResumeFilePath(ext = 'pdf'): string {
+  const fs = require('node:fs');
   const customDir = process.env.APPLYPILOT_DIR;
   const baseDir = customDir || path.join(os.homedir(), '.applypilot');
-  return path.join(baseDir, `resume.${ext}`);
+  const primaryPath = path.join(baseDir, `resume.${ext}`);
+  if (fs.existsSync(primaryPath)) return primaryPath;
+
+  // Fallback to root sameer-bagul-CV.pdf if checking pdf
+  if (ext === 'pdf') {
+    const rootCv = path.join(process.cwd(), 'sameer-bagul-CV.pdf');
+    if (fs.existsSync(rootCv)) return rootCv;
+    const parentRootCv = path.join(process.cwd(), '..', 'sameer-bagul-CV.pdf');
+    if (fs.existsSync(parentRootCv)) return parentRootCv;
+  }
+
+  return primaryPath;
 }
 
 export function getCandidateProfile(): { profile: any; hasResume: boolean; resumePath: string | null } {
@@ -1072,6 +1084,21 @@ export function saveCandidateProfile(data: any): { success: boolean; error?: str
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(profilePath, JSON.stringify(data, null, 2), 'utf-8');
+
+    // Also mirror to project config/candidate_vault.json
+    try {
+      const mirrorPaths = [
+        path.join(process.cwd(), 'config', 'candidate_vault.json'),
+        path.join(process.cwd(), '..', 'config', 'candidate_vault.json'),
+      ];
+      for (const mp of mirrorPaths) {
+        const mdir = path.dirname(mp);
+        if (fs.existsSync(mdir)) {
+          fs.writeFileSync(mp, JSON.stringify(data, null, 2), 'utf-8');
+          break;
+        }
+      }
+    } catch {}
 
     // If resume_text is supplied, write it to resume.txt as well
     if (data.resume_text) {

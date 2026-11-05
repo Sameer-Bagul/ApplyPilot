@@ -315,3 +315,4 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
     </div>
   );
 }
+

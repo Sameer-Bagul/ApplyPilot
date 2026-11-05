@@ -8,6 +8,7 @@ without migration ordering issues.
 import hashlib
 import json
 import logging
+import os
 import re as _re
 import sqlite3
 import threading

@@ -86,3 +86,4 @@ export const authOptions: AuthOptions = {
     error: '/login',
   },
 };
+
