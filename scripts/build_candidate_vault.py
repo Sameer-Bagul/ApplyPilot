@@ -348,6 +348,26 @@ def build_vault():
                 "tech": "Microservices & Distributed Systems",
                 "bridge_domain": "System Architecture & Scalability",
                 "story": "Yes, I design production architectures following microservice patterns. In our platforms, we decouple independent bounded contexts—such as scraping workers, local matching, candidate knowledge graph, and email dispatchers—using REST and gRPC interfaces with Docker containerization and centralized structured logging."
+            },
+            {
+                "tech": "vLLM / Ollama / Local Model Serving",
+                "bridge_domain": "High-Throughput Model Serving & Inference Optimization",
+                "story": "Yes, I have extensive production experience deploying and optimizing local LLM inference engines using vLLM, Ollama, and LM Studio. In our high-throughput AI backends, I configured vLLM with PagedAttention and continuous batching on GPU/cloud instances to serve quantized open-source models (Llama-3, Mistral, Qwen) with low Time-To-First-Token (TTFT) and high token generation throughput."
+            },
+            {
+                "tech": "Production RAG / Hybrid RAG / GraphRAG",
+                "bridge_domain": "Advanced Information Retrieval & Hallucination Mitigation",
+                "story": "Yes, I specialize in architecting production-grade RAG systems beyond simple naive vector lookups. In projects like NoteForge AI and Sudapedia, I implemented semantic chunking, hybrid ensemble retrieval combining BM25 keyword search with dense vector embeddings (Qdrant/Pinecone), Cohere re-ranking, and automated hallucination self-critique loops to guarantee grounded, hallucination-free generation."
+            },
+            {
+                "tech": "Conversational AI / Voice Agents / Audio Streaming",
+                "bridge_domain": "Real-Time Conversational Interfaces & Voice Pipelines",
+                "story": "Yes, I have hands-on experience building conversational AI and real-time voice agents. In Athena, I engineered an end-to-end voice pipeline combining Python Whisper for streaming speech-to-text (STT), dialogue orchestration with LangGraph, and a high-performance SuperTonic ONNX TTS microservice with lip-sync blendshapes, achieving under 300ms round-trip conversational latency."
+            },
+            {
+                "tech": "Agentic AI / Multi-Agent Swarms / LangGraph",
+                "bridge_domain": "Autonomous Agent Swarms & Tool Calling",
+                "story": "Yes, I architect autonomous multi-agent swarms using LangGraph and LangChain. In systems like ApplyPilot and Bug0, I designed stateful agent DAGs with dynamic planning, tool calling (via Model Context Protocol and custom APIs), memory persistence, and Human-in-the-Loop checkpoints to automate complex multi-step workflows."
             }
         ]
     }
@@ -402,6 +422,11 @@ def build_vault():
         {"q": "How do you optimize API response times and backend queries?", "a": "I analyze database query execution plans, add strategic compound indexes, implement caching layers (Redis/IndexedDB), and optimize connection pooling—achieving up to 35% API latency reduction in production systems.", "key": "query_optimization", "cat": "behavioral"},
         {"q": "Experience with Nginx, VPNs, and secure infrastructure deployment?", "a": "Yes, managed end-to-end DevOps operations, configuring Nginx reverse proxies, Contabo VPNs, and Docker container security policies.", "key": "exp_nginx_devops", "cat": "tech_yoe"},
         {"q": "Experience with AI Playwright interval testing and Bug0?", "a": "Yes, developed the core architecture of Bug0, an AI-agentic testing platform integrating directly with GitHub Actions to automate interval-based AI Playwright testing, cutting CI/CD deployment cycle times by 40%.", "key": "exp_bug0_playwright", "cat": "tech_yoe"},
+        {"q": "Do you have experience with vLLM, Ollama, and high-throughput local model serving?", "a": "Yes, I deploy and optimize local LLM inference engines using vLLM, Ollama, and LM Studio. I configure vLLM with PagedAttention and continuous batching on GPU/cloud instances to serve quantized open-source models with high token throughput and low latency.", "key": "exp_vllm_ollama", "cat": "tech_yoe"},
+        {"q": "Describe your experience with Production-Grade RAG and Hybrid Retrieval.", "a": "I specialize in architecting production RAG beyond simple vector search. In NoteForge AI and Sudapedia, I implemented semantic chunking, hybrid ensemble retrieval combining BM25 keyword matching with dense vector embeddings (Qdrant/Pinecone), Cohere re-ranking, and automated hallucination self-critique loops.", "key": "exp_production_rag", "cat": "tech_yoe"},
+        {"q": "Do you have experience with Conversational AI, Voice Agents, STT, and TTS?", "a": "Yes, in Athena I built an end-to-end voice companion combining Python Whisper for real-time speech-to-text (STT), dialogue orchestration with LangGraph, and a high-performance SuperTonic ONNX TTS microservice with lip-sync blendshapes running at sub-300ms latency.", "key": "exp_conversational_voice_ai", "cat": "tech_yoe"},
+        {"q": "Describe your experience with Agentic AI, Multi-Agent Swarms, and LangGraph.", "a": "I build stateful multi-agent systems using LangGraph, LangChain, and Model Context Protocol (MCP). In ApplyPilot and Bug0, I designed agent DAGs with dynamic planning, tool calling, persistent memory, and Human-in-the-Loop checkpoints.", "key": "exp_agentic_ai_langgraph", "cat": "tech_yoe"},
+        {"q": "What vector databases and search engines have you worked with?", "a": "I have production experience with Qdrant, Pinecone, FAISS, Weaviate, ChromaDB, and LibSQL (Turso), alongside BM25 and Elasticsearch for hybrid keyword-dense retrieval.", "key": "exp_vector_databases", "cat": "tech_yoe"},
 
         # Behavioral & Engineering Philosophy
         {"q": "Tell me about yourself.", "a": "I am a Software and AI Engineer with over 2 years of experience building production-grade AI systems, agentic workflows, scalable backends, and full-stack applications. I own features end-to-end from PRD and system architecture to testing, deployment, and monitoring. My expertise spans Python, TypeScript, React, Next.js, LangChain, LangGraph, RAG, Playwright automation, Docker, and AWS.", "key": "about_me", "cat": "behavioral"},
@@ -471,10 +496,16 @@ def build_vault():
         },
         "summary": "Software Engineer and AI Engineer with experience building production-ready AI and full-stack applications, backend services, REST APIs, databases, automation workflows, and cloud deployments. Strong in Python, TypeScript, JavaScript, Node.js, React, SQL, Docker, CI/CD, and software architecture, with hands-on experience building scalable APIs, distributed workflows, testing automation, and production systems. Specialized in LLM applications, RAG, agentic AI, semantic search, and integrating AI capabilities into customer-facing products.",
         "skills": [
+            "Agentic AI", "AI Agents", "Multi-Agent Swarms", "LangGraph", "LangChain",
+            "Production RAG", "Hybrid RAG", "GraphRAG", "Semantic Chunking", "Cohere Re-ranking",
+            "Conversational AI", "Voice Agents", "Dialogue Orchestration", "Whisper STT", "SuperTonic TTS",
+            "vLLM", "Ollama", "LM Studio", "Hugging Face", "Model Serving", "Local Inference", "Quantization (GGUF, AWQ)",
+            "Tool Calling", "Model Context Protocol (MCP)", "Prompt Engineering", "Hallucination Self-Critique",
+            "Qdrant", "Pinecone", "FAISS", "Weaviate", "ChromaDB", "Vector Search", "BM25",
             "Python", "TypeScript", "JavaScript", "React", "Next.js", "Node.js", "Express.js",
-            "FastAPI", "LangChain", "LangGraph", "RAG", "Agentic AI", "Playwright", "Docker",
-            "PostgreSQL", "SQLite", "MongoDB", "Turso LibSQL", "Redis", "AWS", "GitHub Actions",
-            "CI/CD", "Nginx", "Linux", "Vector Search", "Qdrant", "Pinecone", "FAISS", "Tailwind CSS"
+            "FastAPI", "React Native", "Playwright", "Docker", "Kubernetes", "AWS", "GCP",
+            "PostgreSQL", "SQLite", "MongoDB", "Turso LibSQL", "Redis", "GitHub Actions",
+            "CI/CD", "Nginx", "Linux", "MERN Stack", "Tailwind CSS"
         ],
         "experiences": experiences,
         "education": education,

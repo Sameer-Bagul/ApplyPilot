@@ -89,15 +89,15 @@ ML endpoints.
 implemented secure API controls including API-key authentication, 100 req/min rate limiting, 60s timeouts, 1MB payload
 guards, and cross-device distributed testing.
 Technical Skills
-AI & Generative AI: LLMs, Generative AI, RAG, Hybrid RAG, Agentic AI, AI Agents, Prompt Engineering, Semantic
-Search, Embeddings, Vector Search, LLM Evaluation, Tool Calling
-AI Frameworks & Models: LangChain, LangGraph, LlamaIndex, Hugging Face, Ollama, Google Gemini,
-OpenAI-compatible APIs, Groq, PyTorch
-Programming: Python, TypeScript, JavaScript, Java, C, C++, SQL
-Backend & APIs: Node.js, Express.js, FastAPI, Flask, REST APIs, Microservices, OpenAPI, SSE
-Data & Databases: PostgreSQL, MongoDB, Redis, FAISS, Pinecone, BM25, Vector Search, ETL, Data Processing
-Cloud, DevOps & Infrastructure: AWS, Docker, GitHub Actions, CI/CD, Nginx, Cloudflare, Linux, Contabo
-Observability & Engineering: Prometheus, Grafana, Structured Logging, Monitoring, API Testing, Git
+AI & Agentic Systems: Agentic AI, AI Agents, Multi-Agent Swarms, LangGraph, LangChain, Autonomous Reasoning Loops, Tool Calling, Function Calling, Model Context Protocol (MCP), Dynamic Agent Planning, Agentic State & Memory, Prompt Engineering
+Production-Grade RAG & Retrieval: Production RAG, Hybrid RAG, GraphRAG, BM25 + Dense Vector Ensemble, Semantic Chunking, Cohere Re-ranking, Cross-Encoders, Hallucination Self-Critique Loops, RAG Triad Evaluation, Context Compression
+Conversational & Voice AI: Conversational AI, Voice Agents, Dialogue Orchestration, Low-Latency Audio Streaming, Whisper STT, SuperTonic TTS, Token Optimization, Real-Time Voice Pipelines
+Model Serving & Inference: vLLM, Ollama, LM Studio, Hugging Face, Model Serving, Local Inference, Quantization (GGUF, AWQ), High-Throughput Batch Inference, Groq, Google Gemini, OpenAI APIs, Anthropic APIs, PyTorch
+Programming & Languages: Python, TypeScript, JavaScript, SQL, Java, C, C++
+Backend & APIs: Node.js, Express.js, FastAPI, Flask, REST APIs, Microservices, OpenAPI, WebSockets, Server-Sent Events (SSE)
+Data & Vector Databases: Qdrant, Pinecone, FAISS, Weaviate, ChromaDB, PostgreSQL, MongoDB, Redis, LibSQL (Turso), BM25 Search, ETL Pipelines
+Cloud, DevOps & Infrastructure: AWS, GCP, Docker, Kubernetes, GitHub Actions, CI/CD, Nginx, Linux, Contabo, Playwright Automation
+Observability & LLMOps: Prometheus, Grafana, Langfuse, Ragas, Structured Logging, Distributed Tracing, API Testing, Git
 Achievements & Technical Leadership
 • Smart India Hackathon 2024 — National Runner-up: Built an AI-powered adaptive skills-learning system using
 TypeScript, Node.js, and React, with an agentic learning workflow that dynamically updated user roadmaps from weekly
