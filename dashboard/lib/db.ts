@@ -1033,9 +1033,13 @@ export function getCandidateProfile(): { profile: any; hasResume: boolean; resum
         security_clearance: 'None',
       },
       compensation: {
-        target_salary: '₹35,00,000 - ₹50,00,000',
-        min_salary: '₹30,00,000',
+        current_ctc: '₹7,00,000 (7 LPA)',
+        joining_bonus: '₹1,00,000 (1 Lakh)',
+        target_salary: '₹7,00,000 - ₹10,00,000',
+        min_salary: '₹5,00,000 - ₹6,00,000',
+        target_salary_usd: '$70,000 - $110,000',
         currency: 'INR',
+        negotiable: true,
       },
       preferences: {
         remote_preference: 'Remote / Hybrid',

@@ -38,7 +38,9 @@ _NOISE_PATTERNS = [
 _TOPIC_SYNONYMS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?i)\b(visa|sponsorship|work authorization|authorized to work|legal authorization)\b"), "work_authorization"),
     (re.compile(r"(?i)\b(notice period|start date|how soon|availability)\b"), "notice_period"),
-    (re.compile(r"(?i)\b(compensation|salary expectation|desired salary|desired pay|target salary|expected pay)\b"), "desired_salary"),
+    (re.compile(r"(?i)\b(current compensation|current salary|current ctc|current pay|present ctc|present salary)\b"), "current_salary"),
+    (re.compile(r"(?i)\b(compensation|salary expectation|desired salary|desired pay|target salary|expected pay|expected ctc|expected salary)\b"), "desired_salary"),
+    (re.compile(r"(?i)\b(salary negotiable|negotiable|flexible on salary|flexible on compensation)\b"), "salary_negotiable"),
     (re.compile(r"(?i)\b(relocat\w*|willing to (move|relocate))\b"), "willing_to_relocate"),
     (re.compile(r"(?i)\b(clearance|security clearance|polygraph)\b"), "security_clearance"),
     (re.compile(r"(?i)\b(years of experience|total experience|work experience)\b"), "years_experience"),
@@ -202,10 +204,29 @@ def _check_profile_for_topic(topic: str, profile: dict) -> tuple[Any, float]:
         if val:
             return str(val), 1.0
 
-    elif topic == "desired_salary":
-        val = profile.get("desired_salary") or profile.get("target_salary") or profile.get("compensation")
+    elif topic == "current_salary":
+        val = profile.get("current_salary") or profile.get("current_ctc")
         if val:
             return str(val), 1.0
+        comp = profile.get("compensation", {})
+        if isinstance(comp, dict):
+            c_val = comp.get("current_ctc") or comp.get("current_salary")
+            if c_val:
+                return str(c_val), 1.0
+        return "₹7,00,000", 0.95
+
+    elif topic == "salary_negotiable":
+        return "Yes, flexible and open to negotiate based on company budget", 1.0
+
+    elif topic == "desired_salary":
+        val = profile.get("desired_salary") or profile.get("target_salary") or profile.get("compensation")
+        if isinstance(val, dict):
+            target = val.get("target_salary") or val.get("expected_salary")
+            if target:
+                return str(target), 1.0
+        if val:
+            return str(val), 1.0
+        return "₹7,00,000 - ₹10,00,000", 0.95
 
     elif topic == "willing_to_relocate":
         val = profile.get("willing_to_relocate") or profile.get("relocation")

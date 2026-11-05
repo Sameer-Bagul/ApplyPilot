@@ -26,13 +26,21 @@
     "security_clearance": "None"
   },
   "compensation": {
-    "target_salary": "\u20b935,00,000 - \u20b950,00,000",
-    "min_salary": "\u20b930,00,000",
-    "target_salary_usd": "$90,000 - $130,000",
-    "min_salary_usd": "$80,000",
-    "hourly_rate_usd": "$50 - $75",
+    "current_ctc": "\u20b97,00,000 (7 LPA)",
+    "current_ctc_numeric": 700000,
+    "joining_bonus": "\u20b91,00,000 (1 Lakh)",
+    "total_current_comp": "\u20b98,00,000 (8 LPA)",
+    "target_salary": "\u20b97,00,000 - \u20b910,00,000",
+    "target_salary_numeric": 850000,
+    "min_salary": "\u20b95,00,000 - \u20b96,00,000",
+    "min_salary_numeric": 500000,
+    "target_salary_usd": "$70,000 - $110,000",
+    "min_salary_usd": "$60,000",
+    "hourly_rate_usd": "$35 - $60",
     "currency": "INR",
-    "equity_open": true
+    "equity_open": true,
+    "negotiable": true,
+    "negotiation_policy": "Always submit: If company indicates budget > 8-9 LPA, accept their full budget/range. If company budget is 5-6 LPA, submit form at their budget and negotiate after interview."
   },
   "preferences": {
     "remote_preference": "Remote / Hybrid",
@@ -583,21 +591,39 @@
       "cat": "location"
     },
     {
+      "q": "What is your current CTC / salary?",
+      "a": "\u20b97,00,000 fixed CTC (+ \u20b91,00,000 joining bonus)",
+      "key": "current_salary",
+      "cat": "compensation"
+    },
+    {
+      "q": "What is your current basic CTC?",
+      "a": "\u20b97,00,000 (7 LPA)",
+      "key": "current_ctc_basic",
+      "cat": "compensation"
+    },
+    {
       "q": "What are your salary expectations (Annual CTC in INR)?",
-      "a": "\u20b935,00,000 - \u20b950,00,000 INR per annum (negotiable based on equity, role seniority, and overall benefits).",
+      "a": "\u20b97,00,000 - \u20b910,00,000 INR per annum (Flexible and open to company budget, equity, and role scope).",
       "key": "expected_salary_inr",
       "cat": "compensation"
     },
     {
-      "q": "What are your salary expectations for international remote roles (USD)?",
-      "a": "$80,000 - $130,000 USD per annum (or $40 - $75 / hour for contractor roles).",
-      "key": "expected_salary_usd",
+      "q": "What is your minimum expected salary?",
+      "a": "\u20b95,00,000 - \u20b96,00,000 INR (Flexible / open to company standard pay bands; willing to discuss and negotiate based on growth).",
+      "key": "min_expected_salary",
       "cat": "compensation"
     },
     {
-      "q": "What is your current CTC?",
-      "a": "Confidential / Competitive in line with current market standards.",
-      "key": "current_salary",
+      "q": "Are you open to negotiate on salary / compensation?",
+      "a": "Yes, highly flexible and willing to align with company budget and total rewards structure.",
+      "key": "salary_negotiable",
+      "cat": "compensation"
+    },
+    {
+      "q": "What are your salary expectations for international remote roles (USD)?",
+      "a": "$70,000 - $110,000 USD per annum (or $35 - $60 / hour for contractor roles; flexible).",
+      "key": "expected_salary_usd",
       "cat": "compensation"
     },
     {

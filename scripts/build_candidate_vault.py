@@ -374,9 +374,12 @@ def build_vault():
         {"q": "Are you comfortable working across US or European time zones?", "a": "Yes, I regularly collaborate with international teams and am comfortable overlapping with US (PST/EST) and European (CET) working hours.", "key": "timezone_flexibility", "cat": "location"},
 
         # Compensation & Salary
-        {"q": "What are your salary expectations (Annual CTC in INR)?", "a": "₹35,00,000 - ₹50,00,000 INR per annum (negotiable based on equity, role seniority, and overall benefits).", "key": "expected_salary_inr", "cat": "compensation"},
-        {"q": "What are your salary expectations for international remote roles (USD)?", "a": "$80,000 - $130,000 USD per annum (or $40 - $75 / hour for contractor roles).", "key": "expected_salary_usd", "cat": "compensation"},
-        {"q": "What is your current CTC?", "a": "Confidential / Competitive in line with current market standards.", "key": "current_salary", "cat": "compensation"},
+        {"q": "What is your current CTC / salary?", "a": "₹7,00,000 fixed CTC (+ ₹1,00,000 joining bonus)", "key": "current_salary", "cat": "compensation"},
+        {"q": "What is your current basic CTC?", "a": "₹7,00,000 (7 LPA)", "key": "current_ctc_basic", "cat": "compensation"},
+        {"q": "What are your salary expectations (Annual CTC in INR)?", "a": "₹7,00,000 - ₹10,00,000 INR per annum (Flexible and open to company budget, equity, and role scope).", "key": "expected_salary_inr", "cat": "compensation"},
+        {"q": "What is your minimum expected salary?", "a": "₹5,00,000 - ₹6,00,000 INR (Flexible / open to company standard pay bands; willing to discuss and negotiate based on growth).", "key": "min_expected_salary", "cat": "compensation"},
+        {"q": "Are you open to negotiate on salary / compensation?", "a": "Yes, highly flexible and willing to align with company budget and total rewards structure.", "key": "salary_negotiable", "cat": "compensation"},
+        {"q": "What are your salary expectations for international remote roles (USD)?", "a": "$70,000 - $110,000 USD per annum (or $35 - $60 / hour for contractor roles; flexible).", "key": "expected_salary_usd", "cat": "compensation"},
         {"q": "Are you open to equity / stock options as part of your compensation package?", "a": "Yes, I strongly value equity and long-term ownership in high-growth companies.", "key": "equity_preference", "cat": "compensation"},
 
         # EEO & Personal
@@ -438,13 +441,21 @@ def build_vault():
             "security_clearance": "None"
         },
         "compensation": {
-            "target_salary": "₹35,00,000 - ₹50,00,000",
-            "min_salary": "₹30,00,000",
-            "target_salary_usd": "$90,000 - $130,000",
-            "min_salary_usd": "$80,000",
-            "hourly_rate_usd": "$50 - $75",
+            "current_ctc": "₹7,00,000 (7 LPA)",
+            "current_ctc_numeric": 700000,
+            "joining_bonus": "₹1,00,000 (1 Lakh)",
+            "total_current_comp": "₹8,00,000 (8 LPA)",
+            "target_salary": "₹7,00,000 - ₹10,00,000",
+            "target_salary_numeric": 850000,
+            "min_salary": "₹5,00,000 - ₹6,00,000",
+            "min_salary_numeric": 500000,
+            "target_salary_usd": "$70,000 - $110,000",
+            "min_salary_usd": "$60,000",
+            "hourly_rate_usd": "$35 - $60",
             "currency": "INR",
-            "equity_open": True
+            "equity_open": True,
+            "negotiable": True,
+            "negotiation_policy": "Always submit: If company indicates budget > 8-9 LPA, accept their full budget/range. If company budget is 5-6 LPA, submit form at their budget and negotiate after interview."
         },
         "preferences": {
             "remote_preference": "Remote / Hybrid",

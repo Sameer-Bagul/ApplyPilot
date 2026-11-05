@@ -73,12 +73,18 @@ export function ProfileView() {
   const [veteranStatus, setVeteranStatus] = useState('I am not a protected veteran');
   const [disabilityStatus, setDisabilityStatus] = useState('No, I do not have a disability');
 
-  const [targetSalary, setTargetSalary] = useState('');
-  const [minSalary, setMinSalary] = useState('');
-  const [targetSalaryUsd, setTargetSalaryUsd] = useState('');
-  const [hourlyRateUsd, setHourlyRateUsd] = useState('');
+  const [currentCtc, setCurrentCtc] = useState('₹7,00,000 (7 LPA)');
+  const [joiningBonus, setJoiningBonus] = useState('₹1,00,000 (1 Lakh)');
+  const [targetSalary, setTargetSalary] = useState('₹7,00,000 - ₹10,00,000');
+  const [minSalary, setMinSalary] = useState('₹5,00,000 - ₹6,00,000');
+  const [targetSalaryUsd, setTargetSalaryUsd] = useState('$70,000 - $110,000');
+  const [hourlyRateUsd, setHourlyRateUsd] = useState('$35 - $60 / hr');
   const [currency, setCurrency] = useState('INR');
   const [equityOpen, setEquityOpen] = useState(true);
+  const [negotiable, setNegotiable] = useState(true);
+  const [negotiationPolicy, setNegotiationPolicy] = useState(
+    'Flexible: If company indicates budget > 8-9 LPA, accept full company budget. If company budget is 5-6 LPA, submit form at their budget and negotiate after interview.'
+  );
   const [remotePreference, setRemotePreference] = useState('Remote / Hybrid');
   const [willingToRelocate, setWillingToRelocate] = useState('Yes');
 
@@ -163,12 +169,16 @@ export function ProfileView() {
         }
 
         if (p.compensation) {
-          setTargetSalary(p.compensation.target_salary || '');
-          setMinSalary(p.compensation.min_salary || '');
-          setTargetSalaryUsd(p.compensation.target_salary_usd || '');
-          setHourlyRateUsd(p.compensation.hourly_rate_usd || '');
+          setCurrentCtc(p.compensation.current_ctc || '₹7,00,000 (7 LPA)');
+          setJoiningBonus(p.compensation.joining_bonus || '₹1,00,000 (1 Lakh)');
+          setTargetSalary(p.compensation.target_salary || '₹7,00,000 - ₹10,00,000');
+          setMinSalary(p.compensation.min_salary || '₹5,00,000 - ₹6,00,000');
+          setTargetSalaryUsd(p.compensation.target_salary_usd || '$70,000 - $110,000');
+          setHourlyRateUsd(p.compensation.hourly_rate_usd || '$35 - $60 / hr');
           setCurrency(p.compensation.currency || 'INR');
           setEquityOpen(p.compensation.equity_open ?? true);
+          setNegotiable(p.compensation.negotiable ?? true);
+          setNegotiationPolicy(p.compensation.negotiation_policy || '');
         }
 
         if (p.preferences) {
@@ -260,12 +270,16 @@ export function ProfileView() {
         disability_status: disabilityStatus,
       },
       compensation: {
+        current_ctc: currentCtc,
+        joining_bonus: joiningBonus,
         target_salary: targetSalary,
         min_salary: minSalary,
         target_salary_usd: targetSalaryUsd,
         hourly_rate_usd: hourlyRateUsd,
         currency,
         equity_open: equityOpen,
+        negotiable,
+        negotiation_policy: negotiationPolicy,
       },
       preferences: {
         remote_preference: remotePreference,
@@ -1136,20 +1150,88 @@ export function ProfileView() {
       {/* ===================== TAB 4: COMPENSATION & RATES ===================== */}
       {activeSubTab === 'compensation' && (
         <div className="liquid-glass rounded-3xl p-6 border border-white/90 shadow-xs space-y-5 animate-in fade-in duration-150">
-          <h3 className="text-sm font-bold text-zinc-900 uppercase tracking-wider flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-emerald-600" />
-            <span>Compensation & Logistics Expectations</span>
-          </h3>
+          <div className="flex items-center justify-between pb-2 border-b border-zinc-200/60">
+            <div>
+              <h3 className="text-sm font-bold text-zinc-900 uppercase tracking-wider flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-emerald-600" />
+                <span>Compensation, Current CTC & Auto-Fill Negotiation Strategy</span>
+              </h3>
+              <p className="text-xs text-zinc-500">
+                Configured to adapt dynamically to ATS budgets during headed and headless application submissions.
+              </p>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              Active Strategy: 7–10 LPA Adaptive
+            </span>
+          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {/* Strategy & Negotiation Directive Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50/70 to-cyan-50/70 border border-emerald-200/80 shadow-2xs space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span>Smart Form-Fill Policy (Always Submit & Adapt to Budget)</span>
+            </div>
+            <ul className="text-xs text-zinc-700 space-y-1 list-disc pl-4 leading-relaxed font-normal">
+              <li>
+                <strong>Current CTC:</strong> Fixed CTC is <strong>₹7,00,000 (7 LPA)</strong> + <strong>₹1,00,000 joining bonus</strong> (Total: ₹8,00,000).
+              </li>
+              <li>
+                <strong>Target Range:</strong> Targeting <strong>7 to 10 LPA</strong>.
+              </li>
+              <li>
+                <strong>Higher Budget Adaptation:</strong> If the employer indicates a budget above 8 or 9 LPA (e.g. 10 LPA, 12 LPA, 15 LPA), the auto-apply agent will <em>not</em> anchor low at 7 LPA—it accepts and requests their full advertised budget.
+              </li>
+              <li>
+                <strong>Lower Budget Acceptance:</strong> If the company specifies 5 LPA or 6 LPA, the agent submits the form using their budget so you enter the process, leaving room to negotiate post-interview.
+              </li>
+              <li>
+                <strong>Negotiable Flag:</strong> Always marked as <strong>Yes (Negotiable & Flexible)</strong> in dropdowns and prompts.
+              </li>
+            </ul>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Target CTC (INR)</label>
+              <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Current Fixed CTC</label>
+              <input
+                type="text"
+                value={currentCtc}
+                onChange={(e) => setCurrentCtc(e.target.value)}
+                placeholder="₹7,00,000 (7 LPA)"
+                className="w-full text-xs font-semibold px-3.5 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-900"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Joining / Sign-on Bonus</label>
+              <input
+                type="text"
+                value={joiningBonus}
+                onChange={(e) => setJoiningBonus(e.target.value)}
+                placeholder="₹1,00,000 (1 Lakh)"
+                className="w-full text-xs font-semibold px-3.5 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-900"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Target Expected CTC (INR)</label>
               <input
                 type="text"
                 value={targetSalary}
                 onChange={(e) => setTargetSalary(e.target.value)}
-                placeholder="₹35,00,000 - ₹50,00,000"
-                className="w-full text-xs font-medium px-3.5 py-2 rounded-xl bg-white/70 border border-zinc-200 text-zinc-900"
+                placeholder="₹7,00,000 - ₹10,00,000"
+                className="w-full text-xs font-bold text-emerald-800 px-3.5 py-2 rounded-xl bg-white border border-zinc-200"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Minimum Acceptable (INR)</label>
+              <input
+                type="text"
+                value={minSalary}
+                onChange={(e) => setMinSalary(e.target.value)}
+                placeholder="₹5,00,000 - ₹6,00,000"
+                className="w-full text-xs font-semibold px-3.5 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-900"
               />
             </div>
 
@@ -1159,7 +1241,7 @@ export function ProfileView() {
                 type="text"
                 value={targetSalaryUsd}
                 onChange={(e) => setTargetSalaryUsd(e.target.value)}
-                placeholder="$90,000 - $130,000"
+                placeholder="$70,000 - $110,000"
                 className="w-full text-xs font-medium px-3.5 py-2 rounded-xl bg-white/70 border border-zinc-200 text-zinc-900"
               />
             </div>
@@ -1170,7 +1252,7 @@ export function ProfileView() {
                 type="text"
                 value={hourlyRateUsd}
                 onChange={(e) => setHourlyRateUsd(e.target.value)}
-                placeholder="$50 - $75 / hr"
+                placeholder="$35 - $60 / hr"
                 className="w-full text-xs font-medium px-3.5 py-2 rounded-xl bg-white/70 border border-zinc-200 text-zinc-900"
               />
             </div>
@@ -1198,18 +1280,6 @@ export function ProfileView() {
                 <option value="Hybrid Only">Hybrid Only</option>
                 <option value="Onsite Only">Onsite Only</option>
                 <option value="Open to All">Open to All</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Willing to Relocate</label>
-              <select
-                value={willingToRelocate}
-                onChange={(e) => setWillingToRelocate(e.target.value)}
-                className="w-full text-xs font-medium px-3.5 py-2 rounded-xl bg-white/70 border border-zinc-200 text-zinc-900"
-              >
-                <option value="Yes">Yes (Bengaluru, Pune, Mumbai, Hyderabad, Gurgaon, or abroad)</option>
-                <option value="No">No (Remote Only)</option>
               </select>
             </div>
           </div>
