@@ -171,29 +171,43 @@
     {
       "id": "labscheck",
       "company": "LabsCheck",
-      "role": "Full-Stack Developer & DevOps Engineer Intern",
+      "role": "DevOps Engineer",
       "location": "Pune, India",
-      "employment_type": "Internship",
+      "employment_type": "Full-time",
       "start_date": "Aug 2025",
       "end_date": "Oct 2025",
       "is_current": false,
-      "summary": "Built and shipped features for LabsCheck, a healthcare marketplace for searching, comparing, and booking diagnostic tests across 12,000+ verified pathology labs.",
+      "summary": "Engineered enterprise-grade AI Agents, advanced RAG pipelines, scalable AI inference backends on GCP/AWS, and managed end-to-end DevOps operations, CI/CD, and B2C healthcare platforms.",
       "highlights": [
-        "Built and shipped features for LabsCheck, a healthcare marketplace for searching, comparing, and booking diagnostic tests across 12,000+ verified pathology labs.",
-        "Developed backend APIs and application services across Next.js and Python, supporting lab discovery, test-price comparison, booking workflows, and external integrations.",
-        "Built an AI-powered report-generation workflow as a parallel product initiative, designing APIs required to turn test data into structured user outputs.",
-        "Owned deployment and infrastructure for multiple services, configuring Docker, Nginx, and CI/CD on Contabo VMs.",
-        "Automated lead and marketing workflows with AI agents, supporting 100,000+ leads for outreach and follow-up operations."
+        "Engineered enterprise-grade AI Agents and advanced RAG pipelines, leveraging high-level tool chaining to automate complex workflows and cut manual B2B operations by 50%+.",
+        "Architected scalable AI inference backends deployed on GCP and AWS, ensuring high availability and seamless connectivity between AI agents and core business applications.",
+        "Designed and developed highly performant, SEO-optimized web platforms and cross-platform React Native mobile applications.",
+        "Owned the end-to-end delivery lifecycle - from gathering client requirements to production handoff and iterative optimizations.",
+        "Developed the core architecture of Bug0, an AI-agentic testing platform integrating directly with GitHub Actions to automate interval-based AI Playwright testing.",
+        "Built high-throughput Node.js backend services and CI/CD pipelines (Docker, GitHub Actions), reducing deployment cycle times by 40%.",
+        "Acted as a Forward Deployed Engineer, directly interfacing with enterprise clients to implement custom testing pipelines and drive core product adoption.",
+        "Refactored system architectures to halve cold-start latency and significantly improve testing reliability on production deployments.",
+        "Spearheaded the development of a React Native mobile app and the core business logic for a B2C healthcare aggregator, connecting users to affordable diagnostic labs.",
+        "Architected RESTful APIs using the MERN stack, facilitating the processing of 100,000+ inbound leads via AI-driven smart routing.",
+        "Managed end-to-end DevOps operations, configuring Nginx reverse proxies, Contabo VPNs, and Docker containers for secure infrastructure.",
+        "Optimized backend queries to improve API response times by 35% and implemented integration testing to reduce post-deployment bugs by 60%."
       ],
       "skills": [
-        "Next.js",
-        "Python",
+        "DevOps",
         "Docker",
+        "GCP",
+        "AWS",
         "Nginx",
+        "Contabo VPNs",
         "CI/CD",
-        "Contabo",
-        "PostgreSQL",
-        "Healthcare APIs"
+        "GitHub Actions",
+        "AI Agents",
+        "RAG",
+        "React Native",
+        "Node.js",
+        "MERN Stack",
+        "Playwright",
+        "Integration Testing"
       ]
     }
   ],
@@ -662,6 +676,36 @@
       "q": "How many years of experience do you have with Playwright and browser automation?",
       "a": "2+ years building automated browser test suites, scraping engines, and headed application agents.",
       "key": "yoe_playwright",
+      "cat": "tech_yoe"
+    },
+    {
+      "q": "Do you have experience with GCP (Google Cloud Platform)?",
+      "a": "Yes, architected scalable AI inference backends deployed on GCP and AWS, ensuring high availability and seamless connectivity between AI agents and core business applications.",
+      "key": "exp_gcp",
+      "cat": "tech_yoe"
+    },
+    {
+      "q": "Do you have experience with React Native for cross-platform mobile apps?",
+      "a": "Yes, spearheaded the development of React Native mobile apps and core business logic for healthcare aggregators and agriculture platforms.",
+      "key": "exp_react_native",
+      "cat": "tech_yoe"
+    },
+    {
+      "q": "How do you optimize API response times and backend queries?",
+      "a": "I analyze database query execution plans, add strategic compound indexes, implement caching layers (Redis/IndexedDB), and optimize connection pooling\u2014achieving up to 35% API latency reduction in production systems.",
+      "key": "query_optimization",
+      "cat": "behavioral"
+    },
+    {
+      "q": "Experience with Nginx, VPNs, and secure infrastructure deployment?",
+      "a": "Yes, managed end-to-end DevOps operations, configuring Nginx reverse proxies, Contabo VPNs, and Docker container security policies.",
+      "key": "exp_nginx_devops",
+      "cat": "tech_yoe"
+    },
+    {
+      "q": "Experience with AI Playwright interval testing and Bug0?",
+      "a": "Yes, developed the core architecture of Bug0, an AI-agentic testing platform integrating directly with GitHub Actions to automate interval-based AI Playwright testing, cutting CI/CD deployment cycle times by 40%.",
+      "key": "exp_bug0_playwright",
       "cat": "tech_yoe"
     },
     {
