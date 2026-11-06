@@ -148,15 +148,23 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
     },
     "ashby": {
         "profile.full_name": [
+            "input[name='_systemfield_name']",
+            "input#_systemfield_name",
             "input[name='name']",
             "input#name",
+            "input[autocomplete='name']",
+            "input[placeholder*='name' i]",
         ],
         "profile.email": [
+            "input[name='_systemfield_email']",
+            "input#_systemfield_email",
             "input[name='email']",
             "input#email",
             "input[type='email']",
         ],
         "profile.phone": [
+            "input[name='_systemfield_phone']",
+            "input#_systemfield_phone",
             "input[name='phone']",
             "input#phone",
             "input[type='tel']",

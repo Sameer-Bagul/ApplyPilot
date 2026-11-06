@@ -520,24 +520,37 @@ async def _async_run_playwright_tier_engine(
                     pass
                 tracer.log("tab_switch", f"Switched to active application tab: {page.url}")
 
-            # 7. Check for ATS service outage / maintenance page
+            # 7. Check for ATS service outage / maintenance / closed job page
             try:
                 body_text = (await page.inner_text("body", timeout=1000)).lower()
-                if any(err_msg in body_text for err_msg in [
-                    "workday is currently unavailable",
-                    "service interruption",
-                    "under maintenance",
+                closed_indicators = [
                     "this job is no longer available",
                     "this position has been filled",
                     "job posting has expired",
-                ]):
-                    err_reason = "ATS service temporarily unavailable (maintenance/outage)"
-                    if "no longer available" in body_text or "has been filled" in body_text or "expired" in body_text:
-                        err_reason = "Job posting is expired or closed"
+                    "sorry, we couldn't find anything here",
+                    "might have closed, or it has been removed",
+                    "job has expired",
+                    "no longer accepting applications",
+                    "position is no longer open",
+                ]
+                outage_indicators = [
+                    "workday is currently unavailable",
+                    "service interruption",
+                    "under maintenance",
+                ]
+                is_closed = any(msg in body_text for msg in closed_indicators)
+                is_outage = any(msg in body_text for msg in outage_indicators)
+
+                if is_closed or is_outage:
+                    err_reason = "Job posting is expired or closed" if is_closed else "ATS service temporarily unavailable (maintenance/outage)"
                     logger.warning("[W%d] %s: %s", worker_id, err_reason, page.url)
                     tracer.log("ats_error", err_reason)
+                    if conn:
+                        new_state = "archived" if is_closed else "ready"
+                        conn.execute("UPDATE jobs SET state = ?, needs_human_reason = ? WHERE url = ?", (new_state, err_reason, job.get("url")))
+                        conn.commit()
                     await finalize_proofs()
-                    return "fallback_to_agent", int((time.time() - start_time) * 1000), [{"field_id": "ats_unavailable", "label": err_reason}]
+                    return ("archived" if is_closed else "fallback_to_agent"), int((time.time() - start_time) * 1000), [{"field_id": "closed" if is_closed else "outage", "label": err_reason}]
             except Exception:
                 pass
 
