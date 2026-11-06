@@ -72,6 +72,14 @@ async function handleResolution(request: NextRequest) {
           const questionText = matchedQ?.label || key;
           const fieldType = matchedQ?.field_type || 'text';
 
+          if (
+            fieldType === 'submit' ||
+            questionText.toLowerCase().includes('submission review') ||
+            questionText.toLowerCase().includes('form fields filled')
+          ) {
+            continue;
+          }
+
           try {
             db.prepare(`
               INSERT INTO qa_knowledge (

@@ -64,6 +64,18 @@ export function HitlTicketModal({
 
   if (!ticketId) return null;
 
+  const isReviewOnly =
+    ticket?.blocker_type === 'review' ||
+    (ticket?.questions &&
+      ticket.questions.length > 0 &&
+      ticket.questions.every(
+        (q: any) =>
+          q.field_type === 'submit' ||
+          q.type === 'submit' ||
+          q.label?.toLowerCase().includes('submission review') ||
+          q.label?.toLowerCase().includes('form fields filled')
+      ));
+
   const handleFieldChange = (fieldId: string, val: string) => {
     setAnswers((prev) => ({ ...prev, [fieldId]: val }));
   };
@@ -132,21 +144,26 @@ export function HitlTicketModal({
             <div className="flex items-center gap-2">
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
                 ticket?.status === 'resolved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                isReviewOnly ? 'bg-cyan-50 text-cyan-800 border-cyan-200' :
                 'bg-amber-50 text-amber-800 border-amber-200'
               }`}>
-                {ticket?.status === 'resolved' ? 'Resolved' : 'Requires Intervention'}
+                {ticket?.status === 'resolved' ? 'Resolved' : isReviewOnly ? 'Final Review' : 'Requires Intervention'}
               </span>
               <span className="text-xs text-zinc-500 font-mono">Ticket #{ticketId}</span>
             </div>
             <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2 truncate">
-              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
-              <span>{ticket?.role_title || 'Application Blocker / Screening'}</span>
+              {isReviewOnly ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              ) : (
+                <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+              )}
+              <span>{ticket?.role_title || (isReviewOnly ? 'Final Submission Review' : 'Application Blocker / Screening')}</span>
             </h2>
             <div className="text-xs text-zinc-500 flex items-center gap-2">
               <Building2 className="w-3.5 h-3.5 text-cyan-600" />
               <span className="font-semibold text-zinc-800">{ticket?.company || 'Company'}</span>
               <span>•</span>
-              <span className="font-mono text-zinc-600">{ticket?.blocker_type || 'screening_question'}</span>
+              <span className="font-mono text-zinc-600">{isReviewOnly ? 'submission_review' : ticket?.blocker_type || 'screening_question'}</span>
             </div>
           </div>
 
@@ -203,14 +220,24 @@ export function HitlTicketModal({
                 </div>
               ) : (
                 <>
-                  <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 text-xs text-blue-900 shadow-2xs">
-                    This job application has required screening questions not yet present in your profile. Provide answers below, and ApplyPilot will auto-learn them into your Q&A knowledge base!
-                  </div>
+                  {isReviewOnly ? (
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 text-xs text-emerald-900 shadow-2xs flex items-start gap-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold block text-emerald-950">All Form Fields Filled from Profile</span>
+                        No screening questions are missing. ApplyPilot auto-filled your credentials and attached your resume. The application was paused for candidate confirmation.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 text-xs text-blue-900 shadow-2xs">
+                      This job application has required screening questions not yet present in your profile. Provide answers below, and ApplyPilot will auto-learn them into your Q&A knowledge base!
+                    </div>
+                  )}
 
                   {/* Questions list */}
                   <div className="space-y-4">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                      Unanswered Form Questions ({ticket.questions?.length || 0})
+                      {isReviewOnly ? 'Submission Review Checkpoint' : `Unanswered Form Questions (${ticket.questions?.length || 0})`}
                     </h3>
 
                     {ticket.questions && ticket.questions.length > 0 ? (
@@ -314,7 +341,7 @@ export function HitlTicketModal({
           </button>
 
           <div className="flex items-center gap-3">
-            {ticket?.blocker_type !== 'captcha' && (
+            {ticket?.blocker_type !== 'captcha' && !isReviewOnly && (
               <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
                 <input
                   type="checkbox"
@@ -332,7 +359,17 @@ export function HitlTicketModal({
             >
               Close
             </button>
-            {ticket?.blocker_type !== 'captcha' && (
+            {isReviewOnly ? (
+              <button
+                type="button"
+                onClick={handleSolveCaptcha}
+                disabled={solvingCaptcha}
+                className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs hover:scale-[1.01] transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{solvingCaptcha ? 'Opening Browser & Submitting...' : 'Open Browser & Submit Now'}</span>
+              </button>
+            ) : ticket?.blocker_type !== 'captcha' ? (
               <button
                 onClick={() => handleResolve('resolved')}
                 disabled={resolving}
@@ -341,7 +378,7 @@ export function HitlTicketModal({
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{resolving ? 'Submitting...' : 'Save & Resume Pipeline'}</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

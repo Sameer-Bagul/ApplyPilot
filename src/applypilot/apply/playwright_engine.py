@@ -365,8 +365,7 @@ async def _async_run_playwright_tier_engine(
                 )
                 page = await context.new_page()
             else:
-                contexts = browser.contexts
-                if not contexts:
+                try:
                     context = await browser.new_context(
                         viewport={"width": 1280, "height": 720},
                         record_video_dir=str(config.PROOFS_VIDEOS_DIR),
@@ -374,9 +373,10 @@ async def _async_run_playwright_tier_engine(
                         user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                     )
                     page = await context.new_page()
-                else:
-                    context = contexts[0]
-                    pages = context.pages
+                except Exception:
+                    contexts = browser.contexts
+                    context = contexts[0] if contexts else await browser.new_context()
+                    pages = getattr(context, "pages", [])
                     page = pages[0] if pages else await context.new_page()
 
             if hasattr(page, "on") and callable(page.on):
@@ -876,6 +876,9 @@ async def _async_run_playwright_tier_engine(
     except Exception as e:
         logger.warning("[W%d] Error running Playwright tier engine: %s; falling back to agent.", worker_id, e)
         try:
+            if "tracer" in locals():
+                tracer.error_traces.append(f"Engine exception: {e}")
+                tracer.log("engine_error", f"Fatal engine exception: {e}", level="ERROR")
             if "finalize_proofs" in locals():
                 await finalize_proofs()
         except Exception:

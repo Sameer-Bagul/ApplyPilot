@@ -918,6 +918,7 @@ def apply(
                 unanswered_questions=[{"label": "Form fields filled from profile. Final submission review needed.", "field_type": "submit"}],
                 dom_checkpoint=checkpoint,
                 conn=conn,
+                blocker_type="review",
             )
             console.print(f"[bold yellow]Form filled. HITL Ticket #{ticket_id} created for confirmation.[/bold yellow]")
             return

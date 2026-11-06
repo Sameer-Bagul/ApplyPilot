@@ -207,7 +207,8 @@ def dispatch_hitl_email_and_park(job: dict,
                                  unanswered_questions: list[dict],
                                  dom_checkpoint: dict | None = None,
                                  recipient_email: str | None = None,
-                                 conn: sqlite3.Connection | None = None) -> int:
+                                 conn: sqlite3.Connection | None = None,
+                                 blocker_type: str = "missing_info") -> int:
     """Batch unanswered questions, send HITL email, and park job cleanly.
 
     Returns:
@@ -224,7 +225,7 @@ def dispatch_hitl_email_and_park(job: dict,
         job_url=job_url,
         unanswered_questions=unanswered_questions,
         dom_checkpoint=dom_checkpoint,
-        blocker_type="missing_info",
+        blocker_type=blocker_type,
         company=job.get("company"),
         role_title=job.get("title"),
         ats_type=job.get("site"),

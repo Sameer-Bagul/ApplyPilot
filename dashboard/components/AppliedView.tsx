@@ -640,3 +640,4 @@ export function AppliedView({ onSelectJob }: AppliedViewProps) {
     </div>
   );
 }
+
