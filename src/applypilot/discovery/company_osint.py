@@ -158,8 +158,92 @@ def hunt_candidate_and_exec_emails(
         if gh_emails:
             results["sources_used"].append("GitHub Public Commits OSINT")
 
+    # 3. Web Search OSINT Dorks for Personal Emails
+    try:
+        from applypilot.discovery.dual_scraper import FastLightScraper
+        scraper = FastLightScraper(timeout=4.0)
+        query = f'"{person_name}" ("gmail.com" OR "proton.me") "{company_name}"'
+        encoded_q = urllib.parse.quote(query)
+        search_url = f"https://html.duckduckgo.com/html/?q={encoded_q}"
+        fetch_res = scraper.fetch(search_url)
+        if fetch_res.get("success"):
+            text = fetch_res.get("text", "")
+            raw_emails = EMAIL_REGEX.findall(text)
+            for em in raw_emails:
+                em_lower = em.lower()
+                dom = em_lower.split("@")[-1]
+                if dom in GENERIC_DOMAINS and not em_lower.startswith(("support@", "contact@", "help@", "info@")):
+                    results["personal_emails"].append(em_lower)
+            if any(em.split("@")[-1] in GENERIC_DOMAINS for em in raw_emails):
+                results["sources_used"].append("Web Search OSINT Dorking")
+    except Exception as e:
+        logger.debug("Personal email search dork notice: %s", e)
+
     # Deduplicate
     results["corporate_emails"] = list(dict.fromkeys(results["corporate_emails"]))
     results["personal_emails"] = list(dict.fromkeys(results["personal_emails"]))
 
     return results
+
+
+def investigate_and_store_company(
+    company_name: str,
+    conn: Any = None,
+) -> dict[str, Any]:
+    """Execute complete deep investigation on a company and persist to career_watchlist."""
+    from datetime import datetime, timezone
+    from applypilot.database import get_connection
+
+    if conn is None:
+        conn = get_connection()
+
+    now = datetime.now(timezone.utc).isoformat()
+    logger.info("Executing deep OSINT investigation on company: %s", company_name)
+
+    # 1. Wikipedia Background
+    wiki = investigate_company_wikipedia(company_name)
+    wiki_summary = wiki.get("summary") if wiki.get("found") else None
+
+    # 2. GitHub Projects & Tech Radar
+    github_slug = company_name.lower().replace(" ", "").replace("-", "")
+    projects = investigate_company_github_projects(github_slug)
+    top_projects_json = json.dumps(projects) if projects else None
+
+    # Tech Radar summary (extract primary languages & tags)
+    tech_radar: dict[str, Any] = {
+        "languages": list({p["language"] for p in projects if p.get("language")}),
+        "active_repos_count": len(projects),
+        "stars_total": sum(p.get("stars", 0) for p in projects),
+    }
+    tech_radar_json = json.dumps(tech_radar) if projects else None
+    github_org_url = f"https://github.com/{github_slug}" if projects else None
+
+    # 3. Persist to career_watchlist
+    try:
+        conn.execute(
+            """
+            UPDATE career_watchlist
+            SET wikipedia_summary = COALESCE(?, wikipedia_summary),
+                github_org_url = COALESCE(?, github_org_url),
+                top_projects_json = COALESCE(?, top_projects_json),
+                tech_radar_json = COALESCE(?, tech_radar_json),
+                investigated_at = ?
+            WHERE LOWER(company_name) = LOWER(?) OR LOWER(slug) = LOWER(?)
+            """,
+            (wiki_summary, github_org_url, top_projects_json, tech_radar_json, now, company_name, company_name),
+        )
+        if hasattr(conn, "commit"):
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed saving investigation for %s: %s", company_name, e)
+
+    return {
+        "company_name": company_name,
+        "investigated_at": now,
+        "wikipedia": wiki,
+        "github_org_url": github_org_url,
+        "projects": projects,
+        "tech_radar": tech_radar,
+    }
+
+

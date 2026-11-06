@@ -43,6 +43,10 @@ export function LeadDetailDrawer({
   // Editable fields
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editPersonalEmail, setEditPersonalEmail] = useState('');
+  const [editPersonalSource, setEditPersonalSource] = useState('');
+  const [preferredChannel, setPreferredChannel] = useState<'corporate' | 'personal'>('corporate');
+  const [enriching, setEnriching] = useState(false);
   const [editRole, setEditRole] = useState('');
   const [editType, setEditType] = useState('');
   const [editSubject, setEditSubject] = useState('');
@@ -66,6 +70,9 @@ export function LeadDetailDrawer({
           const l = json.data.lead;
           setEditName(l.contact_name || '');
           setEditEmail(l.contact_email || '');
+          setEditPersonalEmail(l.personal_email || '');
+          setEditPersonalSource(l.personal_email_source || '');
+          setPreferredChannel((l.preferred_channel as any) || 'corporate');
           setEditRole(l.role_title || '');
           setEditType(l.contact_type || 'recruiter');
           setEditSubject(l.email_draft_subject || '');
@@ -129,6 +136,36 @@ export function LeadDetailDrawer({
     }
   };
 
+  const handleEnrich = async () => {
+    if (!leadId || !editName) return;
+    setEnriching(true);
+    try {
+      const res = await fetch('/api/leads/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          contactName: editName,
+          companyName: lead?.company_name,
+          domain: lead?.company_domain,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.huntResult) {
+        if (json.huntResult.personal_emails?.[0]) {
+          setEditPersonalEmail(json.huntResult.personal_emails[0]);
+          setEditPersonalSource(json.huntResult.sources_used?.join(', ') || 'OSINT');
+          setPreferredChannel('personal');
+        }
+        if (onLeadUpdated) onLeadUpdated();
+      }
+    } catch (e) {
+      console.error('Failed enriching personal email', e);
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -138,6 +175,9 @@ export function LeadDetailDrawer({
         body: JSON.stringify({
           contact_name: editName,
           contact_email: editEmail,
+          personal_email: editPersonalEmail,
+          personal_email_source: editPersonalSource,
+          preferred_channel: preferredChannel,
           role_title: editRole,
           contact_type: editType,
           email_draft_subject: editSubject,
@@ -154,6 +194,9 @@ export function LeadDetailDrawer({
             ...prev.lead,
             contact_name: editName,
             contact_email: editEmail,
+            personal_email: editPersonalEmail,
+            personal_email_source: editPersonalSource,
+            preferred_channel: preferredChannel,
             role_title: editRole,
             contact_type: editType,
             email_draft_subject: editSubject,
@@ -345,7 +388,7 @@ export function LeadDetailDrawer({
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-zinc-600 block mb-1">Direct Email</label>
+                    <label className="text-xs font-semibold text-zinc-600 block mb-1">Corporate Work Email</label>
                     <input
                       type="email"
                       value={editEmail}
@@ -353,6 +396,75 @@ export function LeadDetailDrawer({
                       placeholder="jane@company.com"
                       className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs font-mono"
                     />
+                  </div>
+                </div>
+
+                {/* Personal Email & Channel Selection */}
+                <div className="p-3.5 rounded-2xl bg-zinc-50/90 border border-zinc-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-indigo-600" />
+                        Personal Email Address (OSINT)
+                      </span>
+                      {editPersonalSource && (
+                        <span className="text-[10px] text-zinc-500 font-mono block">
+                          Discovered via: {editPersonalSource}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleEnrich}
+                      disabled={enriching}
+                      className="liquid-pill px-2.5 py-1 rounded-lg text-[11px] font-bold text-indigo-700 bg-white border border-indigo-200 shadow-2xs hover:bg-indigo-50 flex items-center gap-1 cursor-pointer"
+                      title="Run GitHub commit & search dork OSINT to find this person's personal email"
+                    >
+                      <Sparkles className={`w-3 h-3 text-indigo-600 ${enriching ? 'animate-spin' : ''}`} />
+                      <span>{enriching ? 'Hunting...' : 'Find Personal Email'}</span>
+                    </button>
+                  </div>
+
+                  <input
+                    type="email"
+                    value={editPersonalEmail}
+                    onChange={(e) => setEditPersonalEmail(e.target.value)}
+                    placeholder="jane.doe@gmail.com (personal)"
+                    className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-200 font-mono shadow-2xs"
+                  />
+
+                  {/* Outreach Destination Switcher */}
+                  <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-xs">
+                    <span className="text-[11px] text-zinc-600 font-medium">Outreach Target:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreferredChannel('corporate')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition ${
+                          preferredChannel === 'corporate'
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'bg-zinc-200/70 text-zinc-600 hover:text-zinc-900'
+                        }`}
+                      >
+                        Corporate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreferredChannel('personal')}
+                        disabled={!editPersonalEmail}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                          !editPersonalEmail
+                            ? 'opacity-40 cursor-not-allowed bg-zinc-100 text-zinc-400'
+                            : preferredChannel === 'personal'
+                            ? 'bg-indigo-600 text-white shadow-2xs cursor-pointer'
+                            : 'bg-zinc-200/70 text-zinc-600 hover:text-zinc-900 cursor-pointer'
+                        }`}
+                        title={editPersonalEmail ? 'Send to personal inbox' : 'No personal email discovered yet'}
+                      >
+                        Personal {editPersonalEmail ? '(@gmail)' : ''}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

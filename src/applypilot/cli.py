@@ -691,6 +691,31 @@ def harvest_workday_cmd(
         console.print(f"  • Sample Companies: [cyan]{preview}...[/cyan]")
 
 
+@app.command("investigate-company")
+def investigate_company_cmd(
+    name: str = typer.Option(..., "--name", "-n", help="Target company name (e.g. Barclays, Mastercard, Nvidia)."),
+) -> None:
+    """Run deep OSINT investigation on a company (Wikipedia, GitHub Org projects, tech radar)."""
+    _bootstrap()
+    from applypilot.discovery.company_osint import investigate_and_store_company
+
+    console.print(f"[bold blue]Running deep OSINT investigation on:[/bold blue] [cyan]{name}[/cyan]...")
+    res = investigate_and_store_company(name)
+
+    console.print(f"[bold green]Investigation Complete![/bold green]")
+    wiki = res.get("wikipedia", {})
+    if wiki.get("found"):
+        console.print(f"  • Wikipedia: [dim]{wiki.get('summary', '')[:200]}...[/dim]")
+    projects = res.get("projects", [])
+    console.print(f"  • Open-Source Projects Found: {len(projects)}")
+    for p in projects[:3]:
+        console.print(f"    - [cyan]{p['name']}[/cyan] ({p.get('language')}): {p.get('description')}")
+    radar = res.get("tech_radar", {})
+    if radar.get("languages"):
+        console.print(f"  • Tech Radar Languages: {', '.join(radar['languages'])}")
+
+
+
 
 
 @app.command("harvest-emails")

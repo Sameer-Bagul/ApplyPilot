@@ -20,6 +20,9 @@ import {
   Copy,
   Layers,
   ArrowRight,
+  Code2,
+  GitFork,
+  Search,
 } from 'lucide-react';
 import { AutoApplyButton } from './AutoApplyButton';
 
@@ -42,8 +45,9 @@ export function CompanyDetailDrawer({
 }: CompanyDetailDrawerProps) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'roles' | 'leads' | 'edit'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'roles' | 'leads' | 'edit'>('overview');
   const [looping, setLooping] = useState(false);
+  const [investigating, setInvestigating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
@@ -123,6 +127,28 @@ export function CompanyDetailDrawer({
       console.error('Failed to run company loop', err);
     } finally {
       setLooping(false);
+    }
+  };
+
+  const handleInvestigate = async () => {
+    if (!company?.company_name) return;
+    setInvestigating(true);
+    try {
+      const res = await fetch('/api/companies/investigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: company.company_name }),
+      });
+      const json = await res.json();
+      if (json.success && json.companyData) {
+        setData(json.companyData);
+        setActiveTab('projects');
+        if (onCompanyUpdated) onCompanyUpdated();
+      }
+    } catch (err) {
+      console.error('Failed to investigate company', err);
+    } finally {
+      setInvestigating(false);
     }
   };
 
@@ -266,10 +292,10 @@ export function CompanyDetailDrawer({
 
         {/* Tab Navigation Pill Bar */}
         <div className="flex items-center justify-between px-6 py-2.5 border-b border-zinc-200/60 bg-zinc-50/70 text-xs">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 overflow-x-auto">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
                 activeTab === 'overview'
                   ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs'
                   : 'text-zinc-500 hover:text-zinc-900'
@@ -278,8 +304,23 @@ export function CompanyDetailDrawer({
               Intelligence
             </button>
             <button
+              onClick={() => setActiveTab('projects')}
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'projects'
+                  ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs'
+                  : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              <span>Projects & Tech</span>
+              {company?.topProjects && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-700 font-bold">
+                  {company.topProjects.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('roles')}
-              className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'roles'
                   ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs'
                   : 'text-zinc-500 hover:text-zinc-900'
@@ -292,7 +333,7 @@ export function CompanyDetailDrawer({
             </button>
             <button
               onClick={() => setActiveTab('leads')}
-              className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeTab === 'leads'
                   ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs'
                   : 'text-zinc-500 hover:text-zinc-900'
@@ -305,7 +346,7 @@ export function CompanyDetailDrawer({
             </button>
             <button
               onClick={() => setActiveTab('edit')}
-              className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
                 activeTab === 'edit'
                   ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs'
                   : 'text-zinc-500 hover:text-zinc-900'
@@ -315,15 +356,27 @@ export function CompanyDetailDrawer({
             </button>
           </div>
 
-          <button
-            onClick={handleDeepLoop}
-            disabled={looping}
-            className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1.5 cursor-pointer shadow-2xs"
-            title="Harvest new postings & recruiters for this company"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${looping ? 'animate-spin' : ''}`} />
-            <span>{looping ? 'Looping...' : 'Deep Loop'}</span>
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={handleInvestigate}
+              disabled={investigating}
+              className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-700 hover:text-blue-900 flex items-center gap-1.5 cursor-pointer shadow-2xs border border-blue-200 bg-blue-50/50"
+              title="Run deep OSINT investigation on Wikipedia and GitHub open-source repositories"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-blue-600 ${investigating ? 'animate-spin' : ''}`} />
+              <span>{investigating ? 'Investigating...' : 'Investigate OSINT'}</span>
+            </button>
+
+            <button
+              onClick={handleDeepLoop}
+              disabled={looping}
+              className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Harvest new postings & recruiters for this company"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${looping ? 'animate-spin' : ''}`} />
+              <span>{looping ? 'Looping...' : 'Deep Loop'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -376,6 +429,19 @@ export function CompanyDetailDrawer({
                     </div>
                   </div>
 
+                  {/* Wikipedia Corporate Intelligence */}
+                  {company?.wikipedia_summary && (
+                    <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-2">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-blue-600" />
+                        Verified Corporate Profile (Wikipedia OSINT)
+                      </h3>
+                      <p className="text-xs text-zinc-700 leading-relaxed">
+                        {company.wikipedia_summary}
+                      </p>
+                    </div>
+                  )}
+
                   {/* Dual-Attack Readiness */}
                   <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 block">
@@ -387,6 +453,93 @@ export function CompanyDetailDrawer({
                         : `Partial readiness. ApplyPilot is monitoring for both official career board openings and verified recruiter leads.`}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* Projects & Tech Radar Tab */}
+              {activeTab === 'projects' && (
+                <div className="space-y-5">
+                  <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1.5">
+                        <Code2 className="w-4 h-4 text-blue-600" />
+                        Engineering Tech Stack & Open-Source Projects
+                      </h3>
+                      {company?.github_org_url && (
+                        <a
+                          href={company.github_org_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        >
+                          <span>GitHub Organization</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+
+                    {company?.techRadar?.languages && company.techRadar.languages.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="text-xs font-bold text-zinc-700">Primary Languages:</span>
+                        {company.techRadar.languages.map((lang: string) => (
+                          <span key={lang} className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                            {lang}
+                          </span>
+                        ))}
+                        {company.techRadar.stars_total > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                            ⭐ {company.techRadar.stars_total.toLocaleString()} stars
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {company?.topProjects && company.topProjects.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      {company.topProjects.map((p: any) => (
+                        <div key={p.name} className="liquid-card rounded-2xl p-4 border border-zinc-200/80 bg-white/80 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <a
+                              href={p.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-bold text-xs text-blue-700 hover:underline flex items-center gap-1"
+                            >
+                              <Code2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              <span className="truncate">{p.name}</span>
+                            </a>
+                            {p.language && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200">
+                                {p.language}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-600 line-clamp-2 min-h-[30px]">
+                            {p.description || 'Core engineering repository and tools.'}
+                          </p>
+                          <div className="pt-2 border-t border-zinc-100 flex items-center gap-3 text-[10px] text-zinc-500">
+                            <span>⭐ {p.stars || 0} stars</span>
+                            <span>•</span>
+                            <span>🍴 {p.forks || 0} forks</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center border border-dashed border-zinc-200 rounded-2xl bg-zinc-50/50 space-y-3">
+                      <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                        No open-source project intelligence captured yet. Click below to run zero-token OSINT on Wikipedia & GitHub to detect their engineering tools.
+                      </p>
+                      <button
+                        onClick={handleInvestigate}
+                        disabled={investigating}
+                        className="liquid-pill px-4 py-2 rounded-xl text-xs font-bold text-blue-700 border border-blue-300 bg-white shadow-2xs hover:bg-blue-50 transition cursor-pointer"
+                      >
+                        {investigating ? 'Investigating...' : 'Investigate Projects & Tech Stack'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

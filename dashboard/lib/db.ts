@@ -420,18 +420,27 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
 
   let founders = [];
   let emails = [];
+  let topProjects = [];
+  let techRadar = null;
   try {
     if (company.founders_json) founders = JSON.parse(company.founders_json);
   } catch {}
   try {
     if (company.hr_contacts_json) emails = JSON.parse(company.hr_contacts_json);
   } catch {}
+  try {
+    if (company.top_projects_json) topProjects = JSON.parse(company.top_projects_json);
+  } catch {}
+  try {
+    if (company.tech_radar_json) techRadar = JSON.parse(company.tech_radar_json);
+  } catch {}
 
   // Fetch all leads for this company
   const leads = db
     .prepare(
       `SELECT lead_id, job_id, company_name, company_domain, role_title,
-              contact_name, contact_email, contact_type, contact_linkedin_url,
+              contact_name, contact_email, personal_email, personal_email_source, preferred_channel,
+              contact_type, contact_linkedin_url,
               linkedin_connection_note, source_platform, evidence_snippet,
               execution_route, outreach_status, created_at,
               email_draft_subject, email_draft_body, approved_at, approved_by
@@ -458,6 +467,8 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
       ...company,
       founders,
       emails,
+      topProjects,
+      techRadar,
     },
     leads,
     jobs,
@@ -554,7 +565,8 @@ export function getLeads(params: {
 
   let query = `
     SELECT lead_id, job_id, company_name, company_domain, role_title, 
-           contact_name, contact_email, contact_type, contact_linkedin_url, 
+           contact_name, contact_email, personal_email, personal_email_source, preferred_channel,
+           contact_type, contact_linkedin_url, 
            linkedin_connection_note, source_platform, evidence_snippet, 
            execution_route, outreach_status, created_at,
            email_draft_subject, email_draft_body, approved_at, approved_by

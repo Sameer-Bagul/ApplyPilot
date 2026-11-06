@@ -216,6 +216,9 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
     _add_column_if_missing(conn, "recruiter_leads", "email_draft_body", "TEXT")
     _add_column_if_missing(conn, "recruiter_leads", "approved_at", "TIMESTAMP")
     _add_column_if_missing(conn, "recruiter_leads", "approved_by", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "personal_email", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "personal_email_source", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "preferred_channel", "TEXT DEFAULT 'corporate'")
 
     # 6. career_watchlist
     conn.execute("""
@@ -257,6 +260,11 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
     _add_column_if_missing(conn, "career_watchlist", "founders_json", "TEXT")
     _add_column_if_missing(conn, "career_watchlist", "hr_contacts_json", "TEXT")
     _add_column_if_missing(conn, "career_watchlist", "open_roles_count", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "career_watchlist", "wikipedia_summary", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "github_org_url", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "top_projects_json", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "tech_radar_json", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "investigated_at", "TIMESTAMP")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_priority ON career_watchlist(priority_tier, is_vip)")
 
     # Ensure jobs table has execution_route
