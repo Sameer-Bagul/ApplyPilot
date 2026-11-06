@@ -21,26 +21,33 @@ export async function GET(request: NextRequest) {
     } else if (jobUrl) {
       const db = getDb();
       const job: any = db.prepare(
-        'SELECT url, company, title, proof_video_path, proof_screenshot_path FROM jobs WHERE url = ?'
+        'SELECT url, company, title, proof_video_path, proof_screenshot_path, proof_log_path FROM jobs WHERE url = ?'
       ).get(jobUrl);
 
       if (job) {
         if (type === 'screenshot') {
           filePath = job.proof_screenshot_path;
+        } else if (type === 'log' || type === 'raw_log') {
+          filePath = job.proof_log_path;
+          if (type === 'raw_log' && filePath && filePath.endsWith('.json')) {
+            const txtPath = filePath.replace(/\.json$/, '.log');
+            if (fs.existsSync(txtPath)) filePath = txtPath;
+          }
         } else {
           filePath = job.proof_video_path;
         }
 
         // Fallback: search directory for matching filename if column empty
         if (!filePath) {
+          const subDir = type === 'screenshot' ? 'screenshots' : (type === 'log' || type === 'raw_log') ? 'logs' : 'videos';
           const proofsDir = path.join(
             os.homedir(),
             '.applypilot',
             'proofs',
-            type === 'screenshot' ? 'screenshots' : 'videos'
+            subDir
           );
           if (fs.existsSync(proofsDir)) {
-            const ext = type === 'screenshot' ? '.png' : '.webm';
+            const ext = type === 'screenshot' ? '.png' : (type === 'raw_log' ? '.log' : (type === 'log' ? '.json' : '.webm'));
             const cleanCo = (job.company || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
             const files = fs.readdirSync(proofsDir).filter(f => f.endsWith(ext));
             if (cleanCo) {
@@ -83,7 +90,31 @@ export async function GET(request: NextRequest) {
     const fileSize = stat.size;
     const filename = path.basename(resolved);
 
-    // 1. Image Screenshot serving
+    // 1. Audit Log serving (JSON or Raw Text)
+    if (type === 'log' || (resolved.endsWith('.json') && !isDownload)) {
+      try {
+        const rawContent = fs.readFileSync(resolved, 'utf-8');
+        const parsed = JSON.parse(rawContent);
+        return NextResponse.json({ success: true, log: parsed, path: resolved });
+      } catch (err: any) {
+        return NextResponse.json({ success: false, error: 'Failed parsing log JSON: ' + err.message }, { status: 500 });
+      }
+    }
+
+    if (type === 'raw_log' || resolved.endsWith('.log') || (resolved.endsWith('.json') && isDownload)) {
+      const fileContent = fs.readFileSync(resolved, 'utf-8');
+      const headers: Record<string, string> = {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Length': String(Buffer.byteLength(fileContent)),
+        'Cache-Control': 'no-cache',
+      };
+      if (isDownload) {
+        headers['Content-Disposition'] = `attachment; filename="${filename}"`;
+      }
+      return new Response(fileContent, { status: 200, headers });
+    }
+
+    // 2. Image Screenshot serving
     if (type === 'screenshot' || resolved.endsWith('.png') || resolved.endsWith('.jpg')) {
       const contentType = resolved.endsWith('.jpg') || resolved.endsWith('.jpeg') ? 'image/jpeg' : 'image/png';
       const fileBuffer = fs.readFileSync(resolved);
@@ -185,3 +216,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

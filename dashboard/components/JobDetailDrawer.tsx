@@ -28,6 +28,8 @@ import {
   Download,
   Copy,
   Check,
+  FileText,
+  Terminal,
 } from 'lucide-react';
 import { RouteBadge } from './ui/RouteBadge';
 
@@ -52,6 +54,8 @@ export function JobDetailDrawer({
   const [activeTab, setActiveTab] = useState<'description' | 'scoring' | 'leads' | 'proof' | 'edit'>('description');
   const [copiedVideo, setCopiedVideo] = useState(false);
   const [copiedScreenshot, setCopiedScreenshot] = useState(false);
+  const [copiedLog, setCopiedLog] = useState(false);
+  const [proofLog, setProofLog] = useState<any | null>(null);
   
   // Application runner state (Phase 2)
   const [applyingMode, setApplyingMode] = useState<'headless' | 'headed' | null>(null);
@@ -134,7 +138,22 @@ export function JobDetailDrawer({
       }
     };
 
+    const fetchProofLog = async () => {
+      try {
+        const res = await fetch(`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=log`);
+        const json = await res.json();
+        if (json.success && json.log) {
+          setProofLog(json.log);
+        } else {
+          setProofLog(null);
+        }
+      } catch {
+        setProofLog(null);
+      }
+    };
+
     fetchDetail();
+    fetchProofLog();
   }, [jobUrl]);
 
   if (!jobUrl) return null;
@@ -636,6 +655,80 @@ export function JobDetailDrawer({
                         <Camera className="w-8 h-8 text-zinc-300 mx-auto" />
                         <p className="text-xs text-zinc-500 font-medium">
                           No screenshot receipt captured yet.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Forensic Execution Audit Log Section */}
+                  <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                          Forensic Execution Audit Log
+                        </span>
+                      </div>
+                      <a
+                        href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=raw_log&download=1`}
+                        className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                        download
+                      >
+                        <Download className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Download .log</span>
+                      </a>
+                    </div>
+
+                    {proofLog ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                          <div className="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/60">
+                            <span className="text-[10px] uppercase font-bold text-zinc-400 block">Duration</span>
+                            <span className="font-mono font-bold text-zinc-800">{proofLog.total_duration_ms}ms</span>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/60">
+                            <span className="text-[10px] uppercase font-bold text-zinc-400 block">Fields Filled</span>
+                            <span className="font-mono font-bold text-zinc-800">{proofLog.fields_filled_count || proofLog.fields_filled?.length || 0}</span>
+                          </div>
+                          <div className="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/60">
+                            <span className="text-[10px] uppercase font-bold text-zinc-400 block">Q&A Resolved</span>
+                            <span className="font-mono font-bold text-zinc-800">{proofLog.qa_count || proofLog.qa_resolutions?.length || 0}</span>
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl bg-zinc-950 text-zinc-200 p-4 font-mono text-[11px] space-y-1.5 max-h-48 overflow-y-auto">
+                          {proofLog.events?.map((ev: any, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2 leading-relaxed">
+                              <span className="text-zinc-500 shrink-0">+{ev.elapsed_ms}ms</span>
+                              <span className="text-cyan-400 shrink-0">[{ev.stage}]</span>
+                              <span className="text-zinc-300 break-all">{ev.message}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {job?.proof_log_path && (
+                          <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-[11px] text-zinc-600 flex items-center justify-between gap-2">
+                            <span className="font-mono truncate">{job.proof_log_path}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(job.proof_log_path);
+                                setCopiedLog(true);
+                                setTimeout(() => setCopiedLog(false), 2000);
+                              }}
+                              className="liquid-pill p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 shrink-0 cursor-pointer"
+                              title="Copy log path"
+                            >
+                              {copiedLog ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center rounded-2xl bg-zinc-50/80 border border-dashed border-zinc-200 space-y-2">
+                        <Terminal className="w-8 h-8 text-zinc-300 mx-auto" />
+                        <p className="text-xs text-zinc-500 font-medium">
+                          No audit log recorded yet for this role.
                         </p>
                       </div>
                     )}

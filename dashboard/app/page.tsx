@@ -69,12 +69,14 @@ import { AddJobModal } from '@/components/AddJobModal';
 import { AddCompanyModal } from '@/components/AddCompanyModal';
 import { AddLeadModal } from '@/components/AddLeadModal';
 import { AutoApplyButton } from '@/components/AutoApplyButton';
+import { AppliedView } from '@/components/AppliedView';
 
 interface StatsData {
   totalJobs: number;
   totalCompanies: number;
   totalLeads: number;
   vipCompanies: number;
+  appliedCount?: number;
   routes: {
     dualAttack: number;
     portalOnly: number;
@@ -89,13 +91,13 @@ interface StatsData {
 }
 
 interface DashboardPageProps {
-  initialTab?: 'overview' | 'architecture' | 'sources' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile';
+  initialTab?: 'overview' | 'architecture' | 'sources' | 'jobs' | 'applied' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile';
 }
 
 function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'architecture' | 'sources' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile'
+    'overview' | 'architecture' | 'sources' | 'jobs' | 'applied' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile'
   >(initialTab);
   const [jobLimit, setJobLimit] = useState(25);
   const [companyLimit, setCompanyLimit] = useState(25);
@@ -258,6 +260,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
       'architecture',
       'sources',
       'jobs',
+      'applied',
       'companies',
       'leads',
       'hitl',
@@ -535,6 +538,14 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
       color: 'text-blue-600',
       badge: stats?.totalJobs ? stats.totalJobs.toLocaleString() : null,
       badgeColor: 'bg-blue-50 text-blue-800 border-blue-200/80',
+    },
+    {
+      id: 'applied',
+      label: 'Applied',
+      icon: CheckCircle2,
+      color: 'text-emerald-600',
+      badge: stats?.appliedCount ? String(stats.appliedCount) : null,
+      badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 font-bold',
     },
     {
       id: 'companies',
@@ -1212,6 +1223,11 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
               />
             </div>
           </div>
+        )}
+
+        {/* ----------------- TAB: APPLIED JOBS & PROOFS ----------------- */}
+        {activeTab === 'applied' && (
+          <AppliedView onSelectJob={(url) => setSelectedJobUrl(url)} />
         )}
 
         {/* ----------------- TAB 4: COMPANIES ----------------- */}

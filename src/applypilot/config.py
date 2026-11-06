@@ -30,10 +30,11 @@ SESSIONS_DIR = APP_DIR / "chrome-sessions"
 # Optional documents (profile photo, certs, ID, etc.)
 FILES_DIR = APP_DIR / "files"
 
-# Application proofs (720p recordings and confirmation receipts)
+# Application proofs (720p recordings, confirmation receipts, and execution audit logs)
 PROOFS_DIR = APP_DIR / "proofs"
 PROOFS_VIDEOS_DIR = PROOFS_DIR / "videos"
 PROOFS_SCREENSHOTS_DIR = PROOFS_DIR / "screenshots"
+PROOFS_LOGS_DIR = PROOFS_DIR / "logs"
 
 # Package-shipped config (YAML registries)
 PACKAGE_DIR = Path(__file__).parent
@@ -122,6 +123,7 @@ def ensure_dirs():
         PROOFS_DIR,
         PROOFS_VIDEOS_DIR,
         PROOFS_SCREENSHOTS_DIR,
+        PROOFS_LOGS_DIR,
     ]:
         d.mkdir(parents=True, exist_ok=True)
 

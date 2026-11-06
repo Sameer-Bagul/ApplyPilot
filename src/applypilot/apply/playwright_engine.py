@@ -15,6 +15,7 @@ the user solves the challenge.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import re
@@ -64,6 +65,70 @@ from applypilot.apply.captcha_detector import (
 logger = logging.getLogger(__name__)
 
 
+class ApplicationTracer:
+    """Rich execution audit logger that captures every step, filled field, Q&A, and browser event."""
+
+    def __init__(self, job: dict):
+        self.job = job
+        self.start_time = time.time()
+        self.events: list[dict] = []
+        self.form_fields_attempted: list[dict] = []
+        self.qa_resolutions: list[dict] = []
+        self.challenges_encountered: list[dict] = []
+        self.browser_console_logs: list[str] = []
+        self.error_traces: list[str] = []
+
+    def log(self, stage: str, message: str, details: dict | None = None, level: str = "INFO"):
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "elapsed_ms": int((time.time() - self.start_time) * 1000),
+            "stage": stage,
+            "level": level,
+            "message": message,
+            "details": details or {},
+        }
+        self.events.append(entry)
+        logger.info("[%s] %s %s", stage.upper(), message, details if details else "")
+
+    def add_qa(self, question: str, answer: Any, confidence: float, key: str, field_type: str):
+        self.qa_resolutions.append({
+            "question": question,
+            "answer": answer,
+            "confidence": round(confidence, 3),
+            "canonical_key": key,
+            "field_type": field_type,
+        })
+
+    def add_field(self, selector: str, action: str, value: Any = None, success: bool = True, error: str | None = None):
+        val_str = str(value) if value is not None else ""
+        if len(val_str) > 80:
+            val_str = val_str[:77] + "..."
+        self.form_fields_attempted.append({
+            "selector": selector,
+            "action": action,
+            "value": val_str,
+            "success": success,
+            "error": error,
+        })
+
+    def to_dict(self) -> dict:
+        return {
+            "job_url": self.job.get("application_url") or self.job.get("url"),
+            "company": self.job.get("company"),
+            "title": self.job.get("title"),
+            "total_duration_ms": int((time.time() - self.start_time) * 1000),
+            "events_count": len(self.events),
+            "fields_filled_count": len(self.form_fields_attempted),
+            "qa_count": len(self.qa_resolutions),
+            "events": self.events,
+            "fields_filled": self.form_fields_attempted,
+            "qa_resolutions": self.qa_resolutions,
+            "challenges": self.challenges_encountered,
+            "browser_console": self.browser_console_logs[-60:],
+            "errors": self.error_traces,
+        }
+
+
 def _load_candidate_profile() -> dict:
     """Load profile.json if exists."""
     p_file = config.PROFILE_PATH
@@ -110,6 +175,9 @@ async def _async_run_playwright_tier_engine(
         from applypilot.config import RESUME_PDF_PATH
         if RESUME_PDF_PATH.exists():
             resume_path = str(RESUME_PDF_PATH)
+
+    tracer = ApplicationTracer(job)
+    tracer.log("start", f"Initializing application runner for {job.get('company')} - {job.get('title')}", {"target_url": target_url, "auto_submit": auto_submit, "headless": headless})
 
     try:
         async with async_playwright() as p:
@@ -225,13 +293,62 @@ async def _async_run_playwright_tier_engine(
 
                 saved_screenshot = str(screenshot_dest) if screenshot_dest.exists() and screenshot_dest.stat().st_size > 0 else None
 
-                # 5. Persist to SQLite
+                # 5. Save detailed execution audit log
+                saved_log = None
+                log_json_dest = config.PROOFS_LOGS_DIR / f"{clean_co}_{clean_ti}_{ts}.json"
+                log_txt_dest = config.PROOFS_LOGS_DIR / f"{clean_co}_{clean_ti}_{ts}.log"
+                try:
+                    tracer_dict = tracer.to_dict()
+                    tracer_dict["proof_video_path"] = saved_video
+                    tracer_dict["proof_screenshot_path"] = saved_screenshot
+                    log_json_dest.write_text(json.dumps(tracer_dict, indent=2), encoding="utf-8")
+
+                    with open(log_txt_dest, "w", encoding="utf-8") as lf:
+                        lf.write("======================================================================\n")
+                        lf.write("ApplyPilot Autonomous Application Execution Audit Log\n")
+                        lf.write("======================================================================\n")
+                        lf.write(f"Job:        {job.get('title')} at {job.get('company')}\n")
+                        lf.write(f"URL:        {job.get('application_url') or job.get('url')}\n")
+                        lf.write(f"Timestamp:  {datetime.now(timezone.utc).isoformat()}\n")
+                        lf.write(f"Duration:   {tracer_dict['total_duration_ms']}ms\n")
+                        lf.write(f"Video:      {saved_video or 'N/A'}\n")
+                        lf.write(f"Screenshot: {saved_screenshot or 'N/A'}\n")
+                        lf.write("----------------------------------------------------------------------\n\n")
+                        lf.write("[TIMELINE OF EVENTS]\n")
+                        for ev in tracer_dict.get("events", []):
+                            lf.write(f"  +{ev['elapsed_ms']:>5}ms [{ev['stage']:<15}] {ev['message']}\n")
+                        if tracer_dict.get("fields_filled"):
+                            lf.write("\n[FIELDS AUTOFILLED]\n")
+                            for f in tracer_dict["fields_filled"]:
+                                lf.write(f"  • {f['selector']} -> {f.get('value', '')} (action={f['action']})\n")
+                        if tracer_dict.get("qa_resolutions"):
+                            lf.write("\n[SCREENING Q&A RESOLUTIONS]\n")
+                            for qa in tracer_dict["qa_resolutions"]:
+                                lf.write(f"  • Q: {qa['question']} => A: {qa['answer']} (confidence={qa['confidence']:.2f}, key={qa['canonical_key']})\n")
+                        if tracer_dict.get("challenges"):
+                            lf.write("\n[SECURITY CHALLENGES ENCOUNTERED]\n")
+                            for ch in tracer_dict["challenges"]:
+                                lf.write(f"  • {ch.get('name')} at {ch.get('time')}\n")
+                        if tracer_dict.get("browser_console"):
+                            lf.write("\n[BROWSER CONSOLE OUTPUT]\n")
+                            for c in tracer_dict["browser_console"]:
+                                lf.write(f"  {c}\n")
+                        if tracer_dict.get("errors"):
+                            lf.write("\n[DOM & SUBMISSION ERRORS]\n")
+                            for err in tracer_dict["errors"]:
+                                lf.write(f"  ✖ {err}\n")
+                    saved_log = str(log_json_dest)
+                    logger.info("Saved application execution audit log: %s", log_json_dest)
+                except Exception as e:
+                    logger.debug("Failed saving execution audit log: %s", e)
+
+                # 6. Persist to SQLite
                 job_url = job.get("application_url") or job.get("url")
-                if conn and job_url and (saved_video or saved_screenshot):
+                if conn and job_url and (saved_video or saved_screenshot or saved_log):
                     try:
                         conn.execute(
-                            "UPDATE jobs SET proof_video_path = COALESCE(?, proof_video_path), proof_screenshot_path = COALESCE(?, proof_screenshot_path) WHERE url = ?",
-                            (saved_video, saved_screenshot, job_url),
+                            "UPDATE jobs SET proof_video_path = COALESCE(?, proof_video_path), proof_screenshot_path = COALESCE(?, proof_screenshot_path), proof_log_path = COALESCE(?, proof_log_path) WHERE url = ?",
+                            (saved_video, saved_screenshot, saved_log, job_url),
                         )
                         conn.commit()
                     except Exception as e:
@@ -262,8 +379,16 @@ async def _async_run_playwright_tier_engine(
                     pages = context.pages
                     page = pages[0] if pages else await context.new_page()
 
+            if hasattr(page, "on") and callable(page.on):
+                try:
+                    page.on("console", lambda msg: tracer.browser_console_logs.append(f"[{msg.type}] {msg.text}"))
+                    page.on("pageerror", lambda err: tracer.error_traces.append(str(err)))
+                except Exception:
+                    pass
+
             domain = urlparse(target_url).netloc
             ats_type = detect_form_ats(target_url)
+            tracer.log("ats_detect", f"Detected ATS: {ats_type} for domain {domain}")
 
             # Restore cookies from vault if available
             try:
@@ -277,8 +402,10 @@ async def _async_run_playwright_tier_engine(
             current_url = page.url or ""
             if not current_url or current_url.startswith("about:blank") or domain not in current_url:
                 try:
+                    tracer.log("navigation", f"Navigating to {target_url}")
                     await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
                     await page.wait_for_timeout(1500)
+                    tracer.log("navigation_done", f"Loaded page: {page.url}")
                 except Exception as e:
                     logger.debug("Page navigation to %s encountered: %s", target_url, e)
 
@@ -296,10 +423,12 @@ async def _async_run_playwright_tier_engine(
                         from urllib.parse import urljoin
                         target_app_url = urljoin(page.url, href)
                         logger.info("Found application entrance button; navigating to %s", target_app_url)
+                        tracer.log("entrance", f"Navigating to application form entrance: {target_app_url}")
                         await page.goto(target_app_url, wait_until="domcontentloaded", timeout=20000)
                         await page.wait_for_timeout(1500)
                     else:
                         logger.info("Found apply button; clicking to open application form...")
+                        tracer.log("entrance", "Clicking apply button on overview page to open form")
                         await apply_btn.click()
                         await page.wait_for_timeout(2000)
             except Exception as e:
@@ -314,6 +443,8 @@ async def _async_run_playwright_tier_engine(
             challenge = await detect_challenge(page)
             if challenge:
                 ch_name = challenge.get("name", "Security Challenge")
+                tracer.challenges_encountered.append({"name": ch_name, "time": datetime.now(timezone.utc).isoformat()})
+                tracer.log("security_challenge", f"Detected {ch_name} challenge")
                 if not headless:
                     logger.info("Detected %s on entry. Triggering audible HITL challenge resolver...", ch_name)
                     resolved = await wait_for_human_challenge_resolution(page, challenge, timeout_sec=180)
@@ -371,6 +502,11 @@ async def _async_run_playwright_tier_engine(
                 conn=conn,
             )
 
+            filled_std = fill_result.get("filled", {})
+            tracer.log("tier0_fill", f"Autofilled {len(filled_std)} standard fields", {"keys": list(filled_std.keys())})
+            for k, v in filled_std.items():
+                tracer.add_field(k, "profile_autofill", v, success=True)
+
             # ------------------------------------------------------------------
             # Phase 3: Try resolving screening questions via Tier 1 Semantic Q&A
             # ------------------------------------------------------------------
@@ -394,6 +530,7 @@ async def _async_run_playwright_tier_engine(
 
                 filled_ok = False
                 if val is not None and conf >= 0.85:
+                    tracer.add_qa(label, val, conf, can_key, ftype)
                     try:
                         # Attempt to fill the resolved answer
                         loc = None
@@ -410,6 +547,7 @@ async def _async_run_playwright_tier_engine(
                             else:
                                 await loc.fill(str(val))
                             filled_ok = True
+                            tracer.log("screening_qa", f"Filled Tier 1 Q&A: '{label}' -> '{val}' (conf: {conf:.2f})")
 
                             # Record learned mapping
                             if field_id:
@@ -417,6 +555,7 @@ async def _async_run_playwright_tier_engine(
                                 store_selector(ats_type, domain, sel, "fill" if ftype not in ("select", "radio") else "select", can_key, conn=conn)
                     except Exception as e:
                         logger.debug("Failed applying Tier 1 answer for %s: %s", label, e)
+                        tracer.error_traces.append(f"Tier 1 fill error for {label}: {e}")
 
                 if not filled_ok and (required or ftype in ("textarea", "select", "radio")):
                     remaining_unresolved.append(field)
@@ -629,6 +768,7 @@ async def _async_run_playwright_tier_engine(
             # Auto-Submit Mode:
             if submit_btn:
                 logger.info("[W%d] Auto-submitting application via Playwright...", worker_id)
+                tracer.log("auto_submit", "Auto-submitting application via Playwright submit button click")
                 try:
                     await submit_btn.scroll_into_view_if_needed()
                     await page.wait_for_timeout(500)

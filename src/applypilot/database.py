@@ -230,7 +230,8 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             apply_task_id         TEXT,
             verification_confidence TEXT,
             proof_video_path      TEXT,
-            proof_screenshot_path TEXT
+            proof_screenshot_path TEXT,
+            proof_log_path        TEXT
         )
     """)
     conn.execute("""

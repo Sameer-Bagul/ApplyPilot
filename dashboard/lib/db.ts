@@ -46,6 +46,7 @@ export interface StatsData {
   recentLeads: any[];
   hitlCount: number;
   pendingReviewsCount: number;
+  appliedCount: number;
 }
 
 export function getDashboardStats(): StatsData {
@@ -55,6 +56,7 @@ export function getDashboardStats(): StatsData {
   const totalCompanies = (db.prepare('SELECT COUNT(*) as c FROM career_watchlist').get() as any)?.c || 0;
   const totalLeads = (db.prepare('SELECT COUNT(*) as c FROM recruiter_leads').get() as any)?.c || 0;
   const vipCompanies = (db.prepare('SELECT COUNT(*) as c FROM career_watchlist WHERE is_vip = 1').get() as any)?.c || 0;
+  const appliedCount = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE state = 'applied' OR apply_status = 'applied' OR proof_video_path IS NOT NULL").get() as any)?.c || 0;
 
   const dualAttack = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'DUAL_ATTACK'").get() as any)?.c || 0;
   const portalOnly = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'PORTAL_ONLY'").get() as any)?.c || 0;
@@ -113,6 +115,7 @@ export function getDashboardStats(): StatsData {
     recentLeads,
     hitlCount,
     pendingReviewsCount,
+    appliedCount,
   };
 }
 
@@ -132,8 +135,9 @@ export function getJobs(params: {
   const offset = (page - 1) * limit;
 
   let query = `
-    SELECT url, title, company, location, site, execution_route, fit_score, 
-           discovered_at, state, description, salary, score_reasoning
+    SELECT url, application_url, title, company, location, site, execution_route, fit_score, 
+           discovered_at, applied_at, state, description, salary, score_reasoning,
+           proof_video_path, proof_screenshot_path, proof_log_path, apply_status
     FROM jobs 
     WHERE 1=1
   `;
@@ -195,6 +199,50 @@ export function getJobs(params: {
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
 
   query += ` ORDER BY discovered_at DESC NULLS LAST LIMIT ? OFFSET ?`;
+  queryParams.push(limit, offset);
+
+  const jobs = db.prepare(query).all(...queryParams);
+
+  return {
+    jobs,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
+export function getAppliedJobs(params: {
+  search?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const db = getDb();
+  const page = Math.max(1, params.page || 1);
+  const limit = Math.min(100, Math.max(1, params.limit || 20));
+  const offset = (page - 1) * limit;
+
+  let query = `
+    SELECT url, application_url, title, company, location, site, execution_route, fit_score,
+           discovered_at, applied_at, state, description, salary, score_reasoning,
+           proof_video_path, proof_screenshot_path, proof_log_path, apply_status, apply_duration_ms
+    FROM jobs
+    WHERE (state = 'applied' OR apply_status = 'applied' OR proof_video_path IS NOT NULL OR proof_screenshot_path IS NOT NULL)
+  `;
+  const queryParams: any[] = [];
+
+  if (params.search) {
+    query += ` AND (title LIKE ? OR company LIKE ? OR location LIKE ?)`;
+    const s = `%${params.search}%`;
+    queryParams.push(s, s, s);
+  }
+
+  const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
+  const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
+
+  query += ` ORDER BY COALESCE(applied_at, discovered_at) DESC LIMIT ? OFFSET ?`;
   queryParams.push(limit, offset);
 
   const jobs = db.prepare(query).all(...queryParams);
