@@ -198,3 +198,93 @@ def test_playwright_engine_resolved_submits(test_db, monkeypatch):
         mock_submit_btn.click.assert_awaited_once()
 
     asyncio.run(_run())
+
+
+def test_playwright_engine_records_proof_and_updates_db(test_db, monkeypatch, tmp_path):
+    async def _run():
+        job_url = "https://boards.greenhouse.io/acme/jobs/999"
+        test_db.execute(
+            "INSERT INTO jobs (url, title, company, fit_score, state) VALUES (?, ?, ?, ?, 'ready')",
+            (job_url, "AI Engineer", "Acme Corp", 10),
+        )
+        test_db.commit()
+
+        # Set proofs dir to tmp_path
+        monkeypatch.setattr("applypilot.config.PROOFS_VIDEOS_DIR", tmp_path / "videos")
+        monkeypatch.setattr("applypilot.config.PROOFS_SCREENSHOTS_DIR", tmp_path / "screenshots")
+
+        # Create dummy source video file
+        raw_video = tmp_path / "raw_test_recording.webm"
+        raw_video.write_bytes(b"RIFF....WEBM_TEST_DATA")
+
+        mock_video = MagicMock()
+        mock_video.path = AsyncMock(return_value=str(raw_video))
+
+        mock_page = MagicMock()
+        mock_page.url = job_url
+        mock_page.goto = AsyncMock()
+        mock_page.wait_for_timeout = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.screenshot = AsyncMock()
+        mock_page.close = AsyncMock()
+        mock_page.video = mock_video
+
+        mock_context = MagicMock()
+        mock_context.pages = [mock_page]
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.cookies = AsyncMock(return_value=[])
+        mock_context.close = AsyncMock()
+
+        mock_browser = MagicMock()
+        mock_browser.contexts = [mock_context]
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_playwright
+        mock_cm.__aexit__.return_value = None
+
+        mock_pw_mod = MagicMock()
+        mock_pw_async = MagicMock()
+        mock_pw_mod.async_api = mock_pw_async
+        mock_pw_async.async_playwright = lambda: mock_cm
+        monkeypatch.setitem(sys.modules, "playwright", mock_pw_mod)
+        monkeypatch.setitem(sys.modules, "playwright.async_api", mock_pw_async)
+
+        monkeypatch.setattr(
+            "applypilot.apply.playwright_engine.fill_standard_fields_playwright",
+            AsyncMock(return_value={"filled": {}, "unresolved": [], "duration_ms": 200}),
+        )
+
+        mock_submit = MagicMock()
+        mock_submit.is_visible = AsyncMock(return_value=True)
+        mock_submit.scroll_into_view_if_needed = AsyncMock()
+        mock_submit.click = AsyncMock()
+        mock_page.locator = MagicMock(return_value=MagicMock(first=mock_submit))
+
+        # Run direct launch with auto_submit=True
+        status, duration, qs = await _async_run_playwright_tier_engine(
+            job={"url": job_url, "title": "AI Engineer", "company": "Acme Corp"},
+            port=0,
+            headless=True,
+            auto_submit=True,
+            conn=test_db,
+        )
+
+        assert status == "applied"
+        mock_submit.click.assert_awaited_once()
+
+        # Check DB was updated with proof paths
+        row = test_db.execute("SELECT proof_video_path, proof_screenshot_path FROM jobs WHERE url = ?", (job_url,)).fetchone()
+        assert row is not None
+        v_path, s_path = row[0], row[1]
+        assert v_path is not None
+        assert "Acme_Corp" in v_path
+        assert v_path.endswith(".webm")
+        assert Path(v_path).exists()
+        assert Path(v_path).read_bytes() == b"RIFF....WEBM_TEST_DATA"
+
+    asyncio.run(_run())

@@ -25,9 +25,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Ticket does not contain a job_url' }, { status: 400 });
     }
 
-    // Launch apply in headed mode
+    // Launch apply in headed mode with auto-submit enabled by default
     const args = ['apply', '--url', targetUrl];
-    if (body.auto_submit || body.autoSubmit) {
+    if (body.auto_submit !== false && body.autoSubmit !== false) {
       args.push('--auto-submit');
     }
 

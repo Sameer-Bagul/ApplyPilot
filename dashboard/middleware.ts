@@ -10,11 +10,12 @@ export default withAuth(
       authorized({ req, token }) {
         const { pathname } = req.nextUrl;
 
-        // Publicly accessible paths: landing/login, next-auth handlers, and public platform stats
+        // Publicly accessible paths: landing/login, next-auth handlers, public platform stats, and proof media
         if (
           pathname === '/login' ||
           pathname.startsWith('/api/auth') ||
           pathname.startsWith('/api/stats') ||
+          pathname.startsWith('/api/proofs') ||
           pathname.startsWith('/_next') ||
           pathname.includes('.')
         ) {

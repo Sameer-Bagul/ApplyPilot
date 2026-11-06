@@ -47,6 +47,7 @@ export function AutoApplyButton({
           jobUrl,
           mode: 'headed',
           headless: false,
+          auto_submit: true,
         }),
       });
 

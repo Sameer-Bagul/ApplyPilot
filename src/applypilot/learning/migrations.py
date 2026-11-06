@@ -267,9 +267,11 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
     _add_column_if_missing(conn, "career_watchlist", "investigated_at", "TIMESTAMP")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_priority ON career_watchlist(priority_tier, is_vip)")
 
-    # Ensure jobs table has execution_route
+    # Ensure jobs table has execution_route and proof recording columns
     if "jobs" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
         _add_column_if_missing(conn, "jobs", "execution_route", "TEXT")
+        _add_column_if_missing(conn, "jobs", "proof_video_path", "TEXT")
+        _add_column_if_missing(conn, "jobs", "proof_screenshot_path", "TEXT")
 
     # 7. SQLite FTS5 virtual table qa_fts
     try:

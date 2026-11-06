@@ -228,7 +228,9 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             last_attempted_at     TEXT,
             apply_duration_ms     INTEGER,
             apply_task_id         TEXT,
-            verification_confidence TEXT
+            verification_confidence TEXT,
+            proof_video_path      TEXT,
+            proof_screenshot_path TEXT
         )
     """)
     conn.execute("""

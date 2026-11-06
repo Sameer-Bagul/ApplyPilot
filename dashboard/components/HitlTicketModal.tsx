@@ -74,7 +74,7 @@ export function HitlTicketModal({
       const res = await fetch('/api/hitl/solve-captcha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticketId }),
+        body: JSON.stringify({ ticketId, auto_submit: true }),
       });
       const json = await res.json();
       if (json.success) {

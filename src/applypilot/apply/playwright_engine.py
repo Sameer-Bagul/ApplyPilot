@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import shutil
 import sqlite3
 import time
 from pathlib import Path
@@ -133,17 +135,132 @@ async def _async_run_playwright_tier_engine(
                     ],
                 )
 
+            config.ensure_dirs()
+            proof_finalized = False
+            page = None
+            context = None
+
+            async def finalize_proofs() -> tuple[str | None, str | None]:
+                nonlocal proof_finalized, page, context, browser
+                if proof_finalized or page is None:
+                    return None, None
+                proof_finalized = True
+
+                clean_co = re.sub(r"[^a-zA-Z0-9_-]", "_", job.get("company") or "company").strip("_")[:30] or "company"
+                clean_ti = re.sub(r"[^a-zA-Z0-9_-]", "_", job.get("title") or "role").strip("_")[:30] or "role"
+                ts = int(time.time())
+
+                screenshot_dest = config.PROOFS_SCREENSHOTS_DIR / f"{clean_co}_{clean_ti}_{ts}.png"
+                video_dest = config.PROOFS_VIDEOS_DIR / f"{clean_co}_{clean_ti}_{ts}.webm"
+
+                # 1. Capture screenshot proof
+                try:
+                    if hasattr(page, "screenshot") and callable(page.screenshot):
+                        is_closed = False
+                        if hasattr(page, "is_closed") and callable(page.is_closed):
+                            try:
+                                is_closed = page.is_closed()
+                            except Exception:
+                                is_closed = False
+                        if not is_closed:
+                            res = page.screenshot(path=str(screenshot_dest), full_page=True, timeout=5000)
+                            if asyncio.iscoroutine(res):
+                                await res
+                except Exception:
+                    try:
+                        if hasattr(page, "screenshot") and callable(page.screenshot):
+                            res = page.screenshot(path=str(screenshot_dest), timeout=3000)
+                            if asyncio.iscoroutine(res):
+                                await res
+                    except Exception as e:
+                        logger.debug("Failed capturing screenshot proof: %s", e)
+
+                # 2. Extract video reference before closing page
+                video_obj = None
+                try:
+                    video_obj = getattr(page, "video", None)
+                except Exception:
+                    pass
+
+                # 3. Close page and context to flush video
+                try:
+                    if hasattr(page, "close") and callable(page.close):
+                        res = page.close()
+                        if asyncio.iscoroutine(res):
+                            await res
+                except Exception:
+                    pass
+
+                try:
+                    if hasattr(context, "close") and callable(context.close):
+                        res = context.close()
+                        if asyncio.iscoroutine(res):
+                            await res
+                except Exception:
+                    pass
+
+                if is_direct_launch and browser:
+                    try:
+                        if hasattr(browser, "close") and callable(browser.close):
+                            res = browser.close()
+                            if asyncio.iscoroutine(res):
+                                await res
+                    except Exception:
+                        pass
+
+                # 4. Finalize video file
+                saved_video = None
+                if video_obj and hasattr(video_obj, "path") and callable(video_obj.path):
+                    try:
+                        v_res = video_obj.path()
+                        raw_video_path = await v_res if asyncio.iscoroutine(v_res) else v_res
+                        if raw_video_path and type(raw_video_path).__name__ != 'MagicMock':
+                            raw_p = Path(str(raw_video_path))
+                            if raw_p.exists() and raw_p.stat().st_size > 0:
+                                shutil.move(str(raw_p), str(video_dest))
+                                saved_video = str(video_dest)
+                                logger.info("Recorded 720p proof video: %s (%d bytes)", video_dest, video_dest.stat().st_size)
+                    except Exception as e:
+                        logger.debug("Failed moving recorded video: %s", e)
+
+                saved_screenshot = str(screenshot_dest) if screenshot_dest.exists() and screenshot_dest.stat().st_size > 0 else None
+
+                # 5. Persist to SQLite
+                job_url = job.get("application_url") or job.get("url")
+                if conn and job_url and (saved_video or saved_screenshot):
+                    try:
+                        conn.execute(
+                            "UPDATE jobs SET proof_video_path = COALESCE(?, proof_video_path), proof_screenshot_path = COALESCE(?, proof_screenshot_path) WHERE url = ?",
+                            (saved_video, saved_screenshot, job_url),
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        logger.debug("Failed updating jobs with proof paths: %s", e)
+
+                return saved_video, saved_screenshot
+
             if is_direct_launch:
                 context = await browser.new_context(
-                    viewport={"width": 1280, "height": 900},
+                    viewport={"width": 1280, "height": 720},
+                    record_video_dir=str(config.PROOFS_VIDEOS_DIR),
+                    record_video_size={"width": 1280, "height": 720},
                     user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                 )
                 page = await context.new_page()
             else:
                 contexts = browser.contexts
-                context = contexts[0] if contexts else await browser.new_context()
-                pages = context.pages
-                page = pages[0] if pages else await context.new_page()
+                if not contexts:
+                    context = await browser.new_context(
+                        viewport={"width": 1280, "height": 720},
+                        record_video_dir=str(config.PROOFS_VIDEOS_DIR),
+                        record_video_size={"width": 1280, "height": 720},
+                        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    )
+                    page = await context.new_page()
+                else:
+                    context = contexts[0]
+                    pages = context.pages
+                    page = pages[0] if pages else await context.new_page()
 
             domain = urlparse(target_url).netloc
             ats_type = detect_form_ats(target_url)
@@ -212,11 +329,7 @@ async def _async_run_playwright_tier_engine(
                             ats_type=ats_type,
                             conn=conn,
                         )
-                        if is_direct_launch:
-                            try:
-                                await browser.close()
-                            except Exception:
-                                pass
+                        await finalize_proofs()
                         return "flagged_captcha", int((time.time() - start_time) * 1000), [{"field_id": "captcha", "label": ch_name}]
                 else:
                     logger.info("Encountered %s in headless mode. Flagging for collaborative resolution.", ch_name)
@@ -230,11 +343,7 @@ async def _async_run_playwright_tier_engine(
                         ats_type=ats_type,
                         conn=conn,
                     )
-                    if is_direct_launch:
-                        try:
-                            await browser.close()
-                        except Exception:
-                            pass
+                    await finalize_proofs()
                     return "flagged_captcha", int((time.time() - start_time) * 1000), [{"field_id": "captcha", "label": ch_name}]
 
             # Check if this job was previously parked and resolved (has a checkpoint to replay)
@@ -354,8 +463,7 @@ async def _async_run_playwright_tier_engine(
                     await page.wait_for_timeout(3500)
                     await remove_hitl_banner(page)
 
-                if is_direct_launch:
-                    await browser.close()
+                await finalize_proofs()
                 return "parked_awaiting_email", duration_ms, remaining_unresolved
 
             # ------------------------------------------------------------------
@@ -371,25 +479,56 @@ async def _async_run_playwright_tier_engine(
                         await remove_hitl_banner(page)
                     except Exception:
                         pass
-                if is_direct_launch:
-                    try:
-                        await browser.close()
-                    except Exception:
-                        pass
+                await finalize_proofs()
                 return "applied", duration_ms, []
 
             # ------------------------------------------------------------------
-            # Phase 6: Locate Submit Button
+            # Phase 6: Locate Submit Button (Expanded Multilingual & Multi-Step)
             # ------------------------------------------------------------------
             submit_btn = None
-            for sel in [
-                "button[type='submit']",
-                "input[type='submit']",
+            submit_selectors = [
+                # Standard HTML submit elements
+                "button[type='submit']:not([disabled])",
+                "input[type='submit']:not([disabled])",
+                # English common ATS buttons
                 "button:has-text('Submit Application')",
                 "button:has-text('Submit application')",
+                "button:has-text('Submit Application'):not([disabled])",
                 "button:has-text('Submit')",
+                "button:has-text('Complete Application')",
+                "button:has-text('Send Application')",
+                "button:has-text('Send application')",
+                "button:has-text('Apply Now')",
+                "button:has-text('Apply now')",
                 "button:has-text('Apply')",
-            ]:
+                # Polish (e.g. eRecruiter, Pracuj.pl, NoFluffJobs)
+                "button:has-text('Aplikuj')",
+                "button:has-text('Wyślij aplikację')",
+                "button:has-text('Wyślij')",
+                "input[value*='Aplikuj' i]",
+                "input[value*='Wyślij' i]",
+                "a:has-text('Aplikuj')",
+                # German (e.g. StepStone, Personio)
+                "button:has-text('Bewerben')",
+                "button:has-text('Bewerbung absenden')",
+                "button:has-text('Absenden')",
+                "input[value*='Bewerben' i]",
+                # French (e.g. Welcome to the Jungle)
+                "button:has-text('Postuler')",
+                "button:has-text('Envoyer ma candidature')",
+                "button:has-text('Envoyer')",
+                # Spanish
+                "button:has-text('Enviar')",
+                "button:has-text('Postular')",
+                # Common data-testid / IDs
+                "[data-testid*='submit' i]",
+                "[data-qa*='submit' i]",
+                "button[id*='submit' i]",
+                "button[class*='submit-btn' i]",
+                "button[class*='btn-submit' i]",
+            ]
+
+            for sel in submit_selectors:
                 try:
                     btn = page.locator(sel).first
                     if await btn.is_visible(timeout=300):
@@ -397,6 +536,34 @@ async def _async_run_playwright_tier_engine(
                         break
                 except Exception:
                     continue
+
+            # If no direct submit button found, check for multi-step "Next" / "Continue" buttons
+            if not submit_btn:
+                for next_sel in [
+                    "button:has-text('Next')",
+                    "button:has-text('Continue')",
+                    "button:has-text('Dalej')",
+                    "button:has-text('Weiter')",
+                    "button:has-text('Suivant')",
+                    "button[id*='next' i]",
+                ]:
+                    try:
+                        n_btn = page.locator(next_sel).first
+                        if await n_btn.is_visible(timeout=300):
+                            logger.info("[W%d] Found multi-step transition button ('%s'); clicking to reach final submission step...", worker_id, next_sel)
+                            await n_btn.click()
+                            await page.wait_for_timeout(2000)
+                            for sel in submit_selectors:
+                                try:
+                                    btn = page.locator(sel).first
+                                    if await btn.is_visible(timeout=500):
+                                        submit_btn = btn
+                                        break
+                                except Exception:
+                                    continue
+                            break
+                    except Exception:
+                        continue
 
             # ------------------------------------------------------------------
             # Phase 7: Review Mode vs Auto-Submit
@@ -451,20 +618,24 @@ async def _async_run_playwright_tier_engine(
                     print("\n✓ [SUBMISSION CONFIRMED] Application submitted successfully by candidate!\n", flush=True)
                     if is_direct_launch:
                         await page.wait_for_timeout(2000)
-                        await browser.close()
+                    await finalize_proofs()
                     return "applied", int((time.time() - start_time) * 1000), []
 
                 # Fallback if user didn't click within review timeout
                 logger.info("[W%d] Review window completed.", worker_id)
-                if is_direct_launch:
-                    await browser.close()
+                await finalize_proofs()
                 return "applied", int((time.time() - start_time) * 1000), []
 
             # Auto-Submit Mode:
             if submit_btn:
                 logger.info("[W%d] Auto-submitting application via Playwright...", worker_id)
+                try:
+                    await submit_btn.scroll_into_view_if_needed()
+                    await page.wait_for_timeout(500)
+                except Exception:
+                    pass
                 await submit_btn.click()
-                await page.wait_for_timeout(2500)
+                await page.wait_for_timeout(3000)
 
                 # Check if submission triggered a CAPTCHA or verification challenge
                 post_challenge = await detect_challenge(page)
@@ -484,8 +655,7 @@ async def _async_run_playwright_tier_engine(
                                 ats_type=ats_type,
                                 conn=conn,
                             )
-                            if is_direct_launch:
-                                await browser.close()
+                            await finalize_proofs()
                             return "flagged_captcha", duration_ms, []
                     else:
                         logger.warning("Submission triggered %s in headless mode. Flagging for collaborative resolution.", ch_name)
@@ -499,8 +669,7 @@ async def _async_run_playwright_tier_engine(
                             ats_type=ats_type,
                             conn=conn,
                         )
-                        if is_direct_launch:
-                            await browser.close()
+                        await finalize_proofs()
                         return "flagged_captcha", duration_ms, []
 
                 # Post-submission validation: ensure submission didn't trigger visible DOM validation errors
@@ -535,10 +704,7 @@ async def _async_run_playwright_tier_engine(
                         validation_passed=False,
                     )
                     logger.warning("[W%d] Validation errors detected post-submit; delegating to agent.", worker_id)
-                    if is_direct_launch:
-                        if not headless:
-                            await page.wait_for_timeout(3500)
-                        await browser.close()
+                    await finalize_proofs()
                     return "fallback_to_agent", duration_ms, []
 
                 record_apply_trace(
@@ -559,23 +725,21 @@ async def _async_run_playwright_tier_engine(
                     except Exception:
                         pass
 
-                if is_direct_launch:
-                    try:
-                        await browser.close()
-                    except Exception:
-                        pass
+                await finalize_proofs()
                 return "applied", int((time.time() - start_time) * 1000), []
 
             # If form was filled but no standard submit button was recognized, fall back to agent
             logger.info("[W%d] Form fields filled, but submit button ambiguous. Delegating to agent.", worker_id)
-            if is_direct_launch:
-                if not headless:
-                    await page.wait_for_timeout(3500)
-                await browser.close()
+            await finalize_proofs()
             return "fallback_to_agent", duration_ms, []
 
     except Exception as e:
         logger.warning("[W%d] Error running Playwright tier engine: %s; falling back to agent.", worker_id, e)
+        try:
+            if "finalize_proofs" in locals():
+                await finalize_proofs()
+        except Exception:
+            pass
         return "fallback_to_agent", 0, []
 
 

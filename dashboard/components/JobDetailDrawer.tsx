@@ -23,6 +23,11 @@ import {
   Play,
   Monitor,
   ShieldAlert,
+  Video,
+  Camera,
+  Download,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { RouteBadge } from './ui/RouteBadge';
 
@@ -44,7 +49,9 @@ export function JobDetailDrawer({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'description' | 'scoring' | 'leads' | 'edit'>('description');
+  const [activeTab, setActiveTab] = useState<'description' | 'scoring' | 'leads' | 'proof' | 'edit'>('description');
+  const [copiedVideo, setCopiedVideo] = useState(false);
+  const [copiedScreenshot, setCopiedScreenshot] = useState(false);
   
   // Application runner state (Phase 2)
   const [applyingMode, setApplyingMode] = useState<'headless' | 'headed' | null>(null);
@@ -69,6 +76,7 @@ export function JobDetailDrawer({
         body: JSON.stringify({
           jobUrl,
           headless: mode === 'headless',
+          auto_submit: true,
         }),
       });
       const resJson = await res.json();
@@ -302,6 +310,20 @@ export function JobDetailDrawer({
             </span>
           </button>
           <button
+            onClick={() => setActiveTab('proof')}
+            className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'proof'
+                ? 'liquid-pill bg-white text-zinc-950 font-bold shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900'
+            }`}
+          >
+            <Video className="w-3.5 h-3.5 text-cyan-600" />
+            <span>Submission Proof</span>
+            {(job?.proof_video_path || job?.proof_screenshot_path) && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('edit')}
             className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               activeTab === 'edit'
@@ -468,6 +490,156 @@ export function JobDetailDrawer({
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'proof' && (
+                <div className="space-y-6">
+                  {/* Proof Overview Card */}
+                  <div className="liquid-glass-elevated rounded-2xl p-5 border border-white/90 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Video className="w-5 h-5 text-cyan-600" />
+                        <span className="text-sm font-bold text-zinc-900">
+                          Application Verification Proof
+                        </span>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        job?.proof_video_path || job?.proof_screenshot_path
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                      }`}>
+                        {job?.proof_video_path && job?.proof_screenshot_path
+                          ? '720p HD Video & Screenshot Saved'
+                          : job?.proof_video_path
+                          ? '720p HD Video Saved'
+                          : job?.proof_screenshot_path
+                          ? 'Screenshot Saved'
+                          : 'No Proof Recorded Yet'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-600 leading-relaxed">
+                      ApplyPilot records a 720p (1280x720) video of the browser filling and submitting the application form, alongside a full-page confirmation screenshot saved directly to local storage on your device.
+                    </p>
+                  </div>
+
+                  {/* 720p Video Recording Section */}
+                  <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Monitor className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                          720p Video Recording (.webm)
+                        </span>
+                      </div>
+                      {job?.proof_video_path && (
+                        <a
+                          href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=video&download=1`}
+                          className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                          download
+                        >
+                          <Download className="w-3.5 h-3.5 text-cyan-600" />
+                          <span>Download .webm</span>
+                        </a>
+                      )}
+                    </div>
+
+                    {job?.proof_video_path ? (
+                      <div className="space-y-3">
+                        <div className="relative rounded-2xl overflow-hidden bg-black/95 shadow-inner border border-zinc-300/80 aspect-video flex items-center justify-center">
+                          <video
+                            controls
+                            preload="metadata"
+                            className="w-full h-full object-contain"
+                            src={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=video`}
+                          >
+                            Your browser does not support HTML5 video streaming.
+                          </video>
+                        </div>
+                        <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-[11px] text-zinc-600 flex items-center justify-between gap-2">
+                          <span className="font-mono truncate">{job.proof_video_path}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(job.proof_video_path);
+                              setCopiedVideo(true);
+                              setTimeout(() => setCopiedVideo(false), 2000);
+                            }}
+                            className="liquid-pill p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 shrink-0 cursor-pointer"
+                            title="Copy local path"
+                          >
+                            {copiedVideo ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center rounded-2xl bg-zinc-50/80 border border-dashed border-zinc-200 space-y-2">
+                        <Video className="w-8 h-8 text-zinc-300 mx-auto" />
+                        <p className="text-xs text-zinc-500 font-medium">
+                          No 720p video recorded yet for this role.
+                        </p>
+                        <p className="text-[11px] text-zinc-400">
+                          Click "Apply Headed" or "Apply Headless" below to execute an autonomous application with 720p video recording.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Screenshot Confirmation Receipt Section */}
+                  <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-emerald-600" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                          Confirmation Screenshot Receipt (.png)
+                        </span>
+                      </div>
+                      {job?.proof_screenshot_path && (
+                        <a
+                          href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot&download=1`}
+                          className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                          download
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Download .png</span>
+                        </a>
+                      )}
+                    </div>
+
+                    {job?.proof_screenshot_path ? (
+                      <div className="space-y-3">
+                        <div className="rounded-2xl overflow-hidden bg-white border border-zinc-200 shadow-sm max-h-[450px] overflow-y-auto">
+                          <img
+                            src={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot`}
+                            alt="Application submission confirmation receipt"
+                            className="w-full h-auto object-cover"
+                          />
+                        </div>
+                        <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-[11px] text-zinc-600 flex items-center justify-between gap-2">
+                          <span className="font-mono truncate">{job.proof_screenshot_path}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(job.proof_screenshot_path);
+                              setCopiedScreenshot(true);
+                              setTimeout(() => setCopiedScreenshot(false), 2000);
+                            }}
+                            className="liquid-pill p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 shrink-0 cursor-pointer"
+                            title="Copy local path"
+                          >
+                            {copiedScreenshot ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center rounded-2xl bg-zinc-50/80 border border-dashed border-zinc-200 space-y-2">
+                        <Camera className="w-8 h-8 text-zinc-300 mx-auto" />
+                        <p className="text-xs text-zinc-500 font-medium">
+                          No screenshot receipt captured yet.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
