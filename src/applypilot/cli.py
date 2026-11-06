@@ -628,6 +628,37 @@ def harvest_freehire(
         console.print(f"  • Watchlist Companies Added: {summary['total_companies_watchlist_added']}")
 
 
+@app.command("harvest-enterprise")
+def harvest_enterprise_cmd(
+    companies: Optional[list[str]] = typer.Option(None, "--company", "-c", help="Specific company slugs (e.g. barclays, mastercard, jpmc, visa, goldman-sachs)."),
+    limit: int = typer.Option(20, "--limit", "-l", help="Number of postings to fetch per company."),
+    india_only: bool = typer.Option(False, "--india-only", "-i", help="Restrict jobs to India hubs (Bengaluru, Pune, Hyderabad, Gurgaon)."),
+) -> None:
+    """Harvest jobs from premier Fortune 500 banks, FinTech & Big Tech GCCs (Barclays, Mastercard, JPMC, Visa, etc.)."""
+    _bootstrap()
+    from applypilot.discovery.enterprise_harvester import harvest_enterprise_companies
+
+    countries = ["in"] if india_only else None
+    scope = "India Hubs" if india_only else "Global & India Hubs"
+    console.print(f"[bold blue]Harvesting Enterprise & GCC Giants ({scope})...[/bold blue]")
+
+    summary = harvest_enterprise_companies(
+        companies=companies,
+        limit_per_company=limit,
+        countries=countries,
+    )
+
+    console.print(f"[bold green]Enterprise Sweep Complete![/bold green]")
+    console.print(f"  • Companies Scanned: {summary['companies_scanned']}")
+    console.print(f"  • Total Jobs Scraped: {summary['total_jobs_fetched']}")
+    console.print(f"  • Brand New Jobs Ingested: {summary['new_jobs_stored']}")
+    console.print(f"  • Existing Deduped: {summary['existing_jobs']}")
+    for comp, dt in summary["company_details"].items():
+        if "error" not in dt:
+            console.print(f"    - [cyan]{comp}[/cyan]: {dt.get('new_stored', 0)} new stored ({dt.get('total_available', 0)} in catalog)")
+
+
+
 @app.command("harvest-emails")
 def harvest_emails_cmd(
     domain: str = typer.Option(..., "--domain", "-d", help="Target corporate domain (e.g. stripe.com)."),

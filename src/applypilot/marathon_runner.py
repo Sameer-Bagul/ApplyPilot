@@ -36,8 +36,18 @@ console = Console()
 # Domain clusters for cyclical rotation
 DOMAIN_ROTATION_CLUSTERS = [
     {
+        "name": "Enterprise Banking & FinTech Giants",
+        "categories": ["ai_engineering", "software_engineering"],
+        "enterprise_slugs": ["barclays", "mastercard", "visa", "american-express", "jpmc", "goldman-sachs", "morgan-stanley"],
+    },
+    {
         "name": "AI & Machine Learning",
         "categories": ["ai_engineering", "ml_ai", "data_science"],
+    },
+    {
+        "name": "Global Capability Centers (GCCs) & Big Tech",
+        "categories": ["devops", "cloud", "backend"],
+        "enterprise_slugs": ["citi", "wells-fargo", "hsbc", "microsoft", "amazon", "google", "nvidia", "walmart"],
     },
     {
         "name": "Fullstack & Core Engineering",
@@ -340,6 +350,26 @@ def run_marathon_pipeline(
                 console.print(f"    [yellow]Notice on {cat}:[/yellow] {e}")
 
             time.sleep(domain_delay)
+
+        # -------------------------------------------------------------
+        # 1b. Enterprise Fortune 500 & GCC Slugs (Workday / ATS)
+        # -------------------------------------------------------------
+        enterprise_slugs = cluster.get("enterprise_slugs", [])
+        if enterprise_slugs and not session.is_time_up and not session.stop_requested:
+            try:
+                from applypilot.discovery.enterprise_harvester import harvest_enterprise_companies
+                console.print(f"  [cyan]Sweeping Enterprise GCC Giants:[/cyan] [bold]{', '.join(enterprise_slugs[:4])}...[/bold]")
+                res_ent = harvest_enterprise_companies(
+                    companies=enterprise_slugs,
+                    limit_per_company=15,
+                    conn=conn,
+                )
+                ent_new = res_ent.get("new_jobs_stored", 0)
+                session.metrics["jobs_discovered"] += ent_new
+                console.print(f"    [dim]Ingested {ent_new} new roles from {res_ent.get('companies_scanned', 0)} enterprise giants[/dim]")
+            except Exception as e:
+                logger.warning("Error in enterprise sweep: %s", e)
+                console.print(f"    [yellow]Notice on enterprise sweep:[/yellow] {e}")
 
         # -------------------------------------------------------------
         # 2. Watchlist Deep Looper & In-Flight Leads Check
