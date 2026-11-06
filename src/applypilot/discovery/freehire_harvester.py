@@ -75,15 +75,33 @@ class FreeHireClient:
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "Accept": "text/event-stream, application/json",
+                "Accept": "application/json, text/event-stream",
                 "User-Agent": "ApplyPilot/2.0",
+                "Connection": "close",
             },
         )
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                raw_bytes = resp.read()
-                raw_text = raw_bytes.decode("utf-8")
+                for line in resp:
+                    line_str = line.decode("utf-8", errors="ignore").strip()
+                    if line_str.startswith("data: "):
+                        json_str = line_str[6:].strip()
+                        try:
+                            data = json.loads(json_str)
+                            result = data.get("result", {})
+                            if "structuredContent" in result:
+                                return result["structuredContent"]
+                            if "content" in result and isinstance(result["content"], list):
+                                for item in result["content"]:
+                                    if item.get("type") == "text":
+                                        try:
+                                            return json.loads(item.get("text", "{}"))
+                                        except Exception:
+                                            pass
+                            return result
+                        except Exception as parse_err:
+                            logger.debug("Failed to parse SSE JSON chunk: %s", parse_err)
         except urllib.error.HTTPError as e:
             logger.warning("FreeHire MCP HTTP error %s: %s", e.code, e.reason)
             return {"error": f"HTTP {e.code}: {e.reason}"}
@@ -91,34 +109,7 @@ class FreeHireClient:
             logger.warning("FreeHire MCP request failed: %s", e)
             return {"error": str(e)}
 
-        # FreeHire sends SSE stream or direct JSON
-        lines = raw_text.splitlines()
-        for line in lines:
-            line_str = line.strip()
-            if line_str.startswith("data: "):
-                json_str = line_str[6:].strip()
-                try:
-                    data = json.loads(json_str)
-                    result = data.get("result", {})
-                    # Result typically has structuredContent or content array
-                    if "structuredContent" in result:
-                        return result["structuredContent"]
-                    if "content" in result and isinstance(result["content"], list):
-                        for item in result["content"]:
-                            if item.get("type") == "text":
-                                try:
-                                    return json.loads(item.get("text", "{}"))
-                                except Exception:
-                                    pass
-                    return result
-                except Exception as parse_err:
-                    logger.debug("Failed to parse SSE JSON chunk: %s", parse_err)
-
-        try:
-            data = json.loads(raw_text)
-            return data.get("result", data)
-        except Exception:
-            return {"error": "unparseable_response", "raw": raw_text[:500]}
+        return {}
 
     def search_jobs(
         self,

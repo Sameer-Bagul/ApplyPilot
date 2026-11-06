@@ -36,6 +36,11 @@ console = Console()
 # Domain clusters for cyclical rotation
 DOMAIN_ROTATION_CLUSTERS = [
     {
+        "name": "Omni-Workday Enterprise Stream (100% Workday Companies)",
+        "workday_stream": True,
+        "categories": ["ai_engineering", "devops", "software_engineering", "data_science"],
+    },
+    {
         "name": "Enterprise Banking & FinTech Giants",
         "categories": ["ai_engineering", "software_engineering"],
         "enterprise_slugs": ["barclays", "mastercard", "visa", "american-express", "jpmc", "goldman-sachs", "morgan-stanley"],
@@ -370,6 +375,26 @@ def run_marathon_pipeline(
             except Exception as e:
                 logger.warning("Error in enterprise sweep: %s", e)
                 console.print(f"    [yellow]Notice on enterprise sweep:[/yellow] {e}")
+
+        # -------------------------------------------------------------
+        # 1c. Omni-Workday Stream (100% of Workday Companies)
+        # -------------------------------------------------------------
+        if cluster.get("workday_stream") and not session.is_time_up and not session.stop_requested:
+            try:
+                from applypilot.discovery.workday_harvester import harvest_workday_stream
+                console.print(f"  [cyan]Harvesting Omni-Workday Stream across 100% Workday companies...[/cyan]")
+                res_wd = harvest_workday_stream(
+                    categories=categories,
+                    limit_per_category=batch_limit,
+                    posted_within_days=14,
+                    conn=conn,
+                )
+                wd_new = res_wd.get("new_jobs_stored", 0)
+                session.metrics["jobs_discovered"] += wd_new
+                console.print(f"    [dim]Ingested {wd_new} new roles across {res_wd.get('unique_workday_companies_seen', 0)} Workday companies[/dim]")
+            except Exception as e:
+                logger.warning("Error in Workday stream: %s", e)
+                console.print(f"    [yellow]Notice on Workday stream:[/yellow] {e}")
 
         # -------------------------------------------------------------
         # 2. Watchlist Deep Looper & In-Flight Leads Check

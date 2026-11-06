@@ -658,6 +658,40 @@ def harvest_enterprise_cmd(
             console.print(f"    - [cyan]{comp}[/cyan]: {dt.get('new_stored', 0)} new stored ({dt.get('total_available', 0)} in catalog)")
 
 
+@app.command("harvest-workday")
+def harvest_workday_cmd(
+    limit: int = typer.Option(30, "--limit", "-l", help="Number of postings to fetch per tech category."),
+    days: int = typer.Option(14, "--days", help="Only fetch jobs posted within this many days."),
+    india_only: bool = typer.Option(False, "--india-only", "-i", help="Restrict to India Workday jobs (Pune, Bengaluru, Hyderabad, Gurgaon, etc.)."),
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Specific search query (e.g. 'devops' or 'ai engineer')."),
+) -> None:
+    """Harvest open roles from 100% of companies on Workday (556,000+ live jobs globally)."""
+    _bootstrap()
+    from applypilot.discovery.workday_harvester import harvest_workday_stream
+
+    countries = ["in"] if india_only else None
+    scope = "India Tech Hubs" if india_only else "Global & India Hubs"
+    console.print(f"[bold blue]Harvesting Omni-Workday Firehose ({scope})...[/bold blue]")
+
+    summary = harvest_workday_stream(
+        limit_per_category=limit,
+        posted_within_days=days,
+        countries=countries,
+        query=query,
+    )
+
+    console.print(f"[bold green]Omni-Workday Stream Completed![/bold green]")
+    console.print(f"  • Categories Scanned: {summary['categories_scanned']}")
+    console.print(f"  • Total Jobs Scraped: {summary['total_jobs_scraped']}")
+    console.print(f"  • Brand New Jobs Ingested: {summary['new_jobs_stored']}")
+    console.print(f"  • Existing Deduped: {summary['existing_deduped']}")
+    console.print(f"  • Unique Workday Companies Discovered: {summary['unique_workday_companies_seen']}")
+    if summary["discovered_companies_list"]:
+        preview = ", ".join(summary["discovered_companies_list"][:12])
+        console.print(f"  • Sample Companies: [cyan]{preview}...[/cyan]")
+
+
+
 
 @app.command("harvest-emails")
 def harvest_emails_cmd(
