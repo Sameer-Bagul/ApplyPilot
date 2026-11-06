@@ -130,9 +130,11 @@ class FreeHireClient:
         countries: list[str] | None = None,
         regions: list[str] | None = None,
         sources: list[str] | None = None,
+        company_slugs: list[str] | None = None,
         limit: int = 25,
         offset: int = 0,
         posted_within_days: int = 14,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Search FreeHire's IT jobs catalogue with rich faceted filters."""
         args: dict[str, Any] = {"limit": limit, "offset": offset}
@@ -153,8 +155,11 @@ class FreeHireClient:
             args["regions"] = regions
         if sources:
             args["sources"] = [sources] if isinstance(sources, str) else sources
+        if company_slugs:
+            args["company_slugs"] = company_slugs
         if posted_within_days:
             args["posted_within_days"] = posted_within_days
+        args.update(kwargs)
 
         return self.call_mcp_tool("search_jobs", args)
 
