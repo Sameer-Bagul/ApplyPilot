@@ -339,6 +339,18 @@ export function getCompanies(params: {
   limit?: number;
 }) {
   const db = getDb();
+
+  // Sync any newly discovered companies from jobs into the companies catalog
+  try {
+    db.prepare(`
+      INSERT OR IGNORE INTO career_watchlist (company_name, priority_tier, is_vip, open_roles_count, last_checked_at)
+      SELECT company, 2, 0, count(*), CURRENT_TIMESTAMP
+      FROM jobs
+      WHERE company IS NOT NULL AND trim(company) != '' AND company NOT IN (SELECT company_name FROM career_watchlist)
+      GROUP BY company
+    `).run();
+  } catch {}
+
   const page = Math.max(1, params.page || 1);
   const limit = Math.min(100, Math.max(1, params.limit || 20));
   const offset = (page - 1) * limit;
@@ -379,7 +391,7 @@ export function getCompanies(params: {
   const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
 
-  query += ` ORDER BY cw.is_vip DESC, open_roles_count DESC, leads_count DESC, cw.company_name ASC LIMIT ? OFFSET ?`;
+  query += ` ORDER BY open_roles_count DESC, cw.is_vip DESC, leads_count DESC, cw.company_name ASC LIMIT ? OFFSET ?`;
   queryParams.push(limit, offset);
 
   const rawCompanies = db.prepare(query).all(...queryParams);

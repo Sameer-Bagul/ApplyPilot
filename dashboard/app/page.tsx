@@ -538,7 +538,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     },
     {
       id: 'companies',
-      label: 'Watchlist',
+      label: 'Companies',
       icon: Building2,
       color: 'text-amber-600',
       badge: stats?.totalCompanies ? stats.totalCompanies.toLocaleString() : null,
@@ -595,12 +595,12 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     <div className="flex flex-col md:flex-row min-h-screen p-2.5 sm:p-3 md:p-4 lg:p-5 2xl:p-7 gap-3 sm:gap-4 lg:gap-6 w-full max-w-none text-zinc-900">
       {/* ----------------- DESKTOP SIDEBAR (Liquid Glass Card) ----------------- */}
       <aside
-        className={`hidden md:flex flex-col gap-4 lg:gap-6 shrink-0 transition-all duration-300 ${
+        className={`hidden md:flex flex-col gap-4 lg:gap-6 shrink-0 transition-all duration-300 md:sticky md:top-4 md:h-[calc(100vh-2rem)] ${
           sidebarCollapsed ? 'w-20' : 'w-56 lg:w-64'
         }`}
       >
         <div
-          className={`liquid-glass rounded-3xl flex flex-col justify-between transition-all relative overflow-hidden shadow-sm h-full ${
+          className={`liquid-glass rounded-3xl flex flex-col justify-between transition-all relative overflow-y-auto shadow-sm h-full ${
             sidebarCollapsed ? 'p-3 items-center gap-4' : 'p-5 lg:p-6 gap-6'
           }`}
         >
@@ -822,7 +822,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
               <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs hover:shadow-md transition-all relative overflow-hidden group">
                 <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
                 <div className="flex items-center justify-between text-zinc-500 mb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider">Watchlist Targets</span>
+                  <span className="text-xs font-bold uppercase tracking-wider">Target Companies</span>
                   <div className="p-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200/60 shadow-2xs">
                     <Building2 className="w-4 h-4" />
                   </div>
@@ -1214,13 +1214,13 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
           </div>
         )}
 
-        {/* ----------------- TAB 4: COMPANY WATCHLIST ----------------- */}
+        {/* ----------------- TAB 4: COMPANIES ----------------- */}
         {activeTab === 'companies' && (
           <div className="space-y-4 animate-in fade-in duration-200">
             {/* Filter Bar */}
             <div className="liquid-glass rounded-3xl p-4 sm:p-5 border border-white/90 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2 w-full md:w-auto flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex items-center gap-2.5 w-full md:w-auto flex-1 flex-wrap">
+                <div className="relative flex-1 min-w-[200px] max-w-md">
                   <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
@@ -1231,17 +1231,39 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
                   />
                 </div>
 
-                <button
-                  onClick={() => setCompanyVipOnly(!companyVipOnly)}
-                  className={`px-3 py-2 rounded-2xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                    companyVipOnly
-                      ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs'
-                      : 'liquid-pill text-zinc-700 shadow-2xs'
-                  }`}
-                >
-                  <Star className={`w-3.5 h-3.5 ${companyVipOnly ? 'fill-amber-500 text-amber-600' : 'text-zinc-400'}`} />
-                  <span>VIP Targets Only</span>
-                </button>
+                {/* Sub-filter pills: All Companies vs VIP Only */}
+                <div className="flex items-center gap-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompanyVipOnly(false);
+                      setCompanyPage(1);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-full font-medium transition cursor-pointer shadow-2xs ${
+                      !companyVipOnly
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-white/70 text-zinc-600 hover:bg-white hover:text-zinc-900 border border-zinc-200/60'
+                    }`}
+                  >
+                    All Companies
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompanyVipOnly(true);
+                      setCompanyPage(1);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-full font-medium transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      companyVipOnly
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-white/70 text-zinc-600 hover:bg-white hover:text-amber-800 border border-zinc-200/60'
+                    }`}
+                  >
+                    <Star className={`w-3.5 h-3.5 ${companyVipOnly ? 'fill-white text-white' : 'fill-amber-500 text-amber-600'}`} />
+                    <span>VIP Only</span>
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 w-full md:w-auto justify-end">
