@@ -165,6 +165,29 @@ async def _async_run_playwright_tier_engine(
                 except Exception as e:
                     logger.debug("Page navigation to %s encountered: %s", target_url, e)
 
+            # If on an ATS overview page that requires clicking "Apply" / "I'm interested" to open the form
+            try:
+                apply_button_sel = (
+                    "#st-apply, a.js-oneclick, a[href*='oneclick-ui'], "
+                    "a[href*='#apply'], button:has-text('Apply Now'), a:has-text('Apply Now'), "
+                    "button:has-text(\"I'm interested\"), a:has-text(\"I'm interested\")"
+                )
+                apply_btn = page.locator(apply_button_sel).first
+                if await apply_btn.is_visible(timeout=1500):
+                    href = await apply_btn.get_attribute("href")
+                    if href and ("http" in href or "oneclick-ui" in href):
+                        from urllib.parse import urljoin
+                        target_app_url = urljoin(page.url, href)
+                        logger.info("Found application entrance button; navigating to %s", target_app_url)
+                        await page.goto(target_app_url, wait_until="domcontentloaded", timeout=20000)
+                        await page.wait_for_timeout(1500)
+                    else:
+                        logger.info("Found apply button; clicking to open application form...")
+                        await apply_btn.click()
+                        await page.wait_for_timeout(2000)
+            except Exception as e:
+                logger.debug("Apply entrance pre-check notice: %s", e)
+
             # Re-detect ATS from final URL in case of redirect
             ats_type = detect_form_ats(page.url)
 

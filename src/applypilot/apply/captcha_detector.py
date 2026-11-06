@@ -104,7 +104,13 @@ async def detect_challenge(page: Any) -> dict[str, Any] | None:
                 return { type: 'funcaptcha', name: 'Arkose FunCaptcha', selector: '#FunCaptcha' };
             }
 
-            // 5. Text-based Bot Verification Gate
+            // 5. DataDome CAPTCHA (e.g. on SmartRecruiters)
+            const ddIframe = document.querySelector('iframe[src*="captcha-delivery.com"], iframe[title*="DataDome" i], iframe[src*="datadome.co"]');
+            if (ddIframe && isVisible(ddIframe)) {
+                return { type: 'datadome', name: 'DataDome CAPTCHA', selector: 'iframe[src*="captcha-delivery.com"]' };
+            }
+
+            // 6. Text-based Bot Verification Gate
             const bodyText = (document.body ? document.body.innerText : '').slice(0, 3000).toLowerCase();
             if (
                 bodyText.includes('verify you are human') ||
@@ -160,6 +166,11 @@ async def is_challenge_solved(page: Any, challenge: dict[str, Any]) -> bool:
                 const text = document.querySelector('textarea[name="h-captcha-response"]');
                 if (text && text.value && text.value.length > 10) return true;
                 return false;
+            }
+
+            if (ctype === 'datadome') {
+                const ddIframe = document.querySelector('iframe[src*="captcha-delivery.com"], iframe[title*="DataDome" i], iframe[src*="datadome.co"]');
+                return !ddIframe;
             }
 
             if (ctype === 'bot_gate') {
