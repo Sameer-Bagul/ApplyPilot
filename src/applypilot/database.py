@@ -2282,7 +2282,7 @@ def normalize_question(text: str) -> str:
     """
     text = text.lower().strip()
     text = _re.sub(r'[^\w\s]', '', text)
-    text = _re.sub(r'\s+', ' ', text)
+    text = _re.sub(r'\s+', ' ', text).strip()
     return text
 
 

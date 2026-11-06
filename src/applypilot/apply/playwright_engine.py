@@ -484,6 +484,23 @@ async def _async_run_playwright_tier_engine(
                 except Exception as e:
                     logger.debug("Ashby entrance notice: %s", e)
 
+            # 5. Workable Overview Entrance
+            elif "workable.com" in page.url:
+                try:
+                    cookie_btn = page.locator("button[data-ui='cookie-consent-accept'], button:has-text('Accept all')").first
+                    if await cookie_btn.is_visible(timeout=1500):
+                        await cookie_btn.click()
+                        await page.wait_for_timeout(500)
+
+                    if not page.url.rstrip("/").endswith("/apply"):
+                        workable_apply = page.locator("[data-ui='apply-button'], [data-ui='application-form-tab'], a:has-text('Apply for this job'), button:has-text('Apply for this job')").first
+                        if await workable_apply.is_visible(timeout=2500):
+                            tracer.log("entrance", "Clicking Workable 'Apply for this job' entrance")
+                            await workable_apply.click()
+                            await page.wait_for_timeout(2000)
+                except Exception as e:
+                    logger.debug("Workable entrance notice: %s", e)
+
             # 5. Generic ATS Overview Entrance
             else:
                 try:
@@ -532,13 +549,16 @@ async def _async_run_playwright_tier_engine(
                     "job has expired",
                     "no longer accepting applications",
                     "position is no longer open",
+                    "is no longer open",
+                    "no longer open",
+                    "job you are looking for",
                 ]
                 outage_indicators = [
                     "workday is currently unavailable",
                     "service interruption",
                     "under maintenance",
                 ]
-                is_closed = any(msg in body_text for msg in closed_indicators)
+                is_closed = any(msg in body_text for msg in closed_indicators) or ("error=true" in page.url)
                 is_outage = any(msg in body_text for msg in outage_indicators)
 
                 if is_closed or is_outage:
@@ -655,7 +675,19 @@ async def _async_run_playwright_tier_engine(
                         # Attempt to fill the resolved answer
                         loc = None
                         if field_id:
-                            loc = page.locator(f"#{field_id}, [name='{field_id}']").first
+                            safe_name_loc = page.locator(f"[name='{field_id}']").first
+                            try:
+                                if await safe_name_loc.is_visible(timeout=250):
+                                    loc = safe_name_loc
+                            except Exception:
+                                pass
+                            if not loc and re.match(r"^[A-Za-z0-9_-]+$", field_id):
+                                safe_id_loc = page.locator(f"#{field_id}").first
+                                try:
+                                    if await safe_id_loc.is_visible(timeout=250):
+                                        loc = safe_id_loc
+                                except Exception:
+                                    pass
                         if not loc or not await loc.is_visible(timeout=300):
                             loc = page.get_by_label(label, exact=False).first
 
@@ -671,7 +703,7 @@ async def _async_run_playwright_tier_engine(
 
                             # Record learned mapping
                             if field_id:
-                                sel = f"#{field_id}"
+                                sel = f"[name='{field_id}']" if not re.match(r"^[A-Za-z0-9_-]+$", field_id) else f"#{field_id}"
                                 store_selector(ats_type, domain, sel, "fill" if ftype not in ("select", "radio") else "select", can_key, conn=conn)
                     except Exception as e:
                         logger.debug("Failed applying Tier 1 answer for %s: %s", label, e)

@@ -39,7 +39,7 @@ _TOPIC_SYNONYMS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?i)\b(visa|sponsorship|work authorization|authorized to work|legal authorization)\b"), "work_authorization"),
     (re.compile(r"(?i)\b(notice period|start date|how soon|availability)\b"), "notice_period"),
     (re.compile(r"(?i)\b(current compensation|current salary|current ctc|current pay|present ctc|present salary)\b"), "current_salary"),
-    (re.compile(r"(?i)\b(compensation|salary expectation|desired salary|desired pay|target salary|expected pay|expected ctc|expected salary)\b"), "desired_salary"),
+    (re.compile(r"(?i)\b(compensation|salary expectation\w*|desired salary|desired pay|target salary|expected pay|expected ctc|expected salary)\b"), "desired_salary"),
     (re.compile(r"(?i)\b(salary negotiable|negotiable|flexible on salary|flexible on compensation)\b"), "salary_negotiable"),
     (re.compile(r"(?i)\b(relocat\w*|willing to (move|relocate))\b"), "willing_to_relocate"),
     (re.compile(r"(?i)\b(clearance|security clearance|polygraph)\b"), "security_clearance"),
@@ -48,6 +48,7 @@ _TOPIC_SYNONYMS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?i)\b(gpa|grade point average)\b"), "gpa"),
     (re.compile(r"(?i)\b(hear about us|how did you hear|source of hire)\b"), "referral_source"),
     (re.compile(r"(?i)\b(remote|work from home|hybrid|on-site|office preference)\b"), "remote_preference"),
+    (re.compile(r"(?i)\b(current location|current city|present location|where are you located|location)\b"), "current_location"),
     (re.compile(r"(?i)\b(gender|race|ethnicity|hispanic|latino|veteran|disability)\b"), "eeo_survey"),
 ]
 
@@ -70,8 +71,11 @@ def normalize_question(text: str) -> str:
     for pat in _NOISE_PATTERNS:
         clean = re.sub(pat, " ", clean)
 
+    # Strip trailing asterisks and non-alphanumeric punctuation (e.g. ✱, *, ?)
+    clean = re.sub(r"[\s\*\:\?\.\,\;\!\u2731\u2732\u2733\u2734\u2735\u2736\u2737\u2738\u2739\u273a\u273b\u273c\u273d\u273e\u273f\u2740\u2741\u2742\u2743\u2744\u2745\u2746\u2747\u2748\u2749\u274a\u274b]+$", "", clean)
+
     # Normalize whitespace & lower
-    clean = " ".join(clean.lower().split())
+    clean = " ".join(clean.lower().split()).strip()
 
     # Map to canonical topic keyword if a strong pattern matches
     for pat, canonical in _TOPIC_SYNONYMS:
@@ -255,6 +259,15 @@ def _check_profile_for_topic(topic: str, profile: dict) -> tuple[Any, float]:
 
     elif topic == "remote_preference":
         return profile.get("work_preference", "Remote / Hybrid"), 0.95
+
+    elif topic == "current_location":
+        val = profile.get("city") or profile.get("location") or profile.get("current_city")
+        if isinstance(val, dict):
+            parts = [val.get("city"), val.get("state"), val.get("country")]
+            val = ", ".join([p for p in parts if p])
+        if val:
+            return str(val), 1.0
+        return "Bangalore, India", 1.0
 
     return None, 0.0
 

@@ -213,6 +213,58 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[type='file']",
         ],
     },
+    "workable": {
+        "profile.first_name": [
+            "input[data-ui='firstname']",
+            "input#firstname",
+            "input[name='firstname']",
+        ],
+        "profile.last_name": [
+            "input[data-ui='lastname']",
+            "input#lastname",
+            "input[name='lastname']",
+        ],
+        "profile.email": [
+            "input[data-ui='email']",
+            "input#email",
+            "input[name='email']",
+            "input[type='email']",
+        ],
+        "profile.phone": [
+            "input#input_phone",
+            "input[data-ui='phone']",
+            "input[name='phone']",
+            "input[type='tel']",
+        ],
+        "profile.address": [
+            "input[data-ui='address']",
+            "input#address",
+            "input[name='address']",
+        ],
+        "profile.city": [
+            "input#city",
+            "input[name='city']",
+        ],
+        "profile.postal_code": [
+            "input#postcode",
+            "input[name='postcode']",
+        ],
+        "profile.headline": [
+            "input[data-ui='headline']",
+            "input#headline",
+            "input[name='headline']",
+        ],
+        "profile.summary": [
+            "textarea[data-ui='summary']",
+            "textarea#summary",
+            "textarea[name='summary']",
+        ],
+        "resume_file": [
+            "input[data-ui='resume'][type='file']",
+            "input[type='file'][name*='resume' i]",
+            "input[type='file']",
+        ],
+    },
     "custom_domain": {
         "profile.first_name": [
             "input[name*='first_name' i]",
@@ -289,6 +341,8 @@ def detect_form_ats(url: str, html_snippet: str | None = None) -> str:
         return "ashby"
     if "smartrecruiters.com" in host:
         return "smartrecruiters"
+    if "workable.com" in host:
+        return "workable"
     if "icims.com" in host:
         return "icims"
 
@@ -353,6 +407,12 @@ def _resolve_profile_value(target_key: str, profile: dict) -> Any:
             ("location", "postal_code"),
             "postal_code",
             "zip_code",
+        ],
+        "profile.headline": [
+            "current_title",
+            "headline",
+            "title",
+            "professional_title",
         ],
         "profile.address": [
             ("location", "address"),
@@ -542,7 +602,7 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
 
                 let label = '';
                 if (el.id) {
-                    const lbl = document.querySelector(`label[for="${el.id}"]`);
+                    const lbl = document.querySelector(`label[for="${el.id}"], #${el.id}_label, #${el.id}-label`);
                     if (lbl) label = lbl.innerText;
                 }
                 if (!label) {
@@ -550,14 +610,27 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
                     if (parent) label = parent.innerText;
                 }
                 if (!label) {
-                    const container = el.closest('div, fieldset');
-                    if (container) {
-                        const header = container.querySelector('label, legend, .label');
+                    const qCard = el.closest('.application-question, .card-field, [data-qa*="custom"], .form-group, .field, fieldset, li, .section-wrapper');
+                    if (qCard) {
+                        const header = qCard.querySelector('.application-label, .card-field-name, .text, label, legend, .label, .prompt, h3, h4');
                         if (header) label = header.innerText;
                     }
                 }
                 if (!label) {
-                    label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || '';
+                    const container = el.closest('div, fieldset');
+                    if (container) {
+                        const header = container.querySelector('label, legend, .label, .application-label');
+                        if (header) label = header.innerText;
+                    }
+                }
+                if (!label) {
+                    label = el.getAttribute('aria-label') || '';
+                }
+                if (!label) {
+                    const ph = el.getAttribute('placeholder') || '';
+                    if (!/type your response|enter response|type here|your answer/i.test(ph)) {
+                        label = ph;
+                    }
                 }
 
                 let options = [];
