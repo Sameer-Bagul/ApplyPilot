@@ -409,30 +409,137 @@ async def _async_run_playwright_tier_engine(
                 except Exception as e:
                     logger.debug("Page navigation to %s encountered: %s", target_url, e)
 
-            # If on an ATS overview page that requires clicking "Apply" / "I'm interested" to open the form
-            try:
-                apply_button_sel = (
-                    "#st-apply, a.js-oneclick, a[href*='oneclick-ui'], "
-                    "a[href*='#apply'], button:has-text('Apply Now'), a:has-text('Apply Now'), "
-                    "button:has-text(\"I'm interested\"), a:has-text(\"I'm interested\")"
-                )
-                apply_btn = page.locator(apply_button_sel).first
-                if await apply_btn.is_visible(timeout=1500):
-                    href = await apply_btn.get_attribute("href")
-                    if href and ("http" in href or "oneclick-ui" in href):
-                        from urllib.parse import urljoin
-                        target_app_url = urljoin(page.url, href)
-                        logger.info("Found application entrance button; navigating to %s", target_app_url)
-                        tracer.log("entrance", f"Navigating to application form entrance: {target_app_url}")
-                        await page.goto(target_app_url, wait_until="domcontentloaded", timeout=20000)
-                        await page.wait_for_timeout(1500)
-                    else:
-                        logger.info("Found apply button; clicking to open application form...")
-                        tracer.log("entrance", "Clicking apply button on overview page to open form")
-                        await apply_btn.click()
+            # ------------------------------------------------------------------
+            # Phase 0.5: Aggregator & Overview Entrance Navigation
+            # ------------------------------------------------------------------
+            # 1. FreeHire Aggregator Resolution (Redirect to actual employer/ATS portal)
+            if "freehire.me" in page.url:
+                try:
+                    tracer.log("aggregator_detect", "Detected FreeHire directory page; resolving employer application portal...")
+                    await page.wait_for_timeout(1500)
+                    ext_href = await page.evaluate('''() => {
+                        for (const a of Array.from(document.querySelectorAll('a'))) {
+                            const text = (a.innerText || '').toLowerCase();
+                            const href = a.href || '';
+                            if (text.includes('apply') && href.startsWith('http')) {
+                                try {
+                                    const u = new URL(href);
+                                    if (!u.hostname.includes('freehire.me')) {
+                                        return href;
+                                    }
+                                } catch {}
+                            }
+                        }
+                        return null;
+                    }''')
+                    if ext_href:
+                        logger.info("Found employer application destination from FreeHire: %s", ext_href)
+                        tracer.log("navigation", f"Redirecting to employer portal: {ext_href}")
+                        try:
+                            if conn:
+                                conn.execute("UPDATE jobs SET application_url = ? WHERE url = ?", (ext_href, job.get("url")))
+                                conn.commit()
+                        except Exception:
+                            pass
+                        await page.goto(ext_href, wait_until="domcontentloaded", timeout=25000)
                         await page.wait_for_timeout(2000)
-            except Exception as e:
-                logger.debug("Apply entrance pre-check notice: %s", e)
+                except Exception as e:
+                    logger.debug("FreeHire directory link extraction notice: %s", e)
+
+            # 2. Workday Job Posting Entrance (Apply -> Apply Manually)
+            if "myworkdayjobs.com" in page.url or "myworkday.com" in page.url:
+                try:
+                    wd_apply = page.locator("[data-automation-id='adventureButton'], a:has-text('Apply'), button:has-text('Apply')").first
+                    if await wd_apply.is_visible(timeout=2000):
+                        tracer.log("entrance", "Clicking Workday Apply entrance button")
+                        await wd_apply.click()
+                        await page.wait_for_timeout(1500)
+                        wd_manual = page.locator("[data-automation-id='applyManually'], a:has-text('Apply Manually'), button:has-text('Apply Manually')").first
+                        if await wd_manual.is_visible(timeout=2500):
+                            tracer.log("entrance", "Clicking Workday 'Apply Manually'")
+                            await wd_manual.click()
+                            await page.wait_for_timeout(2000)
+                except Exception as e:
+                    logger.debug("Workday entrance notice: %s", e)
+
+            # 3. Lever Overview Entrance (navigate to /apply)
+            elif "jobs.lever.co" in page.url and not page.url.endswith("/apply"):
+                try:
+                    lever_apply = page.locator(".postings-btn, a[href$='/apply'], a:has-text('Apply for this job')").first
+                    if await lever_apply.is_visible(timeout=2000):
+                        tracer.log("entrance", "Navigating to Lever application form (/apply)")
+                        await lever_apply.click()
+                        await page.wait_for_timeout(2000)
+                except Exception as e:
+                    logger.debug("Lever entrance notice: %s", e)
+
+            # 4. Ashby Overview Entrance
+            elif "jobs.ashbyhq.com" in page.url:
+                try:
+                    ashby_btn = page.locator("a:has-text('Apply for this job'), button:has-text('Apply for this job'), a:has-text('Apply to this role')").first
+                    if await ashby_btn.is_visible(timeout=2000):
+                        tracer.log("entrance", "Clicking Ashby 'Apply for this job' entrance")
+                        await ashby_btn.click()
+                        await page.wait_for_timeout(1500)
+                except Exception as e:
+                    logger.debug("Ashby entrance notice: %s", e)
+
+            # 5. Generic ATS Overview Entrance
+            else:
+                try:
+                    apply_button_sel = (
+                        "#st-apply, a.js-oneclick, a[href*='oneclick-ui'], "
+                        "a[href*='#apply'], button:has-text('Apply Now'), a:has-text('Apply Now'), "
+                        "button:has-text(\"I'm interested\"), a:has-text(\"I'm interested\")"
+                    )
+                    apply_btn = page.locator(apply_button_sel).first
+                    if await apply_btn.is_visible(timeout=1500):
+                        href = await apply_btn.get_attribute("href")
+                        if href and ("http" in href or "oneclick-ui" in href or "/apply" in href):
+                            from urllib.parse import urljoin
+                            target_app_url = urljoin(page.url, href)
+                            logger.info("Found application entrance button; navigating to %s", target_app_url)
+                            tracer.log("entrance", f"Navigating to application form entrance: {target_app_url}")
+                            await page.goto(target_app_url, wait_until="domcontentloaded", timeout=20000)
+                            await page.wait_for_timeout(1500)
+                        else:
+                            logger.info("Found apply button; clicking to open application form...")
+                            tracer.log("entrance", "Clicking apply button on overview page to open form")
+                            await apply_btn.click()
+                            await page.wait_for_timeout(2000)
+                except Exception as e:
+                    logger.debug("Apply entrance pre-check notice: %s", e)
+
+            # Switch to newly opened tab if entrance button opened target="_blank"
+            if len(context.pages) > 1:
+                page = context.pages[-1]
+                await page.bring_to_front()
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
+                tracer.log("tab_switch", f"Switched to active application tab: {page.url}")
+
+            # 7. Check for ATS service outage / maintenance page
+            try:
+                body_text = (await page.inner_text("body", timeout=1000)).lower()
+                if any(err_msg in body_text for err_msg in [
+                    "workday is currently unavailable",
+                    "service interruption",
+                    "under maintenance",
+                    "this job is no longer available",
+                    "this position has been filled",
+                    "job posting has expired",
+                ]):
+                    err_reason = "ATS service temporarily unavailable (maintenance/outage)"
+                    if "no longer available" in body_text or "has been filled" in body_text or "expired" in body_text:
+                        err_reason = "Job posting is expired or closed"
+                    logger.warning("[W%d] %s: %s", worker_id, err_reason, page.url)
+                    tracer.log("ats_error", err_reason)
+                    await finalize_proofs()
+                    return "fallback_to_agent", int((time.time() - start_time) * 1000), [{"field_id": "ats_unavailable", "label": err_reason}]
+            except Exception:
+                pass
 
             # Re-detect ATS from final URL in case of redirect
             ats_type = detect_form_ats(page.url)
@@ -637,16 +744,11 @@ async def _async_run_playwright_tier_engine(
                 "button:has-text('Complete Application')",
                 "button:has-text('Send Application')",
                 "button:has-text('Send application')",
-                "button:has-text('Apply Now')",
-                "button:has-text('Apply now')",
-                "button:has-text('Apply')",
                 # Polish (e.g. eRecruiter, Pracuj.pl, NoFluffJobs)
-                "button:has-text('Aplikuj')",
                 "button:has-text('Wyślij aplikację')",
                 "button:has-text('Wyślij')",
                 "input[value*='Aplikuj' i]",
                 "input[value*='Wyślij' i]",
-                "a:has-text('Aplikuj')",
                 # German (e.g. StepStone, Personio)
                 "button:has-text('Bewerben')",
                 "button:has-text('Bewerbung absenden')",
@@ -767,6 +869,13 @@ async def _async_run_playwright_tier_engine(
 
             # Auto-Submit Mode:
             if submit_btn:
+                # Sanity guard: Verify we are not still on a directory/aggregator listing
+                if len(filled_std) == 0 and ("freehire.me" in page.url or "adzuna." in page.url):
+                    logger.warning("[W%d] Submit candidate found, but still on aggregator directory (%s) with 0 fields filled. Aborting false submission.", worker_id, page.url)
+                    tracer.log("submit_error", f"Aborted false submission: still on aggregator directory ({page.url})")
+                    await finalize_proofs()
+                    return "fallback_to_agent", duration_ms, [{"field_id": "no_fields", "label": "No application form detected on page"}]
+
                 logger.info("[W%d] Auto-submitting application via Playwright...", worker_id)
                 tracer.log("auto_submit", "Auto-submitting application via Playwright submit button click")
                 try:

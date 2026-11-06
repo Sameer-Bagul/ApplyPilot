@@ -46,3 +46,4 @@ fi
 # Launch Next.js Dashboard UI (streams all API & Playwright apply logs live)
 echo "🌐 Starting Next.js Liquid-Glass Dashboard on http://localhost:3000..."
 npm run dashboard
+
