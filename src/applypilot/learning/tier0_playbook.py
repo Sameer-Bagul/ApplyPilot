@@ -165,8 +165,99 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[name*='linkedin' i]",
             "input[placeholder*='linkedin' i]",
         ],
+        "profile.github_url": [
+            "input[name*='github' i]",
+            "input[placeholder*='github' i]",
+        ],
+        "profile.portfolio_url": [
+            "input[name*='website' i]",
+            "input[name*='portfolio' i]",
+        ],
         "resume_file": [
             "input[type='file'][name*='resume' i]",
+            "input[type='file']",
+        ],
+    },
+    "smartrecruiters": {
+        "profile.first_name": [
+            "input[name='firstName']",
+            "input#firstName",
+        ],
+        "profile.last_name": [
+            "input[name='lastName']",
+            "input#lastName",
+        ],
+        "profile.email": [
+            "input[name='email']",
+            "input#email",
+            "input[type='email']",
+        ],
+        "profile.phone": [
+            "input[name='phoneNumber']",
+            "input#phoneNumber",
+            "input[type='tel']",
+        ],
+        "profile.city": [
+            "input[name='city']",
+            "input#city",
+        ],
+        "resume_file": [
+            "input[type='file']",
+        ],
+    },
+    "custom_domain": {
+        "profile.first_name": [
+            "input[name*='first_name' i]",
+            "input[name*='firstName' i]",
+            "input[id*='first_name' i]",
+            "input[id*='firstName' i]",
+            "input[autocomplete='given-name']",
+        ],
+        "profile.last_name": [
+            "input[name*='last_name' i]",
+            "input[name*='lastName' i]",
+            "input[id*='last_name' i]",
+            "input[id*='lastName' i]",
+            "input[autocomplete='family-name']",
+        ],
+        "profile.full_name": [
+            "input[name='name' i]",
+            "input[name*='full_name' i]",
+            "input[name*='fullName' i]",
+            "input[id*='full_name' i]",
+            "input[autocomplete='name']",
+        ],
+        "profile.email": [
+            "input[type='email']",
+            "input[name*='email' i]",
+            "input[id*='email' i]",
+            "input[autocomplete='email']",
+        ],
+        "profile.phone": [
+            "input[type='tel']",
+            "input[name*='phone' i]",
+            "input[id*='phone' i]",
+            "input[autocomplete='tel']",
+        ],
+        "profile.linkedin_url": [
+            "input[name*='linkedin' i]",
+            "input[placeholder*='linkedin' i]",
+            "input[aria-label*='linkedin' i]",
+        ],
+        "profile.github_url": [
+            "input[name*='github' i]",
+            "input[placeholder*='github' i]",
+            "input[aria-label*='github' i]",
+        ],
+        "profile.portfolio_url": [
+            "input[name*='portfolio' i]",
+            "input[name*='website' i]",
+            "input[placeholder*='portfolio' i]",
+            "input[placeholder*='website' i]",
+        ],
+        "resume_file": [
+            "input[type='file'][name*='resume' i]",
+            "input[type='file'][name*='cv' i]",
             "input[type='file']",
         ],
     },
@@ -209,18 +300,100 @@ def detect_form_ats(url: str, html_snippet: str | None = None) -> str:
 
 
 def _resolve_profile_value(target_key: str, profile: dict) -> Any:
-    """Resolve dot-notation path into profile dictionary."""
+    """Resolve dot-notation path into profile dictionary supporting nested structures & aliases."""
     if not profile:
         return None
 
-    # Handle composite full_name
-    if target_key == "profile.full_name":
+    # Handle full_name
+    if target_key in ("profile.full_name", "profile.name"):
         fn = profile.get("first_name") or ""
         ln = profile.get("last_name") or ""
         full = f"{fn} {ln}".strip()
         return full or profile.get("name")
 
-    # Standard dot notation
+    # Handle common aliases and nested paths
+    aliases = {
+        "profile.linkedin_url": [
+            ("urls", "linkedin"),
+            "linkedin_url",
+            "linkedin",
+        ],
+        "profile.github_url": [
+            ("urls", "github"),
+            "github_url",
+            "github",
+        ],
+        "profile.portfolio_url": [
+            ("urls", "portfolio"),
+            "portfolio_url",
+            "portfolio",
+            ("urls", "website"),
+        ],
+        "profile.city": [
+            ("location", "city"),
+            "city",
+        ],
+        "profile.state": [
+            ("location", "state"),
+            "state",
+        ],
+        "profile.country": [
+            ("location", "country"),
+            "country",
+        ],
+        "profile.postal_code": [
+            ("location", "postal_code"),
+            "postal_code",
+            "zip_code",
+        ],
+        "profile.address": [
+            ("location", "address"),
+            ("location", "city"),
+        ],
+        "profile.current_company": [
+            "current_company",
+            ("experiences", 0, "company"),
+        ],
+        "profile.current_title": [
+            "current_title",
+            ("experiences", 0, "title"),
+        ],
+        "profile.years_of_experience": [
+            "years_of_experience",
+        ],
+        "profile.notice_period": [
+            "notice_period",
+        ],
+        "profile.salary_expectation": [
+            ("compensation", "target_salary"),
+            ("compensation", "target_salary_numeric"),
+        ],
+        "profile.work_authorization": [
+            ("work_authorization", "authorized_in_target"),
+        ],
+        "profile.requires_sponsorship": [
+            ("work_authorization", "requires_sponsorship"),
+        ],
+    }
+
+    if target_key in aliases:
+        for candidate in aliases[target_key]:
+            if isinstance(candidate, (tuple, list)):
+                val = profile
+                for part in candidate:
+                    if isinstance(val, dict) and part in val:
+                        val = val[part]
+                    elif isinstance(val, list) and isinstance(part, int) and len(val) > part:
+                        val = val[part]
+                    else:
+                        val = None
+                        break
+                if val is not None and str(val).strip():
+                    return val
+            elif candidate in profile and profile[candidate]:
+                return profile[candidate]
+
+    # Standard dot notation fallback
     key_path = target_key.replace("profile.", "").split(".")
     curr = profile
     for p in key_path:
@@ -256,7 +429,7 @@ def get_tier0_field_mappings(ats_type: str, domain: str,
     for k, selectors in ats_base.items():
         if k not in seen_keys:
             for s in selectors:
-                action = "upload" if "file" in k else "fill"
+                action = "upload" if ("resume" in k or k.endswith("_file")) else "fill"
                 mappings.append({
                     "target_key": k,
                     "selector": s,
@@ -331,61 +504,74 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
             if selector_id:
                 record_selector_result(selector_id, success=False, conn=conn)
 
-    # Scan for remaining interactive form elements on the page that need answers
+    # Scan for remaining interactive form elements on the page that need answers (single fast evaluate)
     unresolved: list[dict] = []
     try:
-        # Find unfilled inputs, textareas, and selects
-        elements = await page.query_selector_all(
-            "input:not([type='hidden']):not([type='submit']):not([type='button']), textarea, select, [role='combobox']"
-        )
-        for el in elements:
-            try:
-                if not await el.is_visible():
-                    continue
+        scan_script = """
+        () => {
+            const isVisible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
 
-                # Check if already filled
-                val = await el.input_value() if await el.evaluate("e => 'value' in e") else ""
-                if val and val.strip():
-                    continue
+            const list = [];
+            const elements = document.querySelectorAll(
+                "input:not([type='hidden']):not([type='submit']):not([type='button']), textarea, select, [role='combobox']"
+            );
 
-                # Extract label & metadata
-                tag = await el.evaluate("e => e.tagName.toLowerCase()")
-                el_type = await el.get_attribute("type") or tag
-                el_id = await el.get_attribute("id") or await el.get_attribute("name") or ""
-                required = await el.evaluate("e => e.required || e.getAttribute('aria-required') === 'true'")
+            for (const el of elements) {
+                if (!isVisible(el)) continue;
+                const val = ('value' in el) ? el.value : '';
+                if (val && val.trim()) continue;
 
-                # Extract associated label text
-                label = await el.evaluate("""e => {
-                    if (e.id) {
-                        const lbl = document.querySelector(`label[for="${e.id}"]`);
-                        if (lbl) return lbl.innerText;
-                    }
-                    const parent = e.closest('label');
-                    if (parent) return parent.innerText;
-                    const container = e.closest('div, fieldset');
+                const tag = el.tagName.toLowerCase();
+                const elType = el.getAttribute('type') || tag;
+                const elId = el.getAttribute('id') || el.getAttribute('name') || '';
+                const required = el.required || el.getAttribute('aria-required') === 'true';
+
+                let label = '';
+                if (el.id) {
+                    const lbl = document.querySelector(`label[for="${el.id}"]`);
+                    if (lbl) label = lbl.innerText;
+                }
+                if (!label) {
+                    const parent = el.closest('label');
+                    if (parent) label = parent.innerText;
+                }
+                if (!label) {
+                    const container = el.closest('div, fieldset');
                     if (container) {
                         const header = container.querySelector('label, legend, .label');
-                        if (header) return header.innerText;
+                        if (header) label = header.innerText;
                     }
-                    return e.getAttribute('aria-label') || e.getAttribute('placeholder') || '';
-                }""")
+                }
+                if (!label) {
+                    label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || '';
+                }
 
-                # Extract options if select or combobox
-                options: list[str] = []
-                if tag == "select":
-                    options = await el.evaluate("""e => Array.from(e.options).map(o => o.text.trim()).filter(Boolean)""")
+                let options = [];
+                if (tag === 'select') {
+                    options = Array.from(el.options).map(o => o.text.trim()).filter(Boolean);
+                }
 
-                clean_label = " ".join(str(label).split())
-                if clean_label or el_id:
-                    unresolved.append({
-                        "field_id": el_id,
-                        "label": clean_label or el_id,
-                        "field_type": el_type,
-                        "options": options,
-                        "required": bool(required),
-                    })
-            except Exception:
-                continue
+                const cleanLabel = (label || '').replace(/\\s+/g, ' ').trim();
+                if (cleanLabel || elId) {
+                    list.push({
+                        field_id: elId,
+                        label: cleanLabel || elId,
+                        field_type: elType,
+                        options: options,
+                        required: !!required,
+                    });
+                }
+            }
+            return list;
+        }
+        """
+        unresolved = await page.evaluate(scan_script) or []
     except Exception as e:
         logger.debug("Failed scanning unresolved fields: %s", e)
 

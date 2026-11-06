@@ -30,6 +30,11 @@ export async function POST(request: Request) {
     if (dryRun) {
       args.push('--dry-run');
     }
+    if (body.autoSubmit === true || body.auto_submit === true) {
+      args.push('--auto-submit');
+    } else if (body.autoSubmit === false || body.auto_submit === false) {
+      args.push('--review');
+    }
 
     // Run in background or spawn process
     return new Promise<Response>((resolve) => {
@@ -41,12 +46,13 @@ export async function POST(request: Request) {
           ...process.env,
           PYTHONUNBUFFERED: '1',
           DISPLAY: process.env.DISPLAY || ':1',
+          WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || 'wayland-1',
           APPLYPILOT_HEADLESS: isHeadless ? 'true' : 'false',
         },
       });
 
-      // 45-second window for headed visual feedback & form navigation
-      const timeoutMs = isHeadless ? 20000 : 45000;
+      // 5-minute window for headed visual feedback & human CAPTCHA resolution; 45s for headless
+      const timeoutMs = isHeadless ? 45000 : 300000;
       const timer = setTimeout(() => {
         try {
           proc.kill();
@@ -74,7 +80,7 @@ export async function POST(request: Request) {
               status: 'running',
               message: isHeadless
                 ? 'Application running in background.'
-                : 'Headed browser launched on your screen with candidate profile data.',
+                : 'Headed browser active on your screen. Complete any CAPTCHA if prompted.',
               output: stdout.slice(-1000),
             })
           );

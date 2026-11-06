@@ -783,6 +783,8 @@ def apply(
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
+    auto_submit: Optional[bool] = typer.Option(None, "--auto-submit/--review", help="Auto-submit or pause for human review before final submit (default: from profile.json)."),
+    engine: str = typer.Option("playwright", "--engine", "-e", help="Application engine: playwright (low-AI deterministic) | agent (Claude Code CLI) | auto."),
     url: Optional[str] = typer.Option(None, "--url", help="Apply to a specific job URL."),
     doc_format: str = typer.Option("docx", "--doc-format", help="Document format for resumes/cover letters: docx (default) or pdf."),
     gen: bool = typer.Option(False, "--gen", help="Generate prompt file for manual debugging instead of running."),
@@ -889,6 +891,7 @@ def apply(
             port=0,
             headless=headless,
             dry_run=dry_run,
+            auto_submit=auto_submit,
             conn=conn,
         )
 
@@ -920,6 +923,75 @@ def apply(
         else:
             console.print(f"[yellow]Autonomous runner status: {tier_status}[/yellow]")
             return
+
+    # Multi-job application using Autonomous Playwright Engine (Default)
+    if engine in ("playwright", "auto"):
+        import sqlite3
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+
+        query = """
+            SELECT * FROM jobs
+            WHERE (apply_status IS NULL OR apply_status != 'applied')
+              AND (state IS NULL OR state != 'applied')
+              AND applied_at IS NULL
+              AND fit_score >= ?
+            ORDER BY fit_score DESC, discovered_at DESC
+        """
+        params = [min_score]
+        effective_limit = limit if limit is not None else (0 if continuous else 5)
+        if effective_limit > 0:
+            query += " LIMIT ?"
+            params.append(effective_limit)
+
+        matching_rows = conn.execute(query, params).fetchall()
+        if not matching_rows:
+            # Fall back to jobs with any score or discovered if none scored >= min_score yet
+            console.print(f"[yellow]No unscored/unapplied jobs found with fit_score >= {min_score}. Checking all high-relevance jobs...[/yellow]")
+            matching_rows = conn.execute(
+                "SELECT * FROM jobs WHERE (state IS NULL OR state != 'applied') AND applied_at IS NULL ORDER BY fit_score DESC, discovered_at DESC LIMIT ?",
+                (effective_limit or 5,)
+            ).fetchall()
+
+        if not matching_rows:
+            console.print("[yellow]No pending jobs available to apply.[/yellow]")
+            return
+
+        mode_label = "Headed (Visible Desktop Browser Window)" if not headless else "Headless (Background Stealth)"
+        console.print(f"\n[bold cyan]🚀 Starting Multi-Job Autonomous Application ({len(matching_rows)} roles) on {mode_label}...[/bold cyan]\n")
+
+        from applypilot.apply.playwright_engine import run_playwright_tier_engine
+        success_count = 0
+
+        for idx, row in enumerate(matching_rows, 1):
+            job_dict = dict(row)
+            target_url = job_dict.get("application_url") or job_dict.get("url")
+            console.print(f"[bold][{idx}/{len(matching_rows)}] Applying to {job_dict.get('title')} at {job_dict.get('company')}[/bold]")
+            console.print(f"  URL: {target_url}")
+
+            tier_status, duration_ms, remaining = run_playwright_tier_engine(
+                job=job_dict,
+                port=0,
+                headless=headless,
+                dry_run=dry_run,
+                auto_submit=auto_submit,
+                conn=conn,
+            )
+
+            if tier_status == "applied":
+                success_count += 1
+                console.print(f"  [bold green]✓ Applied successfully in {duration_ms}ms![/bold green]\n")
+                conn.execute("UPDATE jobs SET state = 'applied', applied_at = CURRENT_TIMESTAMP WHERE url = ?", (job_dict["url"],))
+                conn.commit()
+            elif tier_status == "parked_awaiting_email":
+                console.print(f"  [bold yellow]⚠ Parked: {len(remaining)} question(s) awaiting HITL review.[/bold yellow]\n")
+            elif tier_status == "blocked_by_challenge":
+                console.print(f"  [bold red]✖ Security challenge / CAPTCHA unresolved by user.[/bold red]\n")
+            else:
+                console.print(f"  [dim]Status: {tier_status}[/dim]\n")
+
+        console.print(f"[bold green]Batch Complete! Submitted {success_count}/{len(matching_rows)} applications.[/bold green]")
+        return
 
     # Check 1: Tier 3 required (Claude Code CLI + Chrome) for bulk autonomous agent runs
     check_tier(3, "auto-apply")

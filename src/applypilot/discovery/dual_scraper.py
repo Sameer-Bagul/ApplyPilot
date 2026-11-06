@@ -139,3 +139,4 @@ def smart_scrape(url: str, require_js: bool = False, timeout: float = 10.0) -> d
     # Return light result if Playwright is unavailable or fails
     light = FastLightScraper(timeout=timeout)
     return light.fetch(url)
+

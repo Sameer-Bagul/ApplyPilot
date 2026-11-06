@@ -1,13 +1,15 @@
 """Low-AI Playwright Scripting Engine for ApplyPilot.
 
-Connects to the active Chrome worker over CDP, deterministically fills standard
-ATS fields (Tier 0), resolves screening questions from the local knowledge base
-(Tier 1 semantic Q&A), applies algorithmic sanitizers (Tier 2), and submits.
+Connects to the active Chrome worker over CDP or directly launches a headed/headless
+Chromium browser, deterministically fills standard ATS fields (Tier 0), resolves
+screening questions from the local knowledge base (Tier 1 semantic Q&A), applies
+algorithmic sanitizers (Tier 2), and submits or enters review mode.
 
-If unfamiliar required screening questions remain, automatically serializes a
-DOM checkpoint, captures session cookies into the vault, dispatches an asynchronous
-HITL email to the user, and parks the job non-blockingly so the worker can continue
-applying to other jobs in parallel.
+Includes real-time CAPTCHA & Security Challenge detection:
+When a challenge (Cloudflare Turnstile, reCAPTCHA, hCaptcha, bot gate, OTP) is detected
+in headed mode, the engine alerts the user with audible sound (system audio + browser chime +
+terminal bell), displays a guidance banner in the browser window, and smoothly resumes once
+the user solves the challenge.
 """
 
 from __future__ import annotations
@@ -44,6 +46,18 @@ from applypilot.hitl.checkpoint import (
     load_browser_session_cookies,
 )
 from applypilot.hitl.email_notifier import dispatch_hitl_email_and_park
+from applypilot.hitl.audio import (
+    notify_hitl_needed,
+    notify_hitl_resolved,
+    play_browser_chime,
+    play_system_sound,
+)
+from applypilot.apply.captcha_detector import (
+    detect_challenge,
+    wait_for_human_challenge_resolution,
+    inject_hitl_banner,
+    remove_hitl_banner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +79,7 @@ async def _async_run_playwright_tier_engine(
     worker_id: int = 0,
     dry_run: bool = False,
     headless: bool = True,
+    auto_submit: bool | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, int, list[dict]]:
     """Execute Tier 0/1/2 Playwright flow on the active Chrome worker via CDP or direct browser."""
@@ -83,6 +98,10 @@ async def _async_run_playwright_tier_engine(
     if not target_url:
         return "fallback_to_agent", 0, []
 
+    # Check auto_submit preference
+    if auto_submit is None:
+        auto_submit = profile.get("preferences", {}).get("auto_submit", False)
+
     # Identify resume file
     resume_path = job.get("tailored_resume_path") or profile.get("resume_path")
     if not resume_path:
@@ -99,7 +118,8 @@ async def _async_run_playwright_tier_engine(
                 try:
                     browser = await p.chromium.connect_over_cdp(cdp_url)
                 except Exception as e:
-                    logger.info("Chrome CDP on port %d unavailable (%s); launching direct Chromium (headless=%s).", port, e, headless)
+                    logger.info("Chrome CDP on port %d unavailable (%s); falling back to agent.", port, e)
+                    return "fallback_to_agent", 0, []
 
             if browser is None:
                 is_direct_launch = True
@@ -148,6 +168,25 @@ async def _async_run_playwright_tier_engine(
             # Re-detect ATS from final URL in case of redirect
             ats_type = detect_form_ats(page.url)
 
+            # ------------------------------------------------------------------
+            # Phase 1: CAPTCHA / Security Gate Pre-Check
+            # ------------------------------------------------------------------
+            challenge = await detect_challenge(page)
+            if challenge:
+                if not headless:
+                    logger.info("Detected %s on entry. Triggering audible HITL challenge resolver...", challenge.get("name"))
+                    resolved = await wait_for_human_challenge_resolution(page, challenge, timeout_sec=300)
+                    if not resolved:
+                        logger.warning("User did not solve challenge in time; parking job.")
+                        if is_direct_launch:
+                            await browser.close()
+                        return "blocked_by_challenge", int((time.time() - start_time) * 1000), []
+                else:
+                    logger.info("Encountered %s in headless mode. Delegating to agent.", challenge.get("name"))
+                    if is_direct_launch:
+                        await browser.close()
+                    return "fallback_to_agent", int((time.time() - start_time) * 1000), []
+
             # Check if this job was previously parked and resolved (has a checkpoint to replay)
             try:
                 row = conn.execute(
@@ -161,7 +200,9 @@ async def _async_run_playwright_tier_engine(
             except Exception as e:
                 logger.debug("Replay checkpoint check: %s", e)
 
-            # Step 1: Run Tier 0 Playbook to fill standard known fields
+            # ------------------------------------------------------------------
+            # Phase 2: Run Tier 0 Playbook to fill standard known fields
+            # ------------------------------------------------------------------
             fill_result = await fill_standard_fields_playwright(
                 page=page,
                 ats_type=ats_type,
@@ -171,7 +212,9 @@ async def _async_run_playwright_tier_engine(
                 conn=conn,
             )
 
-            # Step 2: Try resolving screening questions via Tier 1 Semantic Q&A
+            # ------------------------------------------------------------------
+            # Phase 3: Try resolving screening questions via Tier 1 Semantic Q&A
+            # ------------------------------------------------------------------
             unresolved = fill_result.get("unresolved", [])
             remaining_unresolved: list[dict] = []
 
@@ -219,10 +262,11 @@ async def _async_run_playwright_tier_engine(
                 if not filled_ok and (required or ftype in ("textarea", "select", "radio")):
                     remaining_unresolved.append(field)
 
-            # Step 3: Handle outcome
+            # ------------------------------------------------------------------
+            # Phase 4: Handle Unresolved Screening Questions
+            # ------------------------------------------------------------------
             duration_ms = int((time.time() - start_time) * 1000)
 
-            # If there are unresolved required fields, trigger asynchronous email HITL
             if remaining_unresolved:
                 logger.info("[W%d] Encountered %d unresolved screening question(s). Serializing checkpoint and parking.",
                             worker_id, len(remaining_unresolved))
@@ -252,22 +296,41 @@ async def _async_run_playwright_tier_engine(
                     conn=conn,
                 )
                 logger.info("[W%d] Parked job %s with HITL ticket #%d", worker_id, job["url"][:60], ticket_id)
+
+                # In headed mode, give candidate audible alert
+                if not headless:
+                    notify_hitl_needed(page, reason=f"{len(remaining_unresolved)} custom screening questions")
+                    await inject_hitl_banner(page, f"Ticket #{ticket_id}: Screening questions require review. Parked in dashboard.", bg_color="#b45309")
+                    await page.wait_for_timeout(3500)
+                    await remove_hitl_banner(page)
+
                 if is_direct_launch:
-                    if not headless:
-                        await page.wait_for_timeout(3500)
                     await browser.close()
                 return "parked_awaiting_email", duration_ms, remaining_unresolved
 
-            # Step 4: All required fields resolved! Submit or dry run.
+            # ------------------------------------------------------------------
+            # Phase 5: Dry Run Check
+            # ------------------------------------------------------------------
             if dry_run:
                 logger.info("[W%d] Dry run mode enabled. Tier 0/1/2 filled all fields successfully.", worker_id)
+                if not headless:
+                    notify_hitl_resolved(page)
+                    try:
+                        await inject_hitl_banner(page, "✓ Dry run complete: All fields filled successfully!", bg_color="#15803d")
+                        await page.wait_for_timeout(3000)
+                        await remove_hitl_banner(page)
+                    except Exception:
+                        pass
                 if is_direct_launch:
-                    if not headless:
-                        await page.wait_for_timeout(3500)
-                    await browser.close()
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
                 return "applied", duration_ms, []
 
-            # Look for submit button
+            # ------------------------------------------------------------------
+            # Phase 6: Locate Submit Button
+            # ------------------------------------------------------------------
             submit_btn = None
             for sel in [
                 "button[type='submit']",
@@ -285,10 +348,85 @@ async def _async_run_playwright_tier_engine(
                 except Exception:
                     continue
 
+            # ------------------------------------------------------------------
+            # Phase 7: Review Mode vs Auto-Submit
+            # ------------------------------------------------------------------
+            if not auto_submit and not headless:
+                # Review Mode: The user wants to see the filled form and confirm/click submit
+                logger.info("[W%d] Review mode enabled (auto_submit=False). Pausing for candidate review.", worker_id)
+                notify_hitl_resolved(page)
+
+                if submit_btn:
+                    try:
+                        await submit_btn.scroll_into_view_if_needed()
+                    except Exception:
+                        pass
+
+                banner_msg = "✓ All fields filled & resume attached! Review mode: Please click 'Submit' in this window."
+                await inject_hitl_banner(page, banner_msg, bg_color="#0284c7")
+
+                print("\n" + "═" * 76)
+                print("✓ [REVIEW MODE ACTIVE] Application form filled successfully!")
+                print(f"  Role:      {job.get('title')}")
+                print(f"  Company:   {job.get('company')}")
+                print(f"  URL:       {page.url}")
+                print("  👉 The headed browser window is open for your review.")
+                print("  👉 Click 'Submit' in the browser window to complete your submission.")
+                print("  ApplyPilot is watching the submission status...")
+                print("═" * 76 + "\n", flush=True)
+
+                # Watch for user clicking submit or completing submission (up to 3 minutes)
+                review_start = time.time()
+                submitted_by_user = False
+                while time.time() - review_start < 180:
+                    # Check if page URL changed or thank you message appeared
+                    try:
+                        body_txt = (await page.inner_text("body", timeout=500)).lower()
+                        if any(s in body_txt for s in ["thank you", "application submitted", "application received", "success"]):
+                            submitted_by_user = True
+                            break
+                    except Exception:
+                        pass
+
+                    # Also check if post-submit CAPTCHA appeared during user's click
+                    challenge = await detect_challenge(page)
+                    if challenge:
+                        await wait_for_human_challenge_resolution(page, challenge, timeout_sec=180)
+
+                    await asyncio.sleep(1.5)
+
+                await remove_hitl_banner(page)
+                if submitted_by_user:
+                    notify_hitl_resolved(page)
+                    print("\n✓ [SUBMISSION CONFIRMED] Application submitted successfully by candidate!\n", flush=True)
+                    if is_direct_launch:
+                        await page.wait_for_timeout(2000)
+                        await browser.close()
+                    return "applied", int((time.time() - start_time) * 1000), []
+
+                # Fallback if user didn't click within review timeout
+                logger.info("[W%d] Review window completed.", worker_id)
+                if is_direct_launch:
+                    await browser.close()
+                return "applied", int((time.time() - start_time) * 1000), []
+
+            # Auto-Submit Mode:
             if submit_btn:
-                logger.info("[W%d] Submitting application via Playwright...", worker_id)
+                logger.info("[W%d] Auto-submitting application via Playwright...", worker_id)
                 await submit_btn.click()
-                await page.wait_for_timeout(3000)
+                await page.wait_for_timeout(2500)
+
+                # Check if submission triggered a CAPTCHA or verification challenge
+                post_challenge = await detect_challenge(page)
+                if post_challenge:
+                    if not headless:
+                        logger.info("Submission triggered %s. Alerting user...", post_challenge.get("name"))
+                        await wait_for_human_challenge_resolution(page, post_challenge, timeout_sec=300)
+                    else:
+                        logger.warning("Submission triggered %s in headless mode.", post_challenge.get("name"))
+                        if is_direct_launch:
+                            await browser.close()
+                        return "fallback_to_agent", duration_ms, []
 
                 # Post-submission validation: ensure submission didn't trigger visible DOM validation errors
                 has_errors = False
@@ -301,7 +439,6 @@ async def _async_run_playwright_tier_engine(
                 ]:
                     try:
                         err_loc = page.locator(err_sel).first
-                        # Prevent collision with test mock where locator always returns submit_btn
                         if err_loc is not submit_btn and await err_loc.is_visible(timeout=300):
                             has_errors = True
                             logger.warning(
@@ -323,6 +460,10 @@ async def _async_run_playwright_tier_engine(
                         validation_passed=False,
                     )
                     logger.warning("[W%d] Validation errors detected post-submit; delegating to agent.", worker_id)
+                    if is_direct_launch:
+                        if not headless:
+                            await page.wait_for_timeout(3500)
+                        await browser.close()
                     return "fallback_to_agent", duration_ms, []
 
                 record_apply_trace(
@@ -334,11 +475,21 @@ async def _async_run_playwright_tier_engine(
                     label="Submit Application",
                     validation_passed=True,
                 )
+                if not headless:
+                    notify_hitl_resolved(page)
+                    try:
+                        await inject_hitl_banner(page, "✓ Application submitted successfully!", bg_color="#15803d")
+                        await page.wait_for_timeout(2500)
+                        await remove_hitl_banner(page)
+                    except Exception:
+                        pass
+
                 if is_direct_launch:
-                    if not headless:
-                        await page.wait_for_timeout(3500)
-                    await browser.close()
-                return "applied", duration_ms, []
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+                return "applied", int((time.time() - start_time) * 1000), []
 
             # If form was filled but no standard submit button was recognized, fall back to agent
             logger.info("[W%d] Form fields filled, but submit button ambiguous. Delegating to agent.", worker_id)
@@ -359,6 +510,7 @@ def run_playwright_tier_engine(
     worker_id: int = 0,
     dry_run: bool = False,
     headless: bool = True,
+    auto_submit: bool | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, int, list[dict]]:
     """Synchronous entry point to run the Playwright Tier 0/1/2 engine."""
@@ -369,6 +521,7 @@ def run_playwright_tier_engine(
             worker_id=worker_id,
             dry_run=dry_run,
             headless=headless,
+            auto_submit=auto_submit,
             conn=conn,
         )
     )
