@@ -12,6 +12,7 @@ services:
     image: applypilot:latest
     container_name: applypilot-app
     restart: unless-stopped
+    ipc: host
     ports:
       - "3000:3000"
     env_file:
