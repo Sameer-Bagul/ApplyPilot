@@ -153,6 +153,31 @@ export function getJobs(params: {
     queryParams.push(`%${params.location}%`);
   }
 
+  if (params.ats && params.ats !== 'ALL') {
+    if (params.ats === 'workday') {
+      query += ` AND site LIKE '%workday%'`;
+    } else if (params.ats === 'linkedin') {
+      query += ` AND site LIKE '%linkedin%'`;
+    } else if (params.ats === 'greenhouse') {
+      query += ` AND site LIKE '%greenhouse%'`;
+    } else if (params.ats === 'ashby') {
+      query += ` AND site LIKE '%ashby%'`;
+    } else if (params.ats === 'lever') {
+      query += ` AND site LIKE '%lever%'`;
+    } else if (params.ats === 'hackernews') {
+      query += ` AND (site LIKE '%hackernews%' OR site LIKE '%ycombinator%')`;
+    } else if (params.ats === 'smartrecruiters') {
+      query += ` AND site LIKE '%smartrecruiters%'`;
+    } else if (params.ats === 'naukri') {
+      query += ` AND site LIKE '%naukri%'`;
+    } else if (params.ats === 'internet_search') {
+      query += ` AND (site LIKE '%google%' OR site LIKE '%company_careers%' OR site LIKE '%search%' OR site LIKE '%topstartups%')`;
+    } else {
+      query += ` AND site LIKE ?`;
+      queryParams.push(`%${params.ats}%`);
+    }
+  }
+
   // Count total matching
   const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
@@ -1184,4 +1209,196 @@ export function deleteQaKnowledgeItem(id: number): { success: boolean; error?: s
     return { success: false, error: err.message };
   }
 }
+
+export interface SourceStatItem {
+  id: string;
+  name: string;
+  badge: string;
+  type: 'Enterprise ATS' | 'Social Network' | 'Search Engine / OSINT' | 'Community' | 'Global Board';
+  total_jobs: number;
+  avg_score: number | null;
+  last_seen: string | null;
+  top_companies: string[];
+  status: 'ACTIVE' | 'CONNECTED';
+  description: string;
+}
+
+export function getSourcesStats(): {
+  sources: SourceStatItem[];
+  totalJobs: number;
+  totalPlatforms: number;
+} {
+  const db = getDb();
+
+  const groups = [
+    {
+      id: 'linkedin',
+      name: 'LinkedIn Jobs',
+      badge: 'SOCIAL',
+      type: 'Social Network' as const,
+      pattern: "%linkedin%",
+      description: 'Discovered via LinkedIn Guest APIs and recruiter direct feeds.',
+    },
+    {
+      id: 'workday',
+      name: 'Workday Enterprise',
+      badge: 'ENTERPRISE',
+      type: 'Enterprise ATS' as const,
+      pattern: "%workday%",
+      description: 'Fortune 500 banks, GCCs, and multinational corporate career portals (*.myworkdayjobs.com).',
+    },
+    {
+      id: 'internet_search',
+      name: 'Internet & Search Engine Crawler',
+      badge: 'OSINT',
+      type: 'Search Engine / OSINT' as const,
+      pattern: "(site LIKE '%google%' OR site LIKE '%company_careers%' OR site LIKE '%search%' OR site LIKE '%topstartups%')",
+      isCustomSql: true,
+      description: 'URLs and career listings crawled directly from web search engines, Google, and sitemaps.',
+    },
+    {
+      id: 'greenhouse',
+      name: 'Greenhouse Board',
+      badge: 'ATS',
+      type: 'Enterprise ATS' as const,
+      pattern: "%greenhouse%",
+      description: 'Direct ATS boards from top-tier tech scaleups and unicorns.',
+    },
+    {
+      id: 'ashby',
+      name: 'Ashby HQ',
+      badge: 'ATS',
+      type: 'Enterprise ATS' as const,
+      pattern: "%ashby%",
+      description: 'AI startups and modern tech companies (OpenAI, Anthropic, Ramp).',
+    },
+    {
+      id: 'lever',
+      name: 'Lever ATS',
+      badge: 'ATS',
+      type: 'Enterprise ATS' as const,
+      pattern: "%lever%",
+      description: 'High-growth mid-market engineering companies.',
+    },
+    {
+      id: 'hackernews',
+      name: 'Hacker News (Who is Hiring)',
+      badge: 'COMMUNITY',
+      type: 'Community' as const,
+      pattern: "(site LIKE '%hackernews%' OR site LIKE '%ycombinator%')",
+      isCustomSql: true,
+      description: 'Monthly direct founder and engineering hiring threads on Y Combinator.',
+    },
+    {
+      id: 'smartrecruiters',
+      name: 'SmartRecruiters',
+      badge: 'ATS',
+      type: 'Enterprise ATS' as const,
+      pattern: "%smartrecruiters%",
+      description: 'Global enterprise and fintech platforms (Visa, etc.).',
+    },
+    {
+      id: 'naukri',
+      name: 'Naukri Gulf & India',
+      badge: 'DOMESTIC',
+      type: 'Global Board' as const,
+      pattern: "%naukri%",
+      description: 'Premier domestic tech job postings in Bengaluru, Pune, Hyderabad, and NCR.',
+    },
+    {
+      id: 'bangalorestartupmap',
+      name: 'Bangalore Startup Map',
+      badge: 'DIRECTORY',
+      type: 'Global Board' as const,
+      pattern: "%bangalorestartupmap%",
+      description: 'Bengaluru ecosystem VC portfolio startups and stealth engineering teams.',
+    },
+    {
+      id: 'oracle',
+      name: 'Oracle Taleo / Cloud',
+      badge: 'ENTERPRISE',
+      type: 'Enterprise ATS' as const,
+      pattern: "%oracle%",
+      description: 'Oracle Cloud & Taleo corporate recruitment systems.',
+    },
+    {
+      id: 'seek',
+      name: 'Seek Global',
+      badge: 'GLOBAL',
+      type: 'Global Board' as const,
+      pattern: "%seek%",
+      description: 'APAC and international tech openings.',
+    },
+    {
+      id: 'other_ats',
+      name: 'Aggregated Global ATS',
+      badge: 'AGGREGATED',
+      type: 'Global Board' as const,
+      pattern: "site LIKE 'freehire%'",
+      isCustomSql: true,
+      description: 'Adzuna, Himalayas, Wellfound, Eightfold, Phenom, and European tech portals.',
+    },
+  ];
+
+  const sources: SourceStatItem[] = [];
+  let grandTotal = 0;
+
+  for (const g of groups) {
+    let whereClause = '';
+    const params: any[] = [];
+    if (g.isCustomSql) {
+      whereClause = `WHERE ${g.pattern}`;
+    } else {
+      whereClause = `WHERE site LIKE ?`;
+      params.push(g.pattern);
+    }
+
+    const row = db.prepare(`
+      SELECT 
+        COUNT(*) as total_jobs,
+        ROUND(AVG(CASE WHEN fit_score IS NOT NULL THEN fit_score END), 1) as avg_score,
+        MAX(discovered_at) as last_seen
+      FROM jobs
+      ${whereClause}
+    `).get(...params) as any;
+
+    const total = row?.total_jobs || 0;
+    if (total === 0) continue;
+
+    grandTotal += total;
+
+    // Get top 3 companies for this source
+    const topComps = db.prepare(`
+      SELECT company, COUNT(*) as c
+      FROM jobs
+      ${whereClause} AND company IS NOT NULL AND company != ''
+      GROUP BY company
+      ORDER BY c DESC
+      LIMIT 3
+    `).all(...params) as Array<{ company: string; c: number }>;
+
+    sources.push({
+      id: g.id,
+      name: g.name,
+      badge: g.badge,
+      type: g.type,
+      total_jobs: total,
+      avg_score: row?.avg_score || null,
+      last_seen: row?.last_seen || null,
+      top_companies: topComps.map(tc => tc.company),
+      status: 'ACTIVE',
+      description: g.description,
+    });
+  }
+
+  // Sort by total jobs descending
+  sources.sort((a, b) => b.total_jobs - a.total_jobs);
+
+  return {
+    sources,
+    totalJobs: grandTotal,
+    totalPlatforms: sources.length,
+  };
+}
+
 

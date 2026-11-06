@@ -147,3 +147,4 @@ def harvest_workday_stream(
         "unique_workday_companies_seen": len(discovered_companies),
         "discovered_companies_list": sorted(list(discovered_companies)),
     }
+

@@ -138,3 +138,4 @@ def harvest_enterprise_companies(
             summary["company_details"][name] = {"error": str(e)}
 
     return summary
+

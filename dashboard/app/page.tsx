@@ -63,6 +63,7 @@ import { CompanyDetailDrawer } from '@/components/CompanyDetailDrawer';
 import { LeadDetailDrawer } from '@/components/LeadDetailDrawer';
 import { HitlTicketModal } from '@/components/HitlTicketModal';
 import { ArchitectureView } from '@/components/ArchitectureView';
+import { SourcesView } from '@/components/SourcesView';
 import { ProfileView } from '@/components/ProfileView';
 import { AddJobModal } from '@/components/AddJobModal';
 import { AddCompanyModal } from '@/components/AddCompanyModal';
@@ -88,13 +89,13 @@ interface StatsData {
 }
 
 interface DashboardPageProps {
-  initialTab?: 'overview' | 'architecture' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile';
+  initialTab?: 'overview' | 'architecture' | 'sources' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile';
 }
 
 function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'architecture' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile'
+    'overview' | 'architecture' | 'sources' | 'jobs' | 'companies' | 'leads' | 'hitl' | 'radar' | 'profile'
   >(initialTab);
   const [jobLimit, setJobLimit] = useState(25);
   const [companyLimit, setCompanyLimit] = useState(25);
@@ -251,6 +252,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     const validTabs: Array<typeof activeTab> = [
       'overview',
       'architecture',
+      'sources',
       'jobs',
       'companies',
       'leads',
@@ -462,6 +464,14 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
       color: 'text-cyan-600',
       badge: 'CORE',
       badgeColor: 'bg-cyan-50 text-cyan-800 border-cyan-200/80',
+    },
+    {
+      id: 'sources',
+      label: 'Job Sources',
+      icon: Globe,
+      color: 'text-indigo-600',
+      badge: 'MULTI-SRC',
+      badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200/80',
     },
     {
       id: 'jobs',
@@ -1004,6 +1014,9 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
         {/* ----------------- TAB 2: ARCHITECTURE VIEW ----------------- */}
         {activeTab === 'architecture' && <ArchitectureView />}
 
+        {/* ----------------- TAB 2B: JOB SOURCES VIEW ----------------- */}
+        {activeTab === 'sources' && <SourcesView onSelectJob={(url) => setSelectedJobUrl(url)} />}
+
         {/* ----------------- TAB 3: ALL JOBS EXPLORER ----------------- */}
         {activeTab === 'jobs' && (
           <div className="space-y-4 animate-in fade-in duration-200">
@@ -1199,43 +1212,71 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
               ) : companies.length === 0 ? (
                 <div className="py-20 text-center text-xs text-zinc-500">No companies found.</div>
               ) : (
-                <div className="space-y-2">
-                  {companies.map((c) => (
-                    <div
-                      key={c.company_name}
-                      onClick={() => openCompany(c.company_name)}
-                      className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer group"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-xs text-zinc-900 group-hover:text-cyan-700 transition">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+                  {companies.map((c) => {
+                    const domain = c.official_domain || `${c.company_name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+                    const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+                    const openRoles = c.open_roles_count || 0;
+                    const initial = (c.company_name || 'C').charAt(0).toUpperCase();
+
+                    return (
+                      <div
+                        key={c.company_name}
+                        onClick={() => openCompany(c.company_name)}
+                        className="liquid-card rounded-2xl p-4 flex flex-col items-center text-center justify-between transition-all duration-200 hover:scale-[1.02] hover:shadow-md hover:border-amber-300 cursor-pointer group relative overflow-hidden min-h-[165px] border border-white/80 bg-white/70"
+                      >
+                        {c.is_vip === 1 && (
+                          <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-0.5">
+                            <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-600" />
+                            VIP
+                          </span>
+                        )}
+
+                        {/* 1. Icon / Logo of Company */}
+                        <div className="w-12 h-12 rounded-2xl bg-white p-1 border border-zinc-200/90 shadow-2xs flex items-center justify-center shrink-0 mb-2 group-hover:shadow-xs transition-shadow overflow-hidden">
+                          <img
+                            src={faviconUrl}
+                            alt={c.company_name}
+                            className="w-full h-full object-contain rounded-xl"
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              target.style.display = 'none';
+                              if (target.parentElement) {
+                                target.parentElement.innerHTML = `<span class="text-base font-black text-amber-700">${initial}</span>`;
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {/* 2. Name of Company */}
+                        <div className="w-full mb-2">
+                          <h4
+                            className="font-bold text-xs text-zinc-950 truncate px-1 group-hover:text-amber-700 transition-colors"
+                            title={c.company_name}
+                          >
                             {c.company_name}
-                          </span>
-                          {c.is_vip === 1 && (
-                            <span className="px-2 py-0.2 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
-                              <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-600" />
-                              VIP
-                            </span>
-                          )}
-                          <span className="text-[10px] px-2 py-0.2 rounded-full font-mono bg-zinc-100 text-zinc-600 border border-zinc-200 capitalize">
-                            ATS: {c.ats_provider || 'Direct'}
-                          </span>
-                          <span className="text-[10px] px-2 py-0.2 rounded-full font-mono bg-zinc-100 text-zinc-600 border border-zinc-200">
-                            Tier {c.priority_tier || 2}
+                          </h4>
+                          <span className="text-[10px] text-zinc-500 font-mono block truncate">
+                            {c.official_domain || c.ats_provider || 'Enterprise'}
                           </span>
                         </div>
-                        <div className="text-xs text-zinc-500 flex items-center gap-3">
-                          {c.official_domain && <span className="font-mono text-zinc-700">{c.official_domain}</span>}
-                          <span>•</span>
-                          <span>{c.sector || 'Technology'}</span>
-                          <span>•</span>
-                          <span>{c.location || 'Remote'}</span>
+
+                        {/* 3. Count of Jobs in that Company */}
+                        <div className="w-full pt-2 border-t border-zinc-200/50">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold w-full justify-center ${
+                              openRoles > 0
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-zinc-100 text-zinc-500 border border-zinc-200'
+                            }`}
+                          >
+                            <Briefcase className="w-3 h-3 text-amber-600 shrink-0" />
+                            {openRoles} {openRoles === 1 ? 'Job' : 'Jobs'}
+                          </span>
                         </div>
                       </div>
-
-                      <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
