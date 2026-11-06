@@ -549,7 +549,8 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
 
             if action == "upload":
                 if resume_path and Path(resume_path).exists():
-                    await loc.set_input_files(str(resume_path))
+                    from applypilot.apply.human_input import human_upload
+                    await human_upload(loc, str(resume_path), page=page)
                     filled[target_key] = str(resume_path)
                     if selector_id:
                         record_selector_result(selector_id, success=True, conn=conn)
@@ -562,7 +563,8 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
                     elif "url" in target_key:
                         val_str = sanitize_url(val_str)
 
-                    await loc.fill(val_str)
+                    from applypilot.apply.human_input import human_type
+                    await human_type(loc, val_str, page=page)
                     filled[target_key] = val_str
                     if selector_id:
                         record_selector_result(selector_id, success=True, conn=conn)

@@ -121,7 +121,8 @@ async def replay_checkpoint_playwright(page, checkpoint: dict) -> dict:
                 if current_val and current_val.strip() == str(val).strip():
                     skipped += 1
                     continue
-                await loc.fill(str(val))
+                from applypilot.apply.human_input import human_type
+                await human_type(loc, str(val), page=page)
                 replayed += 1
             else:
                 skipped += 1

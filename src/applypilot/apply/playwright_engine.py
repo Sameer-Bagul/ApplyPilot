@@ -707,12 +707,13 @@ async def _async_run_playwright_tier_engine(
                             loc = page.get_by_label(label, exact=False).first
 
                         if loc and await loc.is_visible(timeout=500):
+                            from applypilot.apply.human_input import human_type, human_select, human_check
                             if ftype == "select" or options:
-                                await loc.select_option(label=str(val))
+                                await human_select(loc, str(val), page=page)
                             elif ftype in ("radio", "checkbox"):
-                                await loc.check()
+                                await human_check(loc, page=page)
                             else:
-                                await loc.fill(str(val))
+                                await human_type(loc, str(val), page=page)
                             filled_ok = True
                             tracer.log("screening_qa", f"Filled Tier 1 Q&A: '{label}' -> '{val}' (conf: {conf:.2f})")
 
@@ -939,12 +940,12 @@ async def _async_run_playwright_tier_engine(
                 logger.info("[W%d] Auto-submitting application via Playwright...", worker_id)
                 tracer.log("auto_submit", "Auto-submitting application via Playwright submit button click")
                 try:
-                    await submit_btn.scroll_into_view_if_needed()
-                    await page.wait_for_timeout(500)
-                except Exception:
-                    pass
-                await submit_btn.click()
-                await page.wait_for_timeout(3000)
+                    from applypilot.apply.human_input import human_click
+                    await human_click(submit_btn, page=page, wait_after_sec=2.5)
+                except Exception as e:
+                    logger.debug("Human click fallback: %s", e)
+                    await submit_btn.click()
+                    await page.wait_for_timeout(2500)
 
                 # Check if submission triggered a CAPTCHA or verification challenge
                 post_challenge = await detect_challenge(page)
