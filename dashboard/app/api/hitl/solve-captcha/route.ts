@@ -63,10 +63,12 @@ export async function POST(request: NextRequest) {
 
       proc.stdout.on('data', (d) => {
         stdout += d.toString();
+        process.stdout.write(d);
       });
 
       proc.stderr.on('data', (d) => {
         stderr += d.toString();
+        process.stderr.write(d);
       });
 
       proc.on('close', (code) => {
