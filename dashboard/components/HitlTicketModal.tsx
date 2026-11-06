@@ -216,6 +216,37 @@ export function HitlTicketModal({
                     {ticket.questions && ticket.questions.length > 0 ? (
                       ticket.questions.map((q: any, idx: number) => {
                         const fieldKey = q.field_id || q.label || `q_${idx}`;
+                        const isReviewCheckpoint =
+                          q.field_type === 'submit' ||
+                          q.type === 'submit' ||
+                          q.label?.toLowerCase().includes('submission review') ||
+                          q.label?.toLowerCase().includes('form fields filled');
+
+                        if (isReviewCheckpoint) {
+                          return (
+                            <div key={idx} className="liquid-glass rounded-2xl p-4 border border-emerald-200/90 bg-emerald-50/40 shadow-2xs space-y-2.5">
+                              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>All Profile Fields & Resume Pre-Filled</span>
+                              </div>
+                              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                                No questions are missing. ApplyPilot filled your name, email, contact details, and resume. The application was paused for your final visual review before submission (because review mode is enabled in your profile).
+                              </p>
+                              <div className="pt-1">
+                                <button
+                                  type="button"
+                                  onClick={handleSolveCaptcha}
+                                  disabled={solvingCaptcha}
+                                  className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs hover:scale-[1.01] transition"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>{solvingCaptcha ? 'Opening Browser...' : 'Open Headed Browser & Submit'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         return (
                           <div key={idx} className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs space-y-2">
                             <label className="text-xs font-semibold text-zinc-800 block">
