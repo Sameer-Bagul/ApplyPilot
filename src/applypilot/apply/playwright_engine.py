@@ -219,9 +219,10 @@ async def _async_run_playwright_tier_engine(
                 ts = int(time.time())
 
                 screenshot_dest = config.PROOFS_SCREENSHOTS_DIR / f"{clean_co}_{clean_ti}_{ts}.png"
+                screenshot_full_dest = config.PROOFS_SCREENSHOTS_DIR / f"{clean_co}_{clean_ti}_{ts}_full.png"
                 video_dest = config.PROOFS_VIDEOS_DIR / f"{clean_co}_{clean_ti}_{ts}.webm"
 
-                # 1. Capture screenshot proof
+                # 1. Capture screenshot proof (both crisp 2x viewport receipt and complete full-page document)
                 try:
                     if hasattr(page, "screenshot") and callable(page.screenshot):
                         is_closed = False
@@ -231,9 +232,18 @@ async def _async_run_playwright_tier_engine(
                             except Exception:
                                 is_closed = False
                         if not is_closed:
-                            res = page.screenshot(path=str(screenshot_dest), full_page=True, timeout=5000)
+                            # Primary receipt: Focused viewport confirmation screenshot (2560x1440 Retina)
+                            res = page.screenshot(path=str(screenshot_dest), full_page=False, timeout=5000)
                             if asyncio.iscoroutine(res):
                                 await res
+
+                            # Separate full-page DOM screenshot
+                            try:
+                                res_full = page.screenshot(path=str(screenshot_full_dest), full_page=True, timeout=5000)
+                                if asyncio.iscoroutine(res_full):
+                                    await res_full
+                            except Exception:
+                                pass
                 except Exception:
                     try:
                         if hasattr(page, "screenshot") and callable(page.screenshot):
@@ -359,6 +369,7 @@ async def _async_run_playwright_tier_engine(
             if is_direct_launch:
                 context = await browser.new_context(
                     viewport={"width": 1280, "height": 720},
+                    device_scale_factor=2,
                     record_video_dir=str(config.PROOFS_VIDEOS_DIR),
                     record_video_size={"width": 1280, "height": 720},
                     user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -368,6 +379,7 @@ async def _async_run_playwright_tier_engine(
                 try:
                     context = await browser.new_context(
                         viewport={"width": 1280, "height": 720},
+                        device_scale_factor=2,
                         record_video_dir=str(config.PROOFS_VIDEOS_DIR),
                         record_video_size={"width": 1280, "height": 720},
                         user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -539,7 +551,8 @@ async def _async_run_playwright_tier_engine(
 
             # 7. Check for ATS service outage / maintenance / closed job page
             try:
-                body_text = (await page.inner_text("body", timeout=1000)).lower()
+                await page.wait_for_timeout(800)
+                body_text = (await page.inner_text("body", timeout=2000)).lower()
                 closed_indicators = [
                     "this job is no longer available",
                     "this position has been filled",
@@ -552,6 +565,8 @@ async def _async_run_playwright_tier_engine(
                     "is no longer open",
                     "no longer open",
                     "job you are looking for",
+                    "job not found",
+                    "job you requested was not found",
                 ]
                 outage_indicators = [
                     "workday is currently unavailable",

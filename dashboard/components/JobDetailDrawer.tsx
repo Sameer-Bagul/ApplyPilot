@@ -30,6 +30,9 @@ import {
   Check,
   FileText,
   Terminal,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { RouteBadge } from './ui/RouteBadge';
 
@@ -56,6 +59,8 @@ export function JobDetailDrawer({
   const [copiedScreenshot, setCopiedScreenshot] = useState(false);
   const [copiedLog, setCopiedLog] = useState(false);
   const [proofLog, setProofLog] = useState<any | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
   
   // Application runner state (Phase 2)
   const [applyingMode, setApplyingMode] = useState<'headless' | 'headed' | null>(null);
@@ -606,7 +611,7 @@ export function JobDetailDrawer({
 
                   {/* Screenshot Confirmation Receipt Section */}
                   <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <Camera className="w-4 h-4 text-emerald-600" />
                         <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
@@ -614,25 +619,57 @@ export function JobDetailDrawer({
                         </span>
                       </div>
                       {job?.proof_screenshot_path && (
-                        <a
-                          href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot&download=1`}
-                          className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                          download
-                        >
-                          <Download className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Download .png</span>
-                        </a>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setZoomLevel(1);
+                              setLightboxOpen(true);
+                            }}
+                            className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5 text-purple-600" />
+                            <span>Zoom & Inspect</span>
+                          </button>
+                          <a
+                            href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 text-cyan-600" />
+                            <span>Open in New Tab</span>
+                          </a>
+                          <a
+                            href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot&download=1`}
+                            className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                            download
+                          >
+                            <Download className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Download .png</span>
+                          </a>
+                        </div>
                       )}
                     </div>
 
                     {job?.proof_screenshot_path ? (
                       <div className="space-y-3">
-                        <div className="rounded-2xl overflow-hidden bg-white border border-zinc-200 shadow-sm max-h-[450px] overflow-y-auto">
+                        <div 
+                          onClick={() => {
+                            setZoomLevel(1);
+                            setLightboxOpen(true);
+                          }}
+                          className="rounded-2xl overflow-hidden bg-zinc-900/5 border border-zinc-200 shadow-sm max-h-[480px] overflow-y-auto cursor-zoom-in group relative"
+                        >
                           <img
                             src={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot`}
                             alt="Application submission confirmation receipt"
-                            className="w-full h-auto object-cover"
+                            className="w-full h-auto object-contain block transition group-hover:opacity-95"
                           />
+                          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition bg-zinc-900/80 text-white px-2.5 py-1 rounded-lg text-[11px] font-medium flex items-center gap-1.5 shadow-md pointer-events-none backdrop-blur-xs">
+                            <Maximize2 className="w-3 h-3 text-cyan-300" />
+                            <span>Click to Zoom (Crystal Clear)</span>
+                          </div>
                         </div>
                         <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-[11px] text-zinc-600 flex items-center justify-between gap-2">
                           <span className="font-mono truncate">{job.proof_screenshot_path}</span>
@@ -916,6 +953,107 @@ export function JobDetailDrawer({
           </div>
         </div>
       </div>
+
+      {/* High-Resolution Screenshot Lightbox Modal */}
+      {lightboxOpen && jobUrl && (
+        <div 
+          className="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-md flex flex-col p-4 md:p-6 animate-in fade-in duration-200"
+          onClick={() => setLightboxOpen(false)}
+        >
+          {/* Modal Header */}
+          <div 
+            className="flex items-center justify-between p-3.5 px-5 bg-zinc-900/95 border border-zinc-800 rounded-2xl text-white mb-3 shadow-xl backdrop-blur-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <Camera className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="truncate">
+                <span className="text-xs font-bold text-zinc-100 mr-2">{job?.company || 'Company'}</span>
+                <span className="text-xs text-zinc-400 truncate">({job?.title || 'Application Proof'})</span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 hidden sm:inline-block">
+                Retina 2x Lossless
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-zinc-800/80 rounded-xl p-1 border border-zinc-700/80">
+                <button
+                  type="button"
+                  onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
+                  className="p-1 text-zinc-300 hover:text-white hover:bg-zinc-700/80 rounded-lg transition cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <span className="text-[11px] font-mono px-2 text-zinc-300 min-w-[48px] text-center font-semibold">
+                  {Math.round(zoomLevel * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoomLevel((z) => Math.min(3.0, z + 0.25))}
+                  className="p-1 text-zinc-300 hover:text-white hover:bg-zinc-700/80 rounded-lg transition cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoomLevel(1)}
+                  className="text-[10px] font-semibold px-2 py-0.5 text-zinc-400 hover:text-zinc-100 transition rounded-md ml-1"
+                >
+                  Reset
+                </button>
+              </div>
+
+              <a
+                href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 rounded-xl transition cursor-pointer"
+                title="Open original raw image in new tab"
+              >
+                <ExternalLink className="w-4 h-4 text-cyan-400" />
+              </a>
+
+              <a
+                href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot&download=1`}
+                className="p-2 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800/80 rounded-xl transition cursor-pointer"
+                download
+                title="Download original PNG"
+              >
+                <Download className="w-4 h-4 text-emerald-400" />
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(false)}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800/80 rounded-xl transition cursor-pointer ml-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Modal Image Body with Panning & High-DPI Rendering */}
+          <div 
+            className="flex-1 overflow-auto rounded-3xl border border-zinc-800/80 bg-zinc-950/90 shadow-2xl p-4 flex items-start justify-center cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div 
+              style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top center', transition: 'transform 0.15s ease-out' }}
+              className="max-w-none transition"
+            >
+              <img
+                src={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=screenshot`}
+                alt="High-resolution confirmation receipt"
+                className="rounded-xl shadow-2xl block mx-auto"
+                style={{ maxWidth: zoomLevel === 1 ? '100%' : 'none' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
