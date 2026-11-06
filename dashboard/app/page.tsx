@@ -153,9 +153,13 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
   // HITL State
   const [tickets, setTickets] = useState<any[]>([]);
   const [ticketStatus, setTicketStatus] = useState('pending');
+  const [ticketBlocker, setTicketBlocker] = useState<'all' | 'captcha' | 'missing_info'>('all');
+  const [ticketCounts, setTicketCounts] = useState({ pending: 0, captcha: 0, missing: 0, resolved: 0 });
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketPagination, setTicketPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [blitzRunning, setBlitzRunning] = useState(false);
+  const [blitzProgress, setBlitzProgress] = useState<{ current: number; total: number; company?: string } | null>(null);
 
   // Dynamic greeting based on user's local time
   useEffect(() => {
@@ -365,14 +369,22 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     }
   };
 
-  const fetchTickets = async (page = ticketPage, limit = ticketLimit) => {
+  const fetchTickets = async (
+    page = ticketPage,
+    limit = ticketLimit,
+    status = ticketStatus,
+    blocker = ticketBlocker
+  ) => {
     setTicketsLoading(true);
     try {
-      const res = await fetch(`/api/hitl?page=${page}&limit=${limit}&status=${ticketStatus}`);
+      const res = await fetch(`/api/hitl?page=${page}&limit=${limit}&status=${status}&blocker=${blocker}`);
       const data = await res.json();
       if (data.success) {
         setTickets(data.tickets);
         setTicketPagination(data.pagination);
+        if (data.counts) {
+          setTicketCounts(data.counts);
+        }
         setTicketPage(page);
       }
     } catch (err) {
@@ -382,11 +394,53 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     }
   };
 
+  const handleStartCaptchaBlitz = async () => {
+    if (blitzRunning) return;
+    setBlitzRunning(true);
+    try {
+      const res = await fetch('/api/hitl?status=pending&blocker=captcha&limit=100');
+      const data = await res.json();
+      const captchaTickets = data.tickets || [];
+      if (captchaTickets.length === 0) {
+        alert('No pending CAPTCHA tickets in queue! All clear.');
+        setBlitzRunning(false);
+        return;
+      }
+
+      setBlitzProgress({ current: 0, total: captchaTickets.length });
+
+      for (let i = 0; i < captchaTickets.length; i++) {
+        const t = captchaTickets[i];
+        setBlitzProgress({ current: i + 1, total: captchaTickets.length, company: t.company });
+
+        const solveRes = await fetch('/api/hitl/solve-captcha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticket_id: t.ticket_id, auto_submit: true }),
+        });
+        const solveData = await solveRes.json();
+        if (!solveData.success) {
+          console.warn(`Ticket ${t.ticket_id} notice:`, solveData);
+        }
+      }
+
+      await fetchTickets(1, ticketLimit, ticketStatus, ticketBlocker);
+      fetchStats();
+      alert(`⚡ CAPTCHA Blitz complete! Processed ${captchaTickets.length} challenges.`);
+    } catch (err: any) {
+      console.error('Blitz error:', err);
+      alert('Error during CAPTCHA Blitz: ' + err.message);
+    } finally {
+      setBlitzRunning(false);
+      setBlitzProgress(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'jobs') fetchJobs(1);
     if (activeTab === 'companies') fetchCompanies(1);
     if (activeTab === 'leads') fetchLeads(1);
-    if (activeTab === 'hitl') fetchTickets(1);
+    if (activeTab === 'hitl') fetchTickets(1, ticketLimit, ticketStatus, ticketBlocker);
   }, [
     activeTab,
     jobSearch,
@@ -400,6 +454,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     leadStatus,
     leadType,
     ticketStatus,
+    ticketBlocker,
   ]);
 
   const handleApproveAllPending = async () => {
@@ -1434,62 +1489,193 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
         {/* ----------------- TAB 6: HITL SAFETY TICKETS ----------------- */}
         {activeTab === 'hitl' && (
           <div className="space-y-4 animate-in fade-in duration-200">
-            <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs flex items-center justify-between">
+            {/* Header with CAPTCHA Blitz Trigger */}
+            <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="text-base font-bold text-zinc-900 tracking-tight flex items-center gap-2">
                   <ShieldAlert className="w-5 h-5 text-amber-600" />
-                  <span>Human-in-the-Loop Application Barriers</span>
+                  <span>Human-in-the-Loop Collaborative Queue</span>
                 </h3>
                 <p className="text-xs text-zinc-500">
-                  When auto-application forms require custom answers, tickets are quarantined here for one-click admin confirmation
+                  Solve CAPTCHAs in headed browser or supply missing screening questions with auto-learning.
                 </p>
               </div>
 
-              <select
-                value={ticketStatus}
-                onChange={(e) => setTicketStatus(e.target.value)}
-                className="bg-white/80 border border-zinc-200/90 rounded-2xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
-              >
-                <option value="pending">Pending Intervention</option>
-                <option value="resolved">Resolved</option>
-                <option value="dismissed">Dismissed</option>
-              </select>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  type="button"
+                  disabled={blitzRunning}
+                  onClick={handleStartCaptchaBlitz}
+                  className="liquid-pill-dark px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xs cursor-pointer hover:scale-[1.02] transition disabled:opacity-50"
+                  title="Run headed browser sequentially for all pending CAPTCHA challenges"
+                >
+                  <Zap className={`w-3.5 h-3.5 text-amber-300 ${blitzRunning ? 'animate-bounce' : ''}`} />
+                  <span>{blitzRunning ? 'Blitz Active...' : '⚡ Start CAPTCHA Blitz'}</span>
+                </button>
+
+                <select
+                  value={ticketStatus}
+                  onChange={(e) => {
+                    setTicketStatus(e.target.value);
+                    setTicketPage(1);
+                  }}
+                  className="bg-white/80 border border-zinc-200/90 rounded-2xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs cursor-pointer"
+                >
+                  <option value="pending">Pending Intervention</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="dismissed">Dismissed</option>
+                  <option value="ALL">All Statuses</option>
+                </select>
+              </div>
             </div>
 
+            {/* Blitz Live Banner */}
+            {blitzRunning && blitzProgress && (
+              <div className="liquid-glass rounded-2xl p-4 border border-amber-300 bg-amber-50/70 shadow-xs flex items-center justify-between gap-3 animate-pulse">
+                <div className="flex items-center gap-2.5 text-xs text-amber-950 font-medium">
+                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>CAPTCHA Blitz in progress:</strong> Solving challenge for <strong>{blitzProgress.company || 'Job'}</strong> ({blitzProgress.current} of {blitzProgress.total}). Watch the desktop Chromium window!
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                  {Math.round((blitzProgress.current / blitzProgress.total) * 100)}%
+                </span>
+              </div>
+            )}
+
+            {/* Filter Pills for Blocker Types */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setTicketBlocker('all');
+                  setTicketPage(1);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-medium transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                  ticketBlocker === 'all'
+                    ? 'bg-zinc-900 text-white'
+                    : 'bg-white/70 text-zinc-600 hover:bg-white hover:text-zinc-900 border border-zinc-200/60'
+                }`}
+              >
+                <span>All Flagged</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  ticketBlocker === 'all' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-zinc-600'
+                }`}>
+                  {ticketCounts.pending}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTicketBlocker('captcha');
+                  setTicketPage(1);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-medium transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                  ticketBlocker === 'captcha'
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-white/70 text-zinc-600 hover:bg-white hover:text-rose-700 border border-zinc-200/60'
+                }`}
+              >
+                <span>🧩 CAPTCHA Gates</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  ticketBlocker === 'captcha' ? 'bg-white/20 text-white' : (ticketCounts.captcha > 0 ? 'bg-rose-100 text-rose-800 font-bold' : 'bg-zinc-100 text-zinc-600')
+                }`}>
+                  {ticketCounts.captcha}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTicketBlocker('missing_info');
+                  setTicketPage(1);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-medium transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                  ticketBlocker === 'missing_info'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-white/70 text-zinc-600 hover:bg-white hover:text-amber-800 border border-zinc-200/60'
+                }`}
+              >
+                <span>📝 Missing Questions</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  ticketBlocker === 'missing_info' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-zinc-600'
+                }`}>
+                  {ticketCounts.missing}
+                </span>
+              </button>
+            </div>
+
+            {/* Tickets Table / List */}
             <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs space-y-3">
               {ticketsLoading ? (
                 <div className="py-20 text-center text-xs text-zinc-400">Loading intervention tickets...</div>
               ) : tickets.length === 0 ? (
                 <div className="py-20 text-center text-xs text-zinc-500">
-                  No pending intervention tickets. The pipeline is running smoothly without form blockers!
+                  No tickets found in this view. Everything is running smoothly!
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {tickets.map((t) => (
-                    <div
-                      key={t.ticket_id}
-                      onClick={() => openTicket(t.ticket_id)}
-                      className="liquid-row rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer group"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-xs text-zinc-900 group-hover:text-cyan-700 transition">
-                            {t.role_title || 'Application Blocker'}
-                          </span>
-                          <span className="text-[10px] px-2 py-0.2 rounded-full font-mono bg-amber-50 text-amber-800 border border-amber-200">
-                            {t.blocker_type}
-                          </span>
+                  {tickets.map((t) => {
+                    const isCaptcha = t.blocker_type === 'captcha';
+                    return (
+                      <div
+                        key={t.ticket_id}
+                        onClick={() => openTicket(t.ticket_id)}
+                        className="liquid-row rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer group"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-xs text-zinc-900 group-hover:text-cyan-700 transition truncate">
+                              {t.role_title || 'Application Blocker'}
+                            </span>
+                            {isCaptcha ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-rose-50 text-rose-800 border border-rose-200 font-semibold flex items-center gap-1">
+                                <span>🧩 CAPTCHA Gate</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-amber-50 text-amber-800 border border-amber-200 font-semibold flex items-center gap-1">
+                                <span>📝 Missing Info</span>
+                              </span>
+                            )}
+                            {t.status === 'resolved' && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                ✓ Resolved
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-zinc-500 flex items-center gap-3">
+                            <span className="font-semibold text-zinc-800">{t.company}</span>
+                            <span>•</span>
+                            {isCaptcha ? (
+                              <span className="text-rose-600 font-medium">Headed verification needed</span>
+                            ) : (
+                              <span>{t.questions?.length || 0} Screening Questions</span>
+                            )}
+                            <span>•</span>
+                            <span className="font-mono text-[10px] text-zinc-400">
+                              {new Date(t.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-xs text-zinc-500 flex items-center gap-3">
-                          <span className="font-semibold text-zinc-800">{t.company}</span>
-                          <span>•</span>
-                          <span>{t.questions?.length || 0} Screening Questions</span>
+
+                        <div className="flex items-center gap-2">
+                          {isCaptcha && t.status !== 'resolved' && (
+                            <span className="hidden sm:inline-flex text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-xl">
+                              Solve with App →
+                            </span>
+                          )}
+                          {!isCaptcha && t.status !== 'resolved' && (
+                            <span className="hidden sm:inline-flex text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl">
+                              Review Questions →
+                            </span>
+                          )}
+                          <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
                         </div>
                       </div>
-
-                      <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1499,11 +1685,11 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
                 totalPages={ticketPagination.totalPages}
                 total={ticketPagination.total}
                 limit={ticketPagination.limit}
-                onPageChange={(p) => fetchTickets(p, ticketPagination.limit)}
+                onPageChange={(p) => fetchTickets(p, ticketPagination.limit, ticketStatus, ticketBlocker)}
                 onLimitChange={(l) => {
                   setTicketLimit(l);
                   setTicketPagination((prev) => ({ ...prev, limit: l }));
-                  fetchTickets(1, l);
+                  fetchTickets(1, l, ticketStatus, ticketBlocker);
                 }}
                 itemName="tickets"
               />

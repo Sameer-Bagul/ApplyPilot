@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { spawn } from 'node:child_process';
-import { getDb } from '@/lib/db';
+import { getDb, getApplypilotBin } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       let stdout = '';
       let stderr = '';
 
-      const proc = spawn('applypilot', args, {
+      const proc = spawn(getApplypilotBin(), args, {
         env: {
           ...process.env,
           PYTHONUNBUFFERED: '1',

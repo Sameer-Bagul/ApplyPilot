@@ -98,3 +98,4 @@ async def test_wait_for_human_challenge_resolution_success():
                 assert resolved is True
                 assert mock_alert.called
                 assert mock_res.called
+

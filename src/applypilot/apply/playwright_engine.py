@@ -173,19 +173,46 @@ async def _async_run_playwright_tier_engine(
             # ------------------------------------------------------------------
             challenge = await detect_challenge(page)
             if challenge:
+                ch_name = challenge.get("name", "Security Challenge")
                 if not headless:
-                    logger.info("Detected %s on entry. Triggering audible HITL challenge resolver...", challenge.get("name"))
-                    resolved = await wait_for_human_challenge_resolution(page, challenge, timeout_sec=300)
+                    logger.info("Detected %s on entry. Triggering audible HITL challenge resolver...", ch_name)
+                    resolved = await wait_for_human_challenge_resolution(page, challenge, timeout_sec=180)
                     if not resolved:
-                        logger.warning("User did not solve challenge in time; parking job.")
+                        logger.warning("User did not solve challenge in time; flagging job for collaborative resolution.")
+                        from applypilot.database import create_hitl_ticket
+                        create_hitl_ticket(
+                            job_url=target_url,
+                            unanswered_questions=[{"field_id": "captcha", "label": f"{ch_name} Verification Required", "field_type": "captcha"}],
+                            blocker_type="captcha",
+                            company=job.get("company"),
+                            role_title=job.get("title"),
+                            ats_type=ats_type,
+                            conn=conn,
+                        )
                         if is_direct_launch:
-                            await browser.close()
-                        return "blocked_by_challenge", int((time.time() - start_time) * 1000), []
+                            try:
+                                await browser.close()
+                            except Exception:
+                                pass
+                        return "flagged_captcha", int((time.time() - start_time) * 1000), [{"field_id": "captcha", "label": ch_name}]
                 else:
-                    logger.info("Encountered %s in headless mode. Delegating to agent.", challenge.get("name"))
+                    logger.info("Encountered %s in headless mode. Flagging for collaborative resolution.", ch_name)
+                    from applypilot.database import create_hitl_ticket
+                    create_hitl_ticket(
+                        job_url=target_url,
+                        unanswered_questions=[{"field_id": "captcha", "label": f"{ch_name} Verification Required", "field_type": "captcha"}],
+                        blocker_type="captcha",
+                        company=job.get("company"),
+                        role_title=job.get("title"),
+                        ats_type=ats_type,
+                        conn=conn,
+                    )
                     if is_direct_launch:
-                        await browser.close()
-                    return "fallback_to_agent", int((time.time() - start_time) * 1000), []
+                        try:
+                            await browser.close()
+                        except Exception:
+                            pass
+                    return "flagged_captcha", int((time.time() - start_time) * 1000), [{"field_id": "captcha", "label": ch_name}]
 
             # Check if this job was previously parked and resolved (has a checkpoint to replay)
             try:
@@ -419,14 +446,39 @@ async def _async_run_playwright_tier_engine(
                 # Check if submission triggered a CAPTCHA or verification challenge
                 post_challenge = await detect_challenge(page)
                 if post_challenge:
+                    ch_name = post_challenge.get("name", "Security Challenge")
                     if not headless:
-                        logger.info("Submission triggered %s. Alerting user...", post_challenge.get("name"))
-                        await wait_for_human_challenge_resolution(page, post_challenge, timeout_sec=300)
+                        logger.info("Submission triggered %s. Alerting user...", ch_name)
+                        resolved = await wait_for_human_challenge_resolution(page, post_challenge, timeout_sec=180)
+                        if not resolved:
+                            from applypilot.database import create_hitl_ticket
+                            create_hitl_ticket(
+                                job_url=target_url,
+                                unanswered_questions=[{"field_id": "captcha", "label": f"{ch_name} Verification Required", "field_type": "captcha"}],
+                                blocker_type="captcha",
+                                company=job.get("company"),
+                                role_title=job.get("title"),
+                                ats_type=ats_type,
+                                conn=conn,
+                            )
+                            if is_direct_launch:
+                                await browser.close()
+                            return "flagged_captcha", duration_ms, []
                     else:
-                        logger.warning("Submission triggered %s in headless mode.", post_challenge.get("name"))
+                        logger.warning("Submission triggered %s in headless mode. Flagging for collaborative resolution.", ch_name)
+                        from applypilot.database import create_hitl_ticket
+                        create_hitl_ticket(
+                            job_url=target_url,
+                            unanswered_questions=[{"field_id": "captcha", "label": f"{ch_name} Verification Required", "field_type": "captcha"}],
+                            blocker_type="captcha",
+                            company=job.get("company"),
+                            role_title=job.get("title"),
+                            ats_type=ats_type,
+                            conn=conn,
+                        )
                         if is_direct_launch:
                             await browser.close()
-                        return "fallback_to_agent", duration_ms, []
+                        return "flagged_captcha", duration_ms, []
 
                 # Post-submission validation: ensure submission didn't trigger visible DOM validation errors
                 has_errors = False

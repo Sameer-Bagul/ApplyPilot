@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Send,
   Check,
+  Sparkles,
 } from 'lucide-react';
 
 interface HitlTicketModalProps {
@@ -29,6 +30,8 @@ export function HitlTicketModal({
   const [ticket, setTicket] = useState<any | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [resolving, setResolving] = useState(false);
+  const [solvingCaptcha, setSolvingCaptcha] = useState(false);
+  const [saveToKb, setSaveToKb] = useState(true);
 
   useEffect(() => {
     if (!ticketId) {
@@ -65,6 +68,28 @@ export function HitlTicketModal({
     setAnswers((prev) => ({ ...prev, [fieldId]: val }));
   };
 
+  const handleSolveCaptcha = async () => {
+    setSolvingCaptcha(true);
+    try {
+      const res = await fetch('/api/hitl/solve-captcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        if (onTicketResolved) onTicketResolved();
+        onClose();
+      } else {
+        alert(json.error || 'Failed to complete CAPTCHA resolution.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error triggering CAPTCHA resolution.');
+    } finally {
+      setSolvingCaptcha(false);
+    }
+  };
+
   const handleResolve = async (action: 'resolved' | 'dismissed') => {
     setResolving(true);
     try {
@@ -74,6 +99,7 @@ export function HitlTicketModal({
         body: JSON.stringify({
           action,
           answers,
+          save_to_qa_knowledge: saveToKb,
           resolved_by: 'admin_dashboard',
         }),
       });
@@ -140,69 +166,108 @@ export function HitlTicketModal({
             <div className="py-12 text-center text-sm text-zinc-500">Ticket not found.</div>
           ) : (
             <>
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-xs text-amber-900 shadow-2xs">
-                The autonomous runner encountered an application barrier or screening question requiring human confirmation before proceeding.
-              </div>
-
-              {/* Questions list */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                  Unanswered Form Questions ({ticket.questions?.length || 0})
-                </h3>
-
-                {ticket.questions && ticket.questions.length > 0 ? (
-                  ticket.questions.map((q: any, idx: number) => {
-                    const fieldKey = q.field_id || q.label || `q_${idx}`;
-                    return (
-                      <div key={idx} className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs space-y-2">
-                        <label className="text-xs font-semibold text-zinc-800 block">
-                          {q.label || `Question ${idx + 1}`}
-                          {q.required && <span className="text-rose-500 ml-1">*</span>}
-                        </label>
-
-                        {q.help_text && (
-                          <p className="text-[11px] text-zinc-500 leading-tight">{q.help_text}</p>
-                        )}
-
-                        {q.type === 'select' && q.options ? (
-                          <select
-                            value={answers[fieldKey] || ''}
-                            onChange={(e) => handleFieldChange(fieldKey, e.target.value)}
-                            className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
-                          >
-                            <option value="">Select an option...</option>
-                            {q.options.map((opt: string, i: number) => (
-                              <option key={i} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
-                        ) : q.type === 'textarea' ? (
-                          <textarea
-                            rows={3}
-                            value={answers[fieldKey] || ''}
-                            onChange={(e) => handleFieldChange(fieldKey, e.target.value)}
-                            placeholder="Provide answer or explanation..."
-                            className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
-                          />
-                        ) : (
-                          <input
-                            type="text"
-                            value={answers[fieldKey] || ''}
-                            onChange={(e) => handleFieldChange(fieldKey, e.target.value)}
-                            placeholder="Enter response..."
-                            className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
-                          />
-                        )}
+              {ticket.blocker_type === 'captcha' ? (
+                <div className="space-y-4">
+                  <div className="liquid-glass-elevated rounded-2xl p-5 border border-amber-200/90 bg-amber-50/50 shadow-xs space-y-3">
+                    <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
+                      <ShieldAlert className="w-5 h-5 text-amber-600" />
+                      <span>Security Challenge / CAPTCHA Flagged</span>
+                    </div>
+                    <p className="text-xs text-zinc-700 leading-relaxed">
+                      This job application hit an anti-bot gate or verification challenge (e.g. Cloudflare Turnstile, Google reCAPTCHA, or puzzle).
+                      ApplyPilot quarantined it here so you and the app can work together to resolve it seamlessly.
+                    </p>
+                    <div className="p-3 bg-white/80 rounded-xl border border-amber-200/60 text-xs text-zinc-600 space-y-1.5">
+                      <div className="font-semibold text-zinc-800 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-600" />
+                        <span>Collaborative Resolution Flow:</span>
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="py-6 text-center text-xs text-zinc-500">
-                    No custom questionnaire fields detected. Generic application checkpoint.
+                      <div>1. Click below to launch the headed browser directly onto your desktop.</div>
+                      <div>2. ApplyPilot plays an audible alert chime and highlights the challenge.</div>
+                      <div>3. You solve the CAPTCHA directly in the window.</div>
+                      <div>4. ApplyPilot auto-detects resolution, chimes success, submits, and marks this ticket resolved!</div>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      disabled={solvingCaptcha}
+                      onClick={handleSolveCaptcha}
+                      className="liquid-pill-dark px-6 py-3 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer transition hover:scale-[1.02] disabled:opacity-50"
+                    >
+                      <Sparkles className="w-4 h-4 text-cyan-300" />
+                      <span>{solvingCaptcha ? 'Browser Active on Screen (Listening...)' : 'Solve with App (Launch Headed Browser)'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 text-xs text-blue-900 shadow-2xs">
+                    This job application has required screening questions not yet present in your profile. Provide answers below, and ApplyPilot will auto-learn them into your Q&A knowledge base!
+                  </div>
+
+                  {/* Questions list */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                      Unanswered Form Questions ({ticket.questions?.length || 0})
+                    </h3>
+
+                    {ticket.questions && ticket.questions.length > 0 ? (
+                      ticket.questions.map((q: any, idx: number) => {
+                        const fieldKey = q.field_id || q.label || `q_${idx}`;
+                        return (
+                          <div key={idx} className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs space-y-2">
+                            <label className="text-xs font-semibold text-zinc-800 block">
+                              {q.label || `Question ${idx + 1}`}
+                              {q.required && <span className="text-rose-500 ml-1">*</span>}
+                            </label>
+
+                            {q.help_text && (
+                              <p className="text-[11px] text-zinc-500 leading-tight">{q.help_text}</p>
+                            )}
+
+                            {q.type === 'select' && q.options ? (
+                              <select
+                                value={answers[fieldKey] || ''}
+                                onChange={(e) => handleFieldChange(fieldKey, e.target.value)}
+                                className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                              >
+                                <option value="">Select an option...</option>
+                                {q.options.map((opt: string, i: number) => (
+                                  <option key={i} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : q.type === 'textarea' ? (
+                              <textarea
+                                rows={3}
+                                value={answers[fieldKey] || ''}
+                                onChange={(e) => handleFieldChange(fieldKey, e.target.value)}
+                                placeholder="Provide answer or explanation..."
+                                className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                              />
+                            ) : (
+                              <input
+                                type="text"
+                                value={answers[fieldKey] || ''}
+                                onChange={(e) => handleFieldChange(fieldKey, e.target.value)}
+                                placeholder="Enter response..."
+                                className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                              />
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="py-6 text-center text-xs text-zinc-500">
+                        No custom questionnaire fields detected. Generic application checkpoint.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -211,27 +276,41 @@ export function HitlTicketModal({
         <div className="p-4 px-6 border-t border-zinc-200/70 bg-zinc-50/70 flex items-center justify-between gap-3">
           <button
             onClick={() => handleResolve('dismissed')}
-            disabled={resolving}
+            disabled={resolving || solvingCaptcha}
             className="px-3.5 py-2 rounded-xl text-xs font-semibold text-zinc-600 hover:text-zinc-950 transition cursor-pointer"
           >
             Dismiss Ticket
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {ticket?.blocker_type !== 'captcha' && (
+              <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveToKb}
+                  onChange={(e) => setSaveToKb(e.target.checked)}
+                  className="rounded border-zinc-300 text-purple-600 focus:ring-purple-400 cursor-pointer"
+                />
+                <span>Auto-learn into Q&A Knowledge Base</span>
+              </label>
+            )}
+
             <button
               onClick={onClose}
               className="liquid-pill px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer shadow-2xs"
             >
-              Cancel
+              Close
             </button>
-            <button
-              onClick={() => handleResolve('resolved')}
-              disabled={resolving}
-              className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{resolving ? 'Submitting...' : 'Save & Resume Pipeline'}</span>
-            </button>
+            {ticket?.blocker_type !== 'captcha' && (
+              <button
+                onClick={() => handleResolve('resolved')}
+                disabled={resolving}
+                className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{resolving ? 'Submitting...' : 'Save & Resume Pipeline'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

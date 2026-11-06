@@ -224,6 +224,10 @@ def dispatch_hitl_email_and_park(job: dict,
         job_url=job_url,
         unanswered_questions=unanswered_questions,
         dom_checkpoint=dom_checkpoint,
+        blocker_type="missing_info",
+        company=job.get("company"),
+        role_title=job.get("title"),
+        ats_type=job.get("site"),
         conn=conn,
     )
 

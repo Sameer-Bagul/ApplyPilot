@@ -184,3 +184,9 @@ def notify_hitl_resolved(page: Any = None) -> None:
                 asyncio.create_task(play_browser_chime(page, "success"))
         except Exception:
             pass
+
+
+# Friendly alias shortcuts
+play_hitl_notification_sound = notify_hitl_needed
+play_hitl_success_sound = notify_hitl_resolved
+

@@ -897,7 +897,8 @@ def apply(
 
         if tier_status == "applied":
             console.print(f"[bold green]✓ Application submitted successfully in {duration_ms}ms![/bold green]")
-            conn.execute("UPDATE jobs SET state = 'applied', applied_at = CURRENT_TIMESTAMP WHERE url = ?", (url,))
+            conn.execute("UPDATE jobs SET state = 'applied', applied_at = CURRENT_TIMESTAMP, needs_human_reason = NULL WHERE url = ?", (url,))
+            conn.execute("UPDATE hitl_tickets SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP WHERE job_url = ? AND status IN ('pending', 'sent')", (url,))
             conn.commit()
             return
         elif tier_status == "parked_awaiting_email":
@@ -2072,6 +2073,321 @@ def creds_delete(
 
     deleted = delete_account(domain)
     console.print(f"[green]Deleted {deleted} credential row(s) for[/green] [bold]{domain}[/bold]")
+
+
+# ---------------------------------------------------------------------------
+# Human-in-the-Loop (HITL) Collaborative Queue
+# ---------------------------------------------------------------------------
+
+hitl_app = typer.Typer(name="hitl", help="Manage Human-in-the-Loop flagged jobs, CAPTCHAs, and screening questions.")
+app.add_typer(hitl_app)
+
+
+@hitl_app.command("list")
+def hitl_list(
+    status: str = typer.Option("pending", "--status", "-s", help="Filter status: pending, resolved, or all."),
+    blocker: Optional[str] = typer.Option(None, "--blocker", "-b", help="Filter blocker type: captcha, missing_info, or all."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Max tickets to display."),
+) -> None:
+    """List pending intervention tickets flagged for CAPTCHA or missing questions."""
+    _bootstrap()
+    from applypilot.database import get_connection
+    import sqlite3
+    import json
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+
+    query = "SELECT * FROM hitl_tickets WHERE 1=1"
+    params = []
+
+    if status.lower() != "all":
+        if status.lower() == "pending":
+            query += " AND status IN ('pending', 'sent')"
+        else:
+            query += " AND status = ?"
+            params.append(status.lower())
+
+    if blocker and blocker.lower() != "all":
+        if blocker.lower() == "captcha":
+            query += " AND blocker_type = 'captcha'"
+        elif blocker.lower() == "missing_info":
+            query += " AND (blocker_type != 'captcha' OR blocker_type IS NULL)"
+        else:
+            query += " AND blocker_type = ?"
+            params.append(blocker)
+
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
+
+    if not rows:
+        console.print("[dim]No HITL tickets found matching criteria.[/dim]")
+        return
+
+    # Count breakdown
+    counts = conn.execute("""
+        SELECT 
+            SUM(CASE WHEN status IN ('pending', 'sent') THEN 1 ELSE 0 END) as pending_total,
+            SUM(CASE WHEN status IN ('pending', 'sent') AND blocker_type = 'captcha' THEN 1 ELSE 0 END) as pending_captcha,
+            SUM(CASE WHEN status IN ('pending', 'sent') AND (blocker_type != 'captcha' OR blocker_type IS NULL) THEN 1 ELSE 0 END) as pending_missing,
+            SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved_total
+        FROM hitl_tickets
+    """).fetchone()
+
+    title = f"Human-in-the-Loop Intervention Queue ({len(rows)} shown)"
+    t = Table(title=title, show_header=True, header_style="bold cyan")
+    t.add_column("ID", justify="right", style="bold")
+    t.add_column("Blocker", justify="center")
+    t.add_column("Company", style="bold")
+    t.add_column("Role", max_width=32)
+    t.add_column("Questions", justify="center")
+    t.add_column("Status", justify="center")
+    t.add_column("Created", max_width=16)
+
+    for r in rows:
+        b_type = r["blocker_type"] or "missing_info"
+        if b_type == "captcha":
+            blocker_badge = "[bold red]🧩 CAPTCHA[/bold red]"
+        else:
+            blocker_badge = "[bold yellow]📝 Questions[/bold yellow]"
+
+        q_count = 0
+        if r["unanswered_questions_json"]:
+            try:
+                q_list = json.loads(r["unanswered_questions_json"])
+                q_count = len(q_list) if isinstance(q_list, list) else 0
+            except Exception:
+                pass
+
+        status_style = "bold green" if r["status"] == "resolved" else "bold yellow" if r["status"] in ("pending", "sent") else "dim"
+        t.add_row(
+            str(r["ticket_id"]),
+            blocker_badge,
+            r["company"] or "Unknown",
+            (r["role_title"] or "N/A")[:32],
+            str(q_count),
+            f"[{status_style}]{r['status']}[/{status_style}]",
+            str(r["created_at"] or "")[:16],
+        )
+
+    console.print(t)
+    if counts:
+        p_tot = counts["pending_total"] or 0
+        p_cap = counts["pending_captcha"] or 0
+        p_mis = counts["pending_missing"] or 0
+        r_tot = counts["resolved_total"] or 0
+        console.print(f"[dim]Queue Summary: Pending: [bold]{p_tot}[/bold] (🧩 CAPTCHA: [bold red]{p_cap}[/bold red] | 📝 Questions: [bold yellow]{p_mis}[/bold yellow]) | Resolved: [bold green]{r_tot}[/bold green][/dim]\n")
+
+
+@hitl_app.command("solve-captchas")
+def hitl_solve_captchas(
+    auto_submit: bool = typer.Option(True, "--auto-submit/--review", help="Auto-submit once CAPTCHA is solved, or pause for final review."),
+    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max CAPTCHA tickets to resolve."),
+) -> None:
+    """Collaborative CAPTCHA Blitz: launch headed browser for pending CAPTCHAs with audio alerts."""
+    _bootstrap()
+    from applypilot.database import get_connection, commit_with_retry
+    from applypilot.hitl.audio import play_hitl_notification_sound, play_hitl_success_sound
+    from applypilot.apply.playwright_engine import run_playwright_tier_engine
+    from datetime import datetime, timezone
+    import sqlite3
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+
+    query = """
+        SELECT t.ticket_id, t.job_url, t.company, t.role_title, j.title, j.site
+        FROM hitl_tickets t
+        LEFT JOIN jobs j ON t.job_url = j.url
+        WHERE t.status IN ('pending', 'sent')
+          AND t.blocker_type = 'captcha'
+        ORDER BY t.created_at ASC
+    """
+    if limit:
+        query += f" LIMIT {int(limit)}"
+
+    tickets = conn.execute(query).fetchall()
+
+    if not tickets:
+        console.print("[green]✓ No pending CAPTCHA tickets in queue! Everything is clear.[/green]")
+        return
+
+    console.print(f"\n[bold cyan]⚡ Starting Collaborative CAPTCHA Blitz ({len(tickets)} pending challenge(s))...[/bold cyan]")
+    console.print("[dim]The browser window will open in headed mode on your screen.[/dim]")
+    console.print("[dim]When a CAPTCHA appears, an audible chime will sound. Solve it, and ApplyPilot will auto-detect resolution and submit![/dim]\n")
+
+    solved_count = 0
+    for idx, t in enumerate(tickets, 1):
+        job_url = t["job_url"]
+        company = t["company"] or "Target Company"
+        role = t["role_title"] or t["title"] or "Software Engineer"
+        ticket_id = t["ticket_id"]
+
+        console.print(f"\n[bold purple]▶ [{idx}/{len(tickets)}] Ticket #{ticket_id}: {company} — {role}[/bold purple]")
+        console.print(f"  Target: {job_url}")
+
+        job_row = conn.execute("SELECT * FROM jobs WHERE url = ?", (job_url,)).fetchone()
+        job_dict = dict(job_row) if job_row else {
+            "url": job_url,
+            "company": company,
+            "title": role,
+            "site": t["site"] if "site" in t.keys() else "custom_domain",
+        }
+
+        # Audible alert to attract candidate's attention
+        play_hitl_notification_sound()
+
+        tier_status, duration_ms, remaining = run_playwright_tier_engine(
+            job=job_dict,
+            port=0,
+            headless=False,
+            auto_submit=auto_submit,
+            conn=conn,
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+        if tier_status == "applied":
+            play_hitl_success_sound()
+            conn.execute("UPDATE hitl_tickets SET status = 'resolved', resolved_at = ? WHERE ticket_id = ?", (now, ticket_id))
+            conn.execute("UPDATE jobs SET state = 'applied', applied_at = ?, needs_human_reason = NULL WHERE url = ?", (now, job_url))
+            commit_with_retry(conn)
+            console.print(f"[bold green]✓ Application submitted and Ticket #{ticket_id} resolved in {duration_ms}ms![/bold green]")
+            solved_count += 1
+        elif tier_status == "parked_awaiting_email":
+            console.print(f"[yellow]⚠ Form still has {len(remaining)} unanswered question(s). Run 'applypilot hitl solve-missing' to answer.[/yellow]")
+        else:
+            console.print(f"[yellow]Application status: {tier_status}[/yellow]")
+
+        if idx < len(tickets):
+            if not typer.confirm("Proceed to next CAPTCHA in queue?", default=True):
+                console.print("[dim]Blitz session paused by user.[/dim]")
+                break
+
+    console.print(f"\n[bold green]Blitz complete! Resolved {solved_count}/{len(tickets)} CAPTCHA tickets.[/bold green]\n")
+
+
+@hitl_app.command("solve-missing")
+def hitl_solve_missing(
+    ticket_id: Optional[int] = typer.Option(None, "--ticket-id", "-t", help="Specific ticket ID to answer questions for."),
+    learn: bool = typer.Option(True, "--learn/--no-learn", help="Save answers permanently to qa_knowledge (Tier 1 semantic memory)."),
+) -> None:
+    """Interactive questionnaire for missing screening questions with auto-learning."""
+    _bootstrap()
+    from applypilot.database import get_connection, commit_with_retry, store_qa
+    from datetime import datetime, timezone
+    import sqlite3
+    import json
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+
+    if ticket_id:
+        tickets = conn.execute("SELECT * FROM hitl_tickets WHERE ticket_id = ?", (ticket_id,)).fetchall()
+    else:
+        tickets = conn.execute("""
+            SELECT * FROM hitl_tickets 
+            WHERE status IN ('pending', 'sent')
+              AND (blocker_type != 'captcha' OR blocker_type IS NULL)
+            ORDER BY created_at ASC
+        """).fetchall()
+
+    if not tickets:
+        console.print("[green]✓ No pending missing-info tickets found![/green]")
+        return
+
+    console.print(f"\n[bold cyan]📝 Resolving Missing Screening Questions ({len(tickets)} ticket(s))...[/bold cyan]\n")
+
+    for t in tickets:
+        tid = t["ticket_id"]
+        company = t["company"] or "Company"
+        role = t["role_title"] or "Role"
+        job_url = t["job_url"]
+
+        console.print(f"[bold purple]─── Ticket #{tid}: {company} — {role} ───[/bold purple]")
+        console.print(f"[dim]URL: {job_url}[/dim]\n")
+
+        questions_json = t["unanswered_questions_json"]
+        questions = []
+        if questions_json:
+            try:
+                questions = json.loads(questions_json)
+            except Exception:
+                pass
+
+        if not questions:
+            console.print("[yellow]No specific question details found in ticket. Resolving directly.[/yellow]")
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute("UPDATE hitl_tickets SET status = 'resolved', resolved_at = ? WHERE ticket_id = ?", (now, tid))
+            conn.execute("UPDATE jobs SET needs_human_reason = NULL, state = 'ready' WHERE url = ?", (job_url,))
+            commit_with_retry(conn)
+            continue
+
+        for i, q in enumerate(questions, 1):
+            label = q.get("label") or q.get("question") or f"Question {i}"
+            field_type = q.get("field_type") or q.get("type") or "text"
+            options = q.get("options") or []
+
+            console.print(f"[bold cyan]Q{i}: {label}[/bold cyan] [dim]({field_type})[/dim]")
+            if options and isinstance(options, list):
+                console.print(f"   [dim]Options: {', '.join(str(o) for o in options)}[/dim]")
+
+            answer = typer.prompt(f"   Your answer (press enter to skip)", default="", show_default=False)
+            if answer.strip():
+                if learn:
+                    store_qa(
+                        question=label,
+                        answer=answer.strip(),
+                        source="human",
+                        field_type=field_type,
+                        options_json=json.dumps(options) if options else None,
+                        ats_slug=t["ats_type"] if "ats_type" in t.keys() else None,
+                        job_url=job_url,
+                        conn=conn,
+                    )
+                    console.print("   [green]✓ Saved to QA Knowledge Base (permanent AI memory)[/green]")
+
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute("UPDATE hitl_tickets SET status = 'resolved', resolved_at = ? WHERE ticket_id = ?", (now, tid))
+        conn.execute("UPDATE jobs SET needs_human_reason = NULL, state = 'ready' WHERE url = ?", (job_url,))
+        commit_with_retry(conn)
+        console.print(f"\n[bold green]✓ Ticket #{tid} resolved. Job status updated to 'ready'![/bold green]")
+
+        if typer.confirm("Would you like to apply to this job in headed browser now?", default=False):
+            from applypilot.apply.playwright_engine import run_playwright_tier_engine
+            job_row = conn.execute("SELECT * FROM jobs WHERE url = ?", (job_url,)).fetchone()
+            job_dict = dict(job_row) if job_row else {"url": job_url, "company": company, "title": role}
+            run_playwright_tier_engine(job=job_dict, port=0, headless=False, auto_submit=True, conn=conn)
+
+        console.print()
+
+
+@hitl_app.command("resolve")
+def hitl_resolve(
+    ticket_id: int = typer.Argument(..., help="Ticket ID to resolve."),
+    dismiss: bool = typer.Option(False, "--dismiss", help="Dismiss the ticket instead of resolving."),
+) -> None:
+    """Manually mark a ticket as resolved or dismissed."""
+    _bootstrap()
+    from applypilot.database import get_connection, commit_with_retry
+    from datetime import datetime, timezone
+    import sqlite3
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    ticket = conn.execute("SELECT * FROM hitl_tickets WHERE ticket_id = ?", (ticket_id,)).fetchone()
+    if not ticket:
+        console.print(f"[red]Ticket #{ticket_id} not found.[/red]")
+        raise typer.Exit(code=1)
+
+    new_status = "dismissed" if dismiss else "resolved"
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("UPDATE hitl_tickets SET status = ?, resolved_at = ? WHERE ticket_id = ?", (new_status, now, ticket_id))
+    if new_status == "resolved" and ticket["job_url"]:
+        conn.execute("UPDATE jobs SET needs_human_reason = NULL, state = 'ready' WHERE url = ?", (ticket["job_url"],))
+    commit_with_retry(conn)
+    console.print(f"[green]✓ Ticket #{ticket_id} marked as {new_status}.[/green]")
 
 
 if __name__ == "__main__":

@@ -2656,22 +2656,51 @@ def create_hitl_ticket(job_url: str, unanswered_questions: list[dict],
                        dom_checkpoint: dict | None = None,
                        gmail_thread_id: str | None = None,
                        gmail_message_id: str | None = None,
+                       blocker_type: str = "missing_info",
+                       status: str = "sent",
+                       company: str | None = None,
+                       role_title: str | None = None,
+                       ats_type: str | None = None,
                        conn: sqlite3.Connection | None = None) -> int:
-    """Create a new HITL ticket for batched unanswered questions."""
+    """Create a new HITL ticket for batched unanswered questions or CAPTCHAs and flag the job."""
     import json as _json
     if conn is None:
         conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     q_json = _json.dumps(unanswered_questions, default=str)
     cp_json = _json.dumps(dom_checkpoint, default=str) if dom_checkpoint else None
+
+    # Auto-resolve company, role title, and ATS type from jobs table if not provided
+    if not company or not role_title or not ats_type:
+        try:
+            row = conn.execute("SELECT company, title, site FROM jobs WHERE url = ?", (job_url,)).fetchone()
+            if row:
+                company = company or row[0]
+                role_title = role_title or row[1]
+                ats_type = ats_type or row[2]
+        except Exception:
+            pass
+
     cursor = conn.execute(
         "INSERT INTO hitl_tickets "
-        "(job_url, gmail_thread_id, gmail_message_id, status, unanswered_questions_json, dom_checkpoint_json, created_at) "
-        "VALUES (?, ?, ?, 'sent', ?, ?, ?)",
-        (job_url, gmail_thread_id, gmail_message_id, q_json, cp_json, now),
+        "(job_url, company, role_title, ats_type, blocker_type, gmail_thread_id, gmail_message_id, status, unanswered_questions_json, dom_checkpoint_json, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (job_url, company, role_title, ats_type, blocker_type, gmail_thread_id, gmail_message_id, status, q_json, cp_json, now),
     )
+    ticket_id = cursor.lastrowid
+
+    # Flag job reason in database
+    instructions = "Solve CAPTCHA in headed browser" if blocker_type == "captcha" else f"Answer {len(unanswered_questions)} screening question(s)"
+    try:
+        conn.execute(
+            "UPDATE jobs SET needs_human_reason = ?, needs_human_instructions = ?, needs_human_url = ? WHERE url = ?",
+            (blocker_type, instructions, job_url),
+        )
+    except Exception:
+        pass
+
     commit_with_retry(conn)
-    return cursor.lastrowid
+    return ticket_id
 
 
 def get_hitl_ticket(ticket_id: int, conn: sqlite3.Connection | None = None) -> dict | None:
@@ -2704,12 +2733,12 @@ def get_hitl_ticket(ticket_id: int, conn: sqlite3.Connection | None = None) -> d
 
 
 def get_pending_hitl_tickets(conn: sqlite3.Connection | None = None) -> list[dict]:
-    """Retrieve all pending HITL tickets (status == 'sent')."""
+    """Retrieve all pending HITL tickets (status IN ('pending', 'sent'))."""
     import json as _json
     if conn is None:
         conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM hitl_tickets WHERE status = 'sent' ORDER BY created_at ASC"
+        "SELECT * FROM hitl_tickets WHERE status IN ('pending', 'sent') ORDER BY created_at ASC"
     ).fetchall()
     if not rows:
         return []

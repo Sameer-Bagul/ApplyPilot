@@ -1,8 +1,20 @@
 import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
+import fs from 'node:fs';
 
 let _db: DatabaseSync | null = null;
+
+export function getApplypilotBin(): string {
+  if (process.env.VIRTUAL_ENV && fs.existsSync(path.join(process.env.VIRTUAL_ENV, 'bin', 'applypilot'))) {
+    return path.join(process.env.VIRTUAL_ENV, 'bin', 'applypilot');
+  }
+  const rootVenv = path.resolve(process.cwd(), '.venv/bin/applypilot');
+  if (fs.existsSync(rootVenv)) return rootVenv;
+  const parentVenv = path.resolve(process.cwd(), '../.venv/bin/applypilot');
+  if (fs.existsSync(parentVenv)) return parentVenv;
+  return 'applypilot';
+}
 
 export function getDb(): DatabaseSync {
   if (_db) return _db;
@@ -743,7 +755,7 @@ export function deleteLead(lead_id: string) {
 }
 
 // HITL Tickets
-export function getHitlTickets(params: { status?: string; page?: number; limit?: number }) {
+export function getHitlTickets(params: { status?: string; blocker_type?: string; page?: number; limit?: number }) {
   const db = getDb();
   const page = Math.max(1, params.page || 1);
   const limit = Math.min(100, Math.max(1, params.limit || 20));
@@ -758,8 +770,23 @@ export function getHitlTickets(params: { status?: string; page?: number; limit?:
   const queryParams: any[] = [];
 
   if (params.status && params.status !== 'ALL') {
-    query += ` AND status = ?`;
-    queryParams.push(params.status);
+    if (params.status === 'pending') {
+      query += ` AND status IN ('pending', 'sent')`;
+    } else {
+      query += ` AND status = ?`;
+      queryParams.push(params.status);
+    }
+  }
+
+  if (params.blocker_type && params.blocker_type !== 'ALL') {
+    if (params.blocker_type === 'captcha') {
+      query += ` AND blocker_type = 'captcha'`;
+    } else if (params.blocker_type === 'missing_info') {
+      query += ` AND (blocker_type != 'captcha' OR blocker_type IS NULL)`;
+    } else {
+      query += ` AND blocker_type = ?`;
+      queryParams.push(params.blocker_type);
+    }
   }
 
   const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
@@ -781,8 +808,24 @@ export function getHitlTickets(params: { status?: string; page?: number; limit?:
     };
   });
 
+  const countsQuery = `
+    SELECT 
+      SUM(CASE WHEN status IN ('pending', 'sent') THEN 1 ELSE 0 END) as pending_total,
+      SUM(CASE WHEN status IN ('pending', 'sent') AND blocker_type = 'captcha' THEN 1 ELSE 0 END) as pending_captcha,
+      SUM(CASE WHEN status IN ('pending', 'sent') AND (blocker_type != 'captcha' OR blocker_type IS NULL) THEN 1 ELSE 0 END) as pending_missing,
+      SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved_total
+    FROM hitl_tickets
+  `;
+  const countsRow: any = db.prepare(countsQuery).get() || {};
+
   return {
     tickets,
+    counts: {
+      pending: Number(countsRow.pending_total || 0),
+      captcha: Number(countsRow.pending_captcha || 0),
+      missing: Number(countsRow.pending_missing || 0),
+      resolved: Number(countsRow.resolved_total || 0),
+    },
     pagination: {
       page,
       limit,
