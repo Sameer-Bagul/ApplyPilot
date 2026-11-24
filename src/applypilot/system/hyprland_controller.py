@@ -36,9 +36,9 @@ class HyprlandController:
         )
 
     def get_monitor_geometry(self) -> tuple[int, int]:
-        """Detect primary monitor resolution (width, height) or fallback to 2560x1440 / 1920x1080."""
+        """Detect target monitor resolution (width, height) for current workspace."""
         if not self.is_hyprland or not self._hyprctl:
-            return 2560, 1440
+            return (1920, 1200) if self.workspace >= 11 else (2560, 1440)
 
         try:
             res = subprocess.run(
@@ -50,16 +50,22 @@ class HyprlandController:
             )
             monitors: list[dict[str, Any]] = json.loads(res.stdout)
             if monitors:
-                # Prefer focused monitor or highest resolution
-                focused = next((m for m in monitors if m.get("focused")), None)
-                target = focused or max(monitors, key=lambda m: (m.get("width", 0) * m.get("height", 0)))
-                w = int(target.get("width", 2560))
-                h = int(target.get("height", 1440))
+                # Workspace >= 11 belongs to laptop screen eDP-1 in dots-hyprland
+                target_mon_name = "eDP-1" if self.workspace >= 11 else "HDMI-A-1"
+                matched = next((m for m in monitors if m.get("name") == target_mon_name), None)
+                if not matched:
+                    if self.workspace >= 11 and len(monitors) > 1:
+                        matched = next((m for m in monitors if not m.get("focused")), monitors[0])
+                    else:
+                        matched = monitors[0]
+
+                w = int(matched.get("width", 1920 if self.workspace >= 11 else 2560))
+                h = int(matched.get("height", 1200 if self.workspace >= 11 else 1440))
                 return w, h
         except Exception as e:
             logger.debug("Failed querying Hyprland monitors: %s", e)
 
-        return 2560, 1440
+        return (1920, 1200) if self.workspace >= 11 else (2560, 1440)
 
     def ensure_workspace_rules(self) -> bool:
         """Dynamically register Hyprland window rules to route browser to dedicated workspace."""
@@ -67,61 +73,67 @@ class HyprlandController:
             return False
 
         try:
-            # 1. Route class to dedicated workspace
+            # Route class to dedicated workspace on laptop screen eDP-1
             subprocess.run(
                 [self._hyprctl, "keyword", "windowrulev2", f"workspace {self.workspace},class:^({self.window_class})$"],
                 capture_output=True,
                 timeout=3,
                 check=False,
             )
-            # 2. Maximize window inside workspace
+            subprocess.run(
+                [self._hyprctl, "keyword", "windowrulev2", f"monitor eDP-1,class:^({self.window_class})$"],
+                capture_output=True,
+                timeout=3,
+                check=False,
+            )
             subprocess.run(
                 [self._hyprctl, "keyword", "windowrulev2", f"maximize,class:^({self.window_class})$"],
                 capture_output=True,
                 timeout=3,
                 check=False,
             )
-            # 3. Do not steal focus from active coding window
             subprocess.run(
                 [self._hyprctl, "keyword", "windowrulev2", f"noinitialfocus,class:^({self.window_class})$"],
                 capture_output=True,
                 timeout=3,
                 check=False,
             )
-            logger.debug("Registered Hyprland window rules for %s on workspace %d", self.window_class, self.workspace)
+            logger.debug("Registered Hyprland window rules for %s on workspace %d (eDP-1)", self.window_class, self.workspace)
             return True
         except Exception as e:
             logger.debug("Error setting Hyprland rules: %s", e)
             return False
 
     def focus_workspace(self, workspace: int | None = None) -> bool:
-        """Switch active Hyprland view to workspace on monitor HDMI-A-1."""
+        """Ensure target workspace is visible on laptop screen eDP-1 without stealing focus from HDMI-A-1."""
         if not self.is_hyprland or not self._hyprctl:
             return False
         ws = workspace or self.workspace
+        target_monitor = "eDP-1" if ws >= 11 else "HDMI-A-1"
         try:
-            # 1. Focus HDMI-A-1 monitor first
+            # 1. Switch workspace on target monitor (laptop screen eDP-1)
             subprocess.run(
-                [self._hyprctl, "dispatch", "hl.dsp.focus_monitor({ monitor = 'HDMI-A-1' })"],
+                [self._hyprctl, "dispatch", f"hl.dsp.focus({{ monitor = '{target_monitor}' }})"],
                 capture_output=True,
                 timeout=3,
                 check=False,
             )
-            # 2. Focus requested workspace using Lua syntax
-            res = subprocess.run(
+            subprocess.run(
                 [self._hyprctl, "dispatch", f"hl.dsp.focus({{ workspace = {ws} }})"],
                 capture_output=True,
-                text=True,
                 timeout=3,
                 check=False,
             )
-            if "ok" in res.stdout:
-                return True
-            # Fallback for standard Hyprland C++
-            subprocess.run([self._hyprctl, "dispatch", "workspace", str(ws)], capture_output=True, timeout=3, check=False)
+            # 2. Immediately restore focus to HDMI-A-1 so user is never interrupted
+            subprocess.run(
+                [self._hyprctl, "dispatch", "hl.dsp.focus({ monitor = 'HDMI-A-1' })"],
+                capture_output=True,
+                timeout=3,
+                check=False,
+            )
             return True
         except Exception as e:
-            logger.debug("Failed switching to Hyprland workspace %d: %s", ws, e)
+            logger.debug("Failed setting workspace %d on %s: %s", ws, target_monitor, e)
             return False
 
     def notify(self, title: str, message: str, urgency: str = "normal") -> None:
