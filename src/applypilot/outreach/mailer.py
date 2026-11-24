@@ -1067,11 +1067,37 @@ def run_top_pick_outreach(
             persona=persona,
             priority_score=priority_score,
             gmail_draft_id=draft_id,
+            followup_subject=draft.get("followup_subject"),
+            followup_body=draft.get("followup_body"),
+            matched_job_title=lead.get("matched_job_title"),
+            matched_job_url=lead.get("matched_job_url"),
+            dual_attack_pair_id=lead.get("dual_attack_pair_id"),
+            mx_provider=lead.get("mx_provider"),
+            is_deliverable=lead.get("is_deliverable"),
             conn=conn,
         )
         conn.execute(
-            "UPDATE recruiter_leads SET outreach_status = ? WHERE lead_id = ?",
-            (outreach_status, lid),
+            """
+            UPDATE recruiter_leads 
+            SET outreach_status = ?,
+                execution_route = COALESCE(?, execution_route),
+                dual_attack_pair_id = COALESCE(?, dual_attack_pair_id),
+                mx_provider = COALESCE(?, mx_provider),
+                is_deliverable = COALESCE(?, is_deliverable),
+                matched_job_title = COALESCE(?, matched_job_title),
+                matched_job_url = COALESCE(?, matched_job_url)
+            WHERE lead_id = ?
+            """,
+            (
+                outreach_status,
+                lead.get("execution_route"),
+                lead.get("dual_attack_pair_id"),
+                lead.get("mx_provider"),
+                lead.get("is_deliverable"),
+                lead.get("matched_job_title"),
+                lead.get("matched_job_url"),
+                lid,
+            ),
         )
         conn.commit()
 

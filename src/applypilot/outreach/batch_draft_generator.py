@@ -18,6 +18,8 @@ from typing import Any
 
 from applypilot import config
 from applypilot.llm import get_client
+from applypilot.outreach.portfolio_matcher import format_portfolio_pitch, match_portfolio_projects
+from applypilot.discovery.career_page_crawler import find_best_matching_job
 
 logger = logging.getLogger("applypilot.batch_generator")
 
@@ -68,7 +70,14 @@ def _build_batch_prompt(batch: list[dict[str, Any]], candidate: dict[str, Any]) 
     for lead in batch:
         intel = lead.get("company_intel", {})
         open_roles = intel.get("open_roles", [])
-        matched_role = open_roles[0].get("title") if open_roles else (lead.get("role_title") or "Software Engineer")
+        matched_role = lead.get("matched_job_title")
+        matched_url = lead.get("matched_job_url")
+        if not matched_role and open_roles:
+            matched_role, matched_url = find_best_matching_job(open_roles)
+        matched_role = matched_role or (lead.get("role_title") or "Software Engineer")
+
+        tech_stack = intel.get("tech_stack", [])
+        portfolio_pitch = format_portfolio_pitch(tech_stack)
 
         leads_payload.append({
             "lead_id": lead["lead_id"],
@@ -78,10 +87,13 @@ def _build_batch_prompt(batch: list[dict[str, Any]], candidate: dict[str, Any]) 
             "company_name": lead.get("company_name") or "the company",
             "company_domain": lead.get("company_domain") or intel.get("official_domain", ""),
             "matched_role": matched_role,
+            "matched_role_url": matched_url or "",
             "company_summary": intel.get("wikipedia_summary", "")[:300],
-            "company_tech_stack": intel.get("tech_stack", [])[:8],
+            "company_tech_stack": tech_stack[:8],
+            "tailored_portfolio_projects": portfolio_pitch,
             "ai_focus_tags": intel.get("ai_focus_tags", []),
             "execution_route": lead.get("execution_route", "EMAIL_ONLY"),
+            "dual_attack_pair_id": lead.get("dual_attack_pair_id"),
         })
 
     prompt = f"""You are an elite, highly targeted cold email writer for a senior software engineer.
@@ -102,14 +114,15 @@ STRICT WRITING RULES PER PERSONA:
 2. For 'founder' / CTO:
    - Punchy, high-energy, peer-to-peer engineering tone.
    - Specifically cite what their company builds or their tech stack ({' ,'.join(batch[0].get('company_intel', {}).get('tech_stack', [])[:3]) if batch else 'relevant stack'}).
-   - Highlight 1 relevant flagship project (e.g. Athena, ApplyPilot, or Revcloud) with concrete architectural details.
+   - Highlight the matching flagship project provided in 'tailored_portfolio_projects' with concrete architectural details.
    - Include GitHub link ({candidate_summary['github']}) and ask for a quick 10-minute technical chat.
+   - If execution_route is 'DUAL_ATTACK' or dual_attack_pair_id is present, include a brief postscript: "P.S. I also submitted my formal profile to your careers portal for the open role, but wanted to reach out directly given your technical leadership."
 3. For 'engineer' / Tech Lead:
    - Technical curiosity, acknowledging their open-source or product architecture.
    - Ask for engineering perspective or a direct internal referral.
 4. General Rules:
    - Keep emails concise (under 130 words).
-   - If execution_route is 'DUAL_ATTACK', include a brief note: "I have also submitted my application via your careers portal."
+   - Generate a threaded 3-day polite follow-up 'bump' message for each draft.
    - Never sound like an AI template. Use clean paragraphs, natural phrasing, and direct subject lines.
 
 OUTPUT FORMAT:
@@ -121,6 +134,8 @@ Respond ONLY with a valid JSON object matching this exact schema:
       "subject": "<punchy subject line>",
       "body_text": "<plain text email body including salutation and sign-off>",
       "body_html": "<clean HTML email body styled with standard typography>",
+      "followup_subject": "<followup subject starting with Re: >",
+      "followup_body": "<3-sentence polite follow-up offering a brief 2-minute architectural teardown or demo walkthrough>",
       "cta": "<call to action sentence>",
       "match_reason": "<1-sentence summary of why this lead was targeted>"
     }}
@@ -138,21 +153,41 @@ def _generate_fallback_draft(lead: dict[str, Any], candidate: dict[str, Any]) ->
     linkedin = candidate.get("urls", {}).get("linkedin", "https://www.linkedin.com/in/sameer-bagul")
 
     c_name = lead.get("company_name") or "your team"
-    role = lead.get("role_title") or "Software Engineer"
+    intel = lead.get("company_intel", {})
+    open_roles = intel.get("open_roles", [])
+    
+    # 1. Job Requisition Citation
+    matched_role = lead.get("matched_job_title")
+    matched_url = lead.get("matched_job_url")
+    if not matched_role and open_roles:
+        matched_role, matched_url = find_best_matching_job(open_roles)
+    matched_role = matched_role or (lead.get("role_title") or "Software Engineer")
+
     recipient = lead.get("contact_name") or "Hiring Team"
     salutation = f"Hi {recipient.split()[0]}," if recipient and recipient != "Hiring Team" else "Hi Hiring Team,"
     persona = lead.get("persona") or "founder"
 
-    intel = lead.get("company_intel", {})
-    stack = ", ".join(intel.get("tech_stack", [])[:3]) or "Python & React"
+    # 2. Dynamic Stack-Aware Portfolio Matching
+    tech_stack = intel.get("tech_stack", [])
+    stack_str = ", ".join(tech_stack[:3]) if tech_stack else "Python & React"
+    portfolio_bullets = format_portfolio_pitch(tech_stack)
+
+    # 3. Dual-Attack Bridge Note
+    is_dual_attack = lead.get("execution_route") == "DUAL_ATTACK" or bool(lead.get("dual_attack_pair_id"))
+    dual_attack_ps = ""
+    if is_dual_attack and persona != "hr":
+        dual_attack_ps = f"\n\nP.S. I also submitted my formal profile to your careers portal for the {matched_role} role, but wanted to reach out directly given your technical leadership."
 
     if persona == "hr":
-        subject = f"Application: {role} — {name}"
+        subject = f"Application: {matched_role} — {name}"
+        job_cite = f" for the {matched_role} role"
+        if matched_url:
+            job_cite += f" ({matched_url})"
         body_text = f"""{salutation}
 
-I came across {c_name}'s open engineering opportunities and wanted to share my background directly for the {role} role.
+I came across {c_name}'s open engineering opportunities and wanted to share my background directly{job_cite}.
 
-I bring 2.5 years of experience building production AI services, autonomous agent pipelines, and full-stack architectures. My background directly aligns with {stack}.
+I bring 2.5 years of experience building production AI services, autonomous agent pipelines, and full-stack architectures. My background directly aligns with {stack_str}.
 
 Key highlights:
 - Hands-on experience with FastAPI, Python, React, and LangGraph agentic workflows
@@ -167,19 +202,17 @@ Best regards,
 {cand_email}
 """
     else:
-        subject = f"{name} // {c_name} engineering & {role}"
+        subject = f"{name} // {c_name} engineering & {matched_role}"
         body_text = f"""{salutation}
 
 I've been following {c_name}'s work and wanted to reach out directly regarding engineering and product execution.
 
-I am an AI & Full-Stack Engineer specializing in autonomous systems, distributed APIs, and production LLM architectures. Given your work around {stack}, my background aligns well with your technical goals.
+I am an AI & Full-Stack Engineer specializing in autonomous systems, distributed APIs, and production LLM architectures. Given your work around {stack_str}, my background aligns well with your technical goals.
 
 A few recent flagship projects:
-- Athena: Autonomous 3D desktop companion with 60 FPS Three.js rendering and LangGraph routing
-- ApplyPilot: High-throughput autonomous browser engine with zero-token SQLite caching
-- Production B2B lead generation & hybrid RAG pipelines across Python and React
+{portfolio_bullets}
 
-My code and repositories are available at {github}. I'd love to grab 10 minutes to discuss how I can contribute to {c_name}.
+My code and repositories are available at {github}. I'd love to grab 10 minutes to discuss how I can contribute to {c_name}.{dual_attack_ps}
 
 Best regards,
 {name}
@@ -188,11 +221,26 @@ Best regards,
 
     body_html = f"<div style='font-family: -apple-system, sans-serif; line-height: 1.6; color: #1f2937;'>{body_text.replace(chr(10), '<br>')}</div>"
 
+    # 4. Smart 3-Day Follow-Up Bump
+    recipient_first = recipient.split()[0] if recipient and recipient != "Hiring Team" else "there"
+    followup_subject = f"Re: {subject}"
+    followup_body = f"""Hi {recipient_first},
+
+Following up quickly on my note below—wanted to share a quick thought: seeing your work around {stack_str}, I recently built a low-latency architecture that addressed similar scaling challenges.
+
+Would love to share a brief 2-minute walkthrough or chat briefly if this could accelerate your engineering roadmap.
+
+Best regards,
+{name}
+"""
+
     return {
         "lead_id": lead["lead_id"],
         "subject": subject,
         "body_text": body_text.strip(),
         "body_html": body_html,
+        "followup_subject": followup_subject,
+        "followup_body": followup_body.strip(),
         "cta": "I would welcome the opportunity to connect.",
         "match_reason": f"Fallback draft matching {persona} persona and {c_name} tech stack",
     }

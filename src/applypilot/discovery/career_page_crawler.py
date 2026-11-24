@@ -48,6 +48,44 @@ CANDIDATE_SKILLS = [
 ]
 
 
+def find_best_matching_job(
+    jobs: list[dict[str, Any]] | None,
+    candidate_keywords: list[str] | None = None,
+) -> tuple[str | None, str | None]:
+    """Find the single most relevant open job posting for the candidate from crawled roles.
+    
+    Returns (job_title, job_url).
+    """
+    if not jobs:
+        return None, None
+
+    keywords = [k.lower() for k in (candidate_keywords or [
+        "full stack", "fullstack", "software engineer", "frontend", "backend",
+        "ai engineer", "founding", "python", "react", "systems"
+    ])]
+
+    scored: list[tuple[int, str, str]] = []
+    for j in jobs:
+        title = (j.get("title") or "").strip()
+        url = (j.get("url") or "").strip()
+        if not title:
+            continue
+        t_lower = title.lower()
+        score = 0
+        for idx, kw in enumerate(keywords):
+            if kw in t_lower:
+                score += (len(keywords) - idx) * 2
+        scored.append((score, title, url))
+
+    if scored:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[0][1], scored[0][2]
+
+    # Fallback to first role
+    first = jobs[0]
+    return first.get("title"), first.get("url")
+
+
 class CareerPageCrawler:
     """Discovers and scrapes real-time career portals with headed visual execution on Hyprland Workspace 11."""
 
@@ -394,6 +432,7 @@ class CareerPageCrawler:
             save_company_intel(cached_intel, conn=conn)
             logger.info("   └─ [DB Persistence: company_intel] Synced %d live roles into 30-day cache", len(relevant_jobs))
 
+        best_title, best_url = find_best_matching_job(relevant_jobs)
         return {
             "company_name": c_name,
             "domain": c_domain,
@@ -401,6 +440,8 @@ class CareerPageCrawler:
             "ats_provider": ats_provider,
             "total_extracted": len(relevant_jobs),
             "jobs": relevant_jobs,
+            "best_matching_job_title": best_title,
+            "best_matching_job_url": best_url,
             "screenshot_path": screenshot_path,
         }
 

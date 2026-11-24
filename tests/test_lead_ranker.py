@@ -74,6 +74,8 @@ def test_compute_lead_priority_scoring():
 
 
 def test_lead_ranker_selection_order(test_db):
+    from unittest.mock import patch, MagicMock
+
     # Seed leads into DB
     store_recruiter_lead(
         company_name="Low Priority Co",
@@ -93,11 +95,26 @@ def test_lead_ranker_selection_order(test_db):
     )
 
     ranker = LeadRanker(conn=test_db)
-    top_picks = ranker.select_daily_top_picks(limit=10, min_score=40)
+    with patch("applypilot.discovery.company_intel_service.CompanyIntelService.get_or_research") as mock_research, \
+         patch("applypilot.verification.email_verifier.verify_email_deliverability") as mock_verify:
+        
+        mock_research.side_effect = lambda name, **kwargs: {
+            "company_name": name,
+            "tech_stack": ["Python", "React"] if "AI" in name else [],
+            "open_roles": [{"title": "AI Engineer"}] if "AI" in name else [],
+            "ai_focus_tags": ["Ai"] if "AI" in name else [],
+        }
+        v_res = MagicMock()
+        v_res.mx_provider = "Google Workspace"
+        v_res.is_deliverable = True
+        v_res.is_catch_all = False
+        mock_verify.return_value = v_res
 
-    assert len(top_picks) >= 1
-    # Top pick must be the High Priority AI lead
-    assert top_picks[0]["company_name"] == "High Priority AI"
-    assert top_picks[0]["persona"] == "founder"
-    assert top_picks[0]["priority_score"] > 50
+        top_picks = ranker.select_daily_top_picks(limit=10, min_score=40)
+
+        assert len(top_picks) >= 1
+        # Top pick must be the High Priority AI lead
+        assert top_picks[0]["company_name"] == "High Priority AI"
+        assert top_picks[0]["persona"] == "founder"
+        assert top_picks[0]["priority_score"] > 50
 

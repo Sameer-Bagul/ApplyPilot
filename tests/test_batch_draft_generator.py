@@ -111,10 +111,17 @@ def test_run_top_pick_outreach_dry_run(test_db):
         conn=test_db,
     )
 
-    with patch("applypilot.outreach.batch_draft_generator.get_client") as mock_get_client:
+    with patch("applypilot.outreach.batch_draft_generator.get_client") as mock_get_client, \
+         patch("applypilot.discovery.company_intel_service.CompanyIntelService.get_or_research") as mock_research:
         mock_client = MagicMock()
         mock_client.chat.side_effect = Exception("LLM offline")
         mock_get_client.return_value = mock_client
+        mock_research.return_value = {
+            "company_name": "Apex Robotics",
+            "tech_stack": ["Python", "ROS", "PyTorch"],
+            "open_roles": [{"title": "AI Robotics Engineer"}],
+            "ai_focus_tags": ["Ai"],
+        }
 
         res = run_top_pick_outreach(limit=5, min_score=40, dry_run=True, conn=test_db)
         assert res["total_selected"] >= 1

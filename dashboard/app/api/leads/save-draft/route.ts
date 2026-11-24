@@ -30,6 +30,8 @@ export async function POST(request: NextRequest) {
       email_body_text: bodyText,
       email_draft_subject: subject,
       email_draft_body: bodyText,
+      followup_draft_subject: body.followup_draft_subject,
+      followup_draft_body: body.followup_draft_body,
       outreach_status: 'drafted',
     });
 

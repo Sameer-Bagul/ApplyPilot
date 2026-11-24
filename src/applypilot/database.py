@@ -3311,17 +3311,22 @@ def get_company_intel(domain_or_name: str, conn: sqlite3.Connection | None = Non
     if conn is None:
         conn = get_connection()
     key = domain_or_name.strip().lower()
-    row = conn.execute(
+    cur = conn.execute(
         """
         SELECT * FROM company_intel 
         WHERE LOWER(domain_or_name) = ? OR LOWER(company_name) = ? OR LOWER(official_domain) = ?
         LIMIT 1
         """,
         (key, key, key),
-    ).fetchone()
+    )
+    row = cur.fetchone()
     if not row:
         return None
-    data = dict(row)
+    if isinstance(row, sqlite3.Row) or hasattr(row, "keys"):
+        data = dict(row)
+    else:
+        col_names = [d[0] for d in cur.description]
+        data = dict(zip(col_names, row))
     # Check expiry
     from datetime import datetime, timezone
     expires_at = data.get("expires_at", "")
@@ -3413,6 +3418,13 @@ def update_lead_email_draft(
     persona: str | None = None,
     priority_score: int | None = None,
     gmail_draft_id: str | None = None,
+    followup_subject: str | None = None,
+    followup_body: str | None = None,
+    matched_job_title: str | None = None,
+    matched_job_url: str | None = None,
+    dual_attack_pair_id: str | None = None,
+    mx_provider: str | None = None,
+    is_deliverable: int | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> bool:
     """Store generated email draft and metadata on a recruiter lead."""
@@ -3426,10 +3438,32 @@ def update_lead_email_draft(
             email_body_html = ?,
             persona = COALESCE(?, persona),
             priority_score = COALESCE(?, priority_score),
-            gmail_draft_id = COALESCE(?, gmail_draft_id)
+            gmail_draft_id = COALESCE(?, gmail_draft_id),
+            followup_draft_subject = COALESCE(?, followup_draft_subject),
+            followup_draft_body = COALESCE(?, followup_draft_body),
+            matched_job_title = COALESCE(?, matched_job_title),
+            matched_job_url = COALESCE(?, matched_job_url),
+            dual_attack_pair_id = COALESCE(?, dual_attack_pair_id),
+            mx_provider = COALESCE(?, mx_provider),
+            is_deliverable = COALESCE(?, is_deliverable)
         WHERE lead_id = ?
         """,
-        (subject, body_text, body_html, persona, priority_score, gmail_draft_id, lead_id),
+        (
+            subject,
+            body_text,
+            body_html,
+            persona,
+            priority_score,
+            gmail_draft_id,
+            followup_subject,
+            followup_body,
+            matched_job_title,
+            matched_job_url,
+            dual_attack_pair_id,
+            mx_provider,
+            is_deliverable,
+            lead_id,
+        ),
     )
     commit_with_retry(conn)
     return True

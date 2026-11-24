@@ -195,3 +195,17 @@ def test_career_crawler_deep_navigation(test_db):
             assert any("https://acme.ai/careers" in str(call) for call in mock_page.goto.call_args_list)
 
     asyncio.run(_run())
+
+
+def test_find_best_matching_job():
+    from applypilot.discovery.career_page_crawler import find_best_matching_job
+
+    jobs = [
+        {"title": "Account Executive", "url": "https://example.com/ae"},
+        {"title": "Founding Full Stack Engineer", "url": "https://example.com/founding-eng"},
+        {"title": "Customer Support Representative", "url": "https://example.com/cs"},
+    ]
+    title, url = find_best_matching_job(jobs)
+    assert title == "Founding Full Stack Engineer"
+    assert url == "https://example.com/founding-eng"
+

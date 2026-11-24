@@ -299,11 +299,78 @@ class LeadRanker:
 
             top_candidates.sort(key=lambda x: x[0], reverse=True)
 
+        import uuid
+        from applypilot.discovery.career_page_crawler import find_best_matching_job
+        from applypilot.verification.email_verifier import verify_email_deliverability
+
         selected: list[dict[str, Any]] = []
+        selected_ids: set[str] = set()
+        paired_companies: set[str] = set()
+
         for score, persona, lead, intel in top_candidates:
+            if lead["lead_id"] in selected_ids:
+                continue
+
             lead_copy = dict(lead)
             lead_copy["company_intel"] = intel
+
+            # 1. Job Requisition Citation from live crawled roles
+            best_title, best_url = find_best_matching_job(intel.get("open_roles", []))
+            if best_title:
+                lead_copy["matched_job_title"] = best_title
+                lead_copy["matched_job_url"] = best_url
+
+            # 2. MX & Deliverability Verification
+            c_email = lead_copy.get("contact_email") or ""
+            v_res = verify_email_deliverability(c_email or lead_copy.get("company_domain", ""))
+            lead_copy["mx_provider"] = v_res.mx_provider
+            lead_copy["is_deliverable"] = 1 if v_res.is_deliverable else 0
+            lead_copy["is_catch_all"] = 1 if v_res.is_catch_all else 0
+
+            # 3. Coordinated Dual-Attack Pairing (Founder + HR synchronization)
+            c_name = lead_copy.get("company_name", "").strip().lower()
+            if c_name not in paired_companies:
+                partner_persona = "hr" if persona == "founder" else "founder"
+                partner = None
+                for candidate_lead in queued:
+                    if candidate_lead["lead_id"] == lead["lead_id"]:
+                        continue
+                    if (candidate_lead.get("company_name") or "").strip().lower() == c_name:
+                        cand_p = candidate_lead.get("persona") or classify_recipient_persona(
+                            candidate_lead.get("contact_name", ""),
+                            candidate_lead.get("contact_email", ""),
+                            candidate_lead.get("role_title", ""),
+                            candidate_lead.get("evidence_snippet", ""),
+                        )
+                        if cand_p == partner_persona:
+                            partner = dict(candidate_lead)
+                            partner["persona"] = cand_p
+                            break
+
+                if partner:
+                    pair_id = f"dual_{uuid.uuid4().hex[:8]}"
+                    lead_copy["dual_attack_pair_id"] = pair_id
+                    lead_copy["execution_route"] = "DUAL_ATTACK"
+                    partner["dual_attack_pair_id"] = pair_id
+                    partner["execution_route"] = "DUAL_ATTACK"
+                    partner["company_intel"] = intel
+                    partner["matched_job_title"] = best_title
+                    partner["matched_job_url"] = best_url
+                    partner["priority_score"] = max(60, score - 5)
+
+                    v_p = verify_email_deliverability(partner.get("contact_email") or "")
+                    partner["mx_provider"] = v_p.mx_provider
+                    partner["is_deliverable"] = 1 if v_p.is_deliverable else 0
+
+                    selected.append(lead_copy)
+                    selected_ids.add(lead_copy["lead_id"])
+                    selected.append(partner)
+                    selected_ids.add(partner["lead_id"])
+                    paired_companies.add(c_name)
+                    continue
+
             selected.append(lead_copy)
+            selected_ids.add(lead_copy["lead_id"])
 
         logger.info(
             "Selected %d top-pick leads (out of %d queued, min_score=%d)",

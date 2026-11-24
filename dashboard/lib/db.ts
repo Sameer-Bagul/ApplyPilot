@@ -720,7 +720,10 @@ export function getLeads(params: {
            COALESCE(email_body_text, email_draft_body) as email_body_text,
            email_draft_subject, email_draft_body, email_body_html,
            persona, priority_score, gmail_draft_id, gmail_thread_id,
-           approved_at, approved_by
+           approved_at, approved_by,
+           mx_provider, is_deliverable, is_catch_all,
+           matched_job_title, matched_job_url,
+           followup_draft_subject, followup_draft_body, dual_attack_pair_id
     FROM recruiter_leads 
     WHERE 1=1
   `;
@@ -984,6 +987,15 @@ export function updateLead(lead_id: string, updates: Partial<{
   gmail_draft_id: string;
   approved_at: string;
   approved_by: string;
+  mx_provider: string;
+  is_deliverable: number;
+  is_catch_all: number;
+  matched_job_title: string;
+  matched_job_url: string;
+  followup_draft_subject: string;
+  followup_draft_body: string;
+  dual_attack_pair_id: string;
+  execution_route: string;
 }>) {
   const db = getDb();
   const fields: string[] = [];
@@ -1027,6 +1039,15 @@ export function updateLead(lead_id: string, updates: Partial<{
     'gmail_thread_id',
     'approved_at',
     'approved_by',
+    'mx_provider',
+    'is_deliverable',
+    'is_catch_all',
+    'matched_job_title',
+    'matched_job_url',
+    'followup_draft_subject',
+    'followup_draft_body',
+    'dual_attack_pair_id',
+    'execution_route',
   ]);
 
   for (const [key, value] of Object.entries(finalUpdates)) {
