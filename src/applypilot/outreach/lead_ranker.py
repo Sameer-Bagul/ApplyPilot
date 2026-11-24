@@ -169,6 +169,7 @@ class LeadRanker:
         min_score: int = 60,
         force_research: bool = False,
         live_scrape: bool | None = None,
+        company_filter: str | None = None,
     ) -> list[dict[str, Any]]:
         """Rank all queued leads, research missing company intel, and return top picks."""
         conn = self.conn or get_connection()
@@ -182,6 +183,34 @@ class LeadRanker:
 
         # 1. Fetch queued leads
         queued = get_recruiter_leads(status="queued", limit=None, conn=conn)
+
+        # If specific company requested, filter or create seed lead
+        if company_filter:
+            target = company_filter.strip().lower()
+            filtered = [
+                l for l in (queued or [])
+                if target in (l.get("company_name") or "").lower() or target in (l.get("company_domain") or "").lower()
+            ]
+            if not filtered:
+                from applypilot.database import store_recruiter_lead
+                row = conn.execute(
+                    "SELECT company_name, official_domain FROM career_watchlist WHERE LOWER(company_name) LIKE ? OR LOWER(official_domain) LIKE ? LIMIT 1",
+                    (f"%{target}%", f"%{target}%"),
+                ).fetchone()
+                c_name = row[0] if row else company_filter.strip().title()
+                c_dom = row[1] if row else f"{target.replace(' ', '')}.com"
+                seed_id = store_recruiter_lead(
+                    contact_email=f"hiring@{c_dom}",
+                    role_title=f"Hiring Team at {c_name}",
+                    company_name=c_name,
+                    company_domain=c_dom,
+                    outreach_status="queued",
+                    conn=conn,
+                )
+                seed_row = conn.execute("SELECT * FROM recruiter_leads WHERE lead_id = ?", (seed_id,)).fetchone()
+                filtered = [dict(seed_row)] if seed_row else []
+            queued = filtered
+
         if not queued:
             logger.info("No queued recruiter leads found in database.")
             return []

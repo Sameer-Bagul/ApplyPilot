@@ -948,6 +948,7 @@ def run_top_pick_outreach(
     live_scrape: bool = False,
     workspace: int = 11,
     headless: bool = False,
+    company: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     """Execute the Top-Pick High-Conversion Cold Outreach Workflow:
@@ -977,6 +978,7 @@ def run_top_pick_outreach(
         min_score=min_score,
         force_research=force_research,
         live_scrape=live_scrape,
+        company_filter=company,
     )
 
     if not top_leads:

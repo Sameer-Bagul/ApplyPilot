@@ -549,14 +549,16 @@ def outreach_top_picks(
     live_scrape: bool = typer.Option(True, "--live-scrape/--no-live-scrape", help="Launch headed Playwright to crawl live company career portals before drafting."),
     workspace: int = typer.Option(11, "--workspace", "-w", help="Target Hyprland workspace for headed Playwright."),
     headless: bool = typer.Option(False, "--headless/--headed", help="Run Playwright in headless mode instead of headed on Workspace 11."),
+    company: Optional[str] = typer.Option(None, "--company", "-c", help="Target specific company name (e.g. Clinikally, Figma)."),
 ) -> None:
     """Execute high-conversion Top-Pick email outreach using company intelligence, live career crawling on Workspace 11, and persona-tailored batch Gemini drafts."""
     _bootstrap()
     from applypilot.outreach.mailer import run_top_pick_outreach
     from rich.table import Table
 
+    target_msg = f" for '{company}'" if company else ""
     scrape_msg = f"with live career crawl on Hyprland Workspace {workspace}" if live_scrape else "without live crawl"
-    console.print(f"[bold cyan]🎯 Executing Top-Pick Cold Outreach Workflow (limit={limit}, min_score={min_score}, mode={mode}, {scrape_msg})...[/bold cyan]")
+    console.print(f"[bold cyan]🎯 Executing Top-Pick Cold Outreach Workflow (limit={limit}, min_score={min_score}, mode={mode}{target_msg}, {scrape_msg})...[/bold cyan]")
     res = run_top_pick_outreach(
         limit=limit,
         min_score=min_score,
@@ -566,6 +568,7 @@ def outreach_top_picks(
         live_scrape=live_scrape,
         workspace=workspace,
         headless=headless,
+        company=company,
     )
 
     leads = res.get("leads", [])
