@@ -539,6 +539,56 @@ def outreach(
     console.print(f"  • Skipped (awaiting portal apply first): {summary['skipped_dual_attack']}")
 
 
+@app.command("outreach-top-picks")
+def outreach_top_picks(
+    limit: int = typer.Option(15, "--limit", "-l", help="Number of top pick leads to select and draft."),
+    min_score: int = typer.Option(60, "--min-score", help="Minimum priority score threshold (0-100)."),
+    mode: str = typer.Option("draft", "--mode", "-m", help="Execution mode: draft (creates Gmail Drafts) or auto_send."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview ranked leads and drafts without creating Gmail drafts."),
+    force_research: bool = typer.Option(False, "--force-research", help="Bypass 30-day company cache and re-research."),
+) -> None:
+    """Execute high-conversion Top-Pick email outreach using company intelligence and persona-tailored batch Gemini drafts."""
+    _bootstrap()
+    from applypilot.outreach.mailer import run_top_pick_outreach
+    from rich.table import Table
+
+    console.print(f"[bold cyan]🎯 Executing Top-Pick Cold Outreach Workflow (limit={limit}, min_score={min_score}, mode={mode})...[/bold cyan]")
+    res = run_top_pick_outreach(
+        limit=limit,
+        min_score=min_score,
+        mode=mode,
+        dry_run=dry_run,
+        force_research=force_research,
+    )
+
+    leads = res.get("leads", [])
+    if not leads:
+        console.print("[yellow]No queued leads met the priority criteria or scored above threshold.[/yellow]")
+        return
+
+    table = Table(title="🎯 Top-Pick Outreach Selection & Drafts")
+    table.add_column("Score", style="bold green", justify="center")
+    table.add_column("Company", style="bold white")
+    table.add_column("Recipient", style="cyan")
+    table.add_column("Persona", style="magenta")
+    table.add_column("Subject Line", style="yellow")
+    table.add_column("Status", style="green")
+
+    for item in leads:
+        table.add_row(
+            str(item.get("score", 0)),
+            item.get("company", ""),
+            item.get("email", ""),
+            item.get("persona", "").upper(),
+            item.get("subject", "")[:45] + ("..." if len(item.get("subject", "")) > 45 else ""),
+            item.get("status", ""),
+        )
+
+    console.print(table)
+    console.print(f"\n[bold green]✓ Outreach complete:[/bold green] Selected: {res['total_selected']} | Drafted: {res['drafted']} | Sent: {res['sent']} | Mode: {res['mode']}")
+
+
+
 @app.command("run-daily")
 def run_daily(
     limit: int = typer.Option(10, "--limit", "-l", help="Max jobs to discover and process per channel."),

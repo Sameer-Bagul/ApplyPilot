@@ -267,14 +267,34 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
     _add_column_if_missing(conn, "career_watchlist", "investigated_at", "TIMESTAMP")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_priority ON career_watchlist(priority_tier, is_vip)")
 
-    # Ensure jobs table has execution_route and proof recording columns
-    if "jobs" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
-        _add_column_if_missing(conn, "jobs", "execution_route", "TEXT")
-        _add_column_if_missing(conn, "jobs", "proof_video_path", "TEXT")
-        _add_column_if_missing(conn, "jobs", "proof_screenshot_path", "TEXT")
-        _add_column_if_missing(conn, "jobs", "proof_log_path", "TEXT")
+    # Extend recruiter_leads for top-pick workflow & persona pitch
+    _add_column_if_missing(conn, "recruiter_leads", "persona", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "priority_score", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "recruiter_leads", "email_subject", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "email_body_text", "TEXT")
+    _add_column_if_missing(conn, "recruiter_leads", "email_body_html", "TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_leads_priority_score ON recruiter_leads(priority_score)")
 
-    # 7. SQLite FTS5 virtual table qa_fts
+    # 7. company_intel (Unified 30-day cached company research)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS company_intel (
+            domain_or_name      TEXT PRIMARY KEY,
+            company_name        TEXT NOT NULL,
+            official_domain     TEXT,
+            wikipedia_summary   TEXT,
+            github_org          TEXT,
+            tech_stack_json     TEXT,
+            open_roles_json     TEXT,
+            funding_stage       TEXT,
+            ai_focus_tags       TEXT,
+            researched_at       TEXT NOT NULL,
+            expires_at          TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_intel_domain ON company_intel(official_domain)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_intel_expires ON company_intel(expires_at)")
+
+    # 8. SQLite FTS5 virtual table qa_fts
     try:
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS qa_fts USING fts5(

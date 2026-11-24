@@ -155,7 +155,7 @@ def close_connection(db_path: Path | str | None = None) -> None:
             conn.close()
 
 
-def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
+def init_db(db_path: Path | str | sqlite3.Connection | None = None) -> sqlite3.Connection:
     """Create the full jobs table with all columns from every pipeline stage.
 
     This is idempotent -- safe to call on every startup. Uses CREATE TABLE IF NOT EXISTS
@@ -172,17 +172,18 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
                    verification_confidence
 
     Args:
-        db_path: Override the default DB_PATH.
+        db_path: Override the default DB_PATH or pass an existing sqlite3.Connection.
 
     Returns:
         sqlite3.Connection with the schema initialized.
     """
-    path = db_path or DB_PATH
-
-    # Ensure parent directory exists
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-
-    conn = get_connection(path)
+    if isinstance(db_path, sqlite3.Connection):
+        conn = db_path
+    else:
+        path = str(db_path or DB_PATH)
+        # Ensure parent directory exists
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        conn = get_connection(path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             -- Discovery stage (smart_extract / job_search)
@@ -371,6 +372,23 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             created_at           TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS company_intel (
+            domain_or_name      TEXT PRIMARY KEY,
+            company_name        TEXT NOT NULL,
+            official_domain     TEXT,
+            wikipedia_summary   TEXT,
+            github_org          TEXT,
+            tech_stack_json     TEXT,
+            open_roles_json     TEXT,
+            funding_stage       TEXT,
+            ai_focus_tags       TEXT,
+            researched_at       TEXT NOT NULL,
+            expires_at          TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_intel_domain ON company_intel(official_domain)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_intel_expires ON company_intel(expires_at)")
     commit_with_retry(conn)
 
     # Run migrations for any columns added after initial schema
@@ -384,7 +402,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
     try:
         from applypilot.learning.migrations import run_migrations
-        run_migrations(path)
+        run_migrations(conn)
     except Exception as e:
         _log.debug("Automatic migration run notice: %s", e)
 
@@ -3277,4 +3295,125 @@ def stream_jobs(
             break
         for row in rows:
             yield dict(row)
+
+
+def get_company_intel(domain_or_name: str, conn: sqlite3.Connection | None = None) -> dict | None:
+    """Retrieve cached company intelligence by domain or name if not expired."""
+    if not domain_or_name:
+        return None
+    if conn is None:
+        conn = get_connection()
+    key = domain_or_name.strip().lower()
+    row = conn.execute(
+        """
+        SELECT * FROM company_intel 
+        WHERE LOWER(domain_or_name) = ? OR LOWER(company_name) = ? OR LOWER(official_domain) = ?
+        LIMIT 1
+        """,
+        (key, key, key),
+    ).fetchone()
+    if not row:
+        return None
+    data = dict(row)
+    # Check expiry
+    from datetime import datetime, timezone
+    expires_at = data.get("expires_at", "")
+    if expires_at and expires_at < datetime.now(timezone.utc).isoformat():
+        return None  # Cache expired
+    return data
+
+
+def save_company_intel(intel_data: dict, conn: sqlite3.Connection | None = None) -> None:
+    """Insert or replace cached company intelligence with 30-day TTL."""
+    if conn is None:
+        conn = get_connection()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    researched_at = intel_data.get("researched_at") or now.isoformat()
+    expires_at = intel_data.get("expires_at") or (now + timedelta(days=30)).isoformat()
+    key = (intel_data.get("domain_or_name") or intel_data.get("official_domain") or intel_data.get("company_name", "")).strip().lower()
+    if not key:
+        return
+
+    import json
+    tech_stack_json = intel_data.get("tech_stack_json")
+    if isinstance(tech_stack_json, (list, dict, set)):
+        tech_stack_json = json.dumps(list(tech_stack_json))
+    open_roles_json = intel_data.get("open_roles_json")
+    if isinstance(open_roles_json, (list, dict)):
+        open_roles_json = json.dumps(open_roles_json)
+    ai_focus_tags = intel_data.get("ai_focus_tags")
+    if isinstance(ai_focus_tags, (list, set)):
+        ai_focus_tags = json.dumps(list(ai_focus_tags))
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO company_intel (
+            domain_or_name, company_name, official_domain, wikipedia_summary,
+            github_org, tech_stack_json, open_roles_json, funding_stage,
+            ai_focus_tags, researched_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            key,
+            intel_data.get("company_name", key),
+            intel_data.get("official_domain", ""),
+            intel_data.get("wikipedia_summary", ""),
+            intel_data.get("github_org", ""),
+            tech_stack_json or "[]",
+            open_roles_json or "[]",
+            intel_data.get("funding_stage", ""),
+            ai_focus_tags or "[]",
+            researched_at,
+            expires_at,
+        ),
+    )
+    commit_with_retry(conn)
+
+
+def get_top_priority_leads(limit: int = 20, min_score: int = 70, conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Retrieve top-scored recruiter leads for cold outreach."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT * FROM recruiter_leads
+        WHERE outreach_status = 'queued' AND priority_score >= ?
+        ORDER BY priority_score DESC, created_at DESC
+        LIMIT ?
+        """,
+        (min_score, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_lead_email_draft(
+    lead_id: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+    persona: str | None = None,
+    priority_score: int | None = None,
+    gmail_draft_id: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> bool:
+    """Store generated email draft and metadata on a recruiter lead."""
+    if conn is None:
+        conn = get_connection()
+    conn.execute(
+        """
+        UPDATE recruiter_leads
+        SET email_subject = ?,
+            email_body_text = ?,
+            email_body_html = ?,
+            persona = COALESCE(?, persona),
+            priority_score = COALESCE(?, priority_score),
+            gmail_draft_id = COALESCE(?, gmail_draft_id)
+        WHERE lead_id = ?
+        """,
+        (subject, body_text, body_html, persona, priority_score, gmail_draft_id, lead_id),
+    )
+    commit_with_retry(conn)
+    return True
+
 

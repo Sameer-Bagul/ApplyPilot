@@ -563,3 +563,142 @@ def dispatch_approved_leads(limit: int = 10, conn: sqlite3.Connection | None = N
         conn.close()
 
     return {"approved_found": len(approved_rows), "sent": sent, "errors": errors}
+
+
+def run_top_pick_outreach(
+    limit: int = 15,
+    min_score: int = 60,
+    mode: str = "draft",
+    dry_run: bool = False,
+    force_research: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Execute the Top-Pick High-Conversion Cold Outreach Workflow:
+    1. Selects and scores queued leads using LeadRanker (company intel + persona classification).
+    2. Batches top leads through BatchDraftGenerator (Gemini with persona adaptation).
+    3. Updates database with priority_score, persona, email_subject, email_body_text, email_body_html.
+    4. Attaches tailored resume PDF.
+    5. In 'draft' mode: Creates Gmail Drafts.
+       In 'auto_send' mode: Dispatches with rate-limit and randomized jitter.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    from applypilot.outreach.lead_ranker import LeadRanker
+    from applypilot.outreach.batch_draft_generator import BatchDraftGenerator
+
+    ranker = LeadRanker(conn=conn)
+    top_leads = ranker.select_daily_top_picks(limit=limit, min_score=min_score, force_research=force_research)
+
+    if not top_leads:
+        logger.info("No top-pick leads qualified for outreach (min_score=%d)", min_score)
+        if should_close:
+            conn.close()
+        return {"total_selected": 0, "drafted": 0, "sent": 0, "mode": mode, "leads": []}
+
+    generator = BatchDraftGenerator(batch_size=12)
+    drafts = generator.generate_drafts_for_leads(top_leads)
+    draft_map = {d["lead_id"]: d for d in drafts}
+
+    processed_leads = []
+    drafted_count = 0
+    sent_count = 0
+
+    for lead in top_leads:
+        lid = lead["lead_id"]
+        to_email = lead["contact_email"]
+        company = lead.get("company_name") or "Company"
+        role_title = lead.get("role_title") or "Software Engineer"
+        persona = lead.get("persona") or "founder"
+        priority_score = lead.get("priority_score") or 0
+
+        draft = draft_map.get(lid)
+        if not draft:
+            continue
+
+        subject = draft.get("subject") or f"Application: {role_title} — Sameer Bagul"
+        body_text = draft.get("body_text") or ""
+        body_html = draft.get("body_html") or ""
+        resume_pdf = find_resume_pdf(role_title, company)
+
+        if dry_run:
+            processed_leads.append({
+                "lead_id": lid,
+                "email": to_email,
+                "company": company,
+                "persona": persona,
+                "score": priority_score,
+                "subject": subject,
+                "body_preview": body_text[:200] + "...",
+                "status": "dry_run",
+            })
+            continue
+
+        draft_id = None
+        if mode == "draft":
+            success, draft_id = create_gmail_draft(
+                to_email=to_email,
+                subject=subject,
+                text_body=body_text,
+                html_body=body_html,
+                attachment_path=resume_pdf,
+            )
+            outreach_status = "drafted" if success else "pending_review"
+            if success:
+                drafted_count += 1
+        elif mode == "auto_send":
+            success, msg_id, th_id = send_gmail_api(
+                to_email=to_email,
+                subject=subject,
+                text_body=body_text,
+                html_body=body_html,
+            )
+            outreach_status = "sent" if success else "error_sending"
+            if success:
+                sent_count += 1
+                import time, random
+                time.sleep(random.uniform(2.0, 4.0))
+        else:
+            outreach_status = "pending_review"
+
+        from applypilot.database import update_lead_email_draft
+        update_lead_email_draft(
+            lead_id=lid,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            persona=persona,
+            priority_score=priority_score,
+            gmail_draft_id=draft_id,
+            conn=conn,
+        )
+        conn.execute(
+            "UPDATE recruiter_leads SET outreach_status = ? WHERE lead_id = ?",
+            (outreach_status, lid),
+        )
+        conn.commit()
+
+        processed_leads.append({
+            "lead_id": lid,
+            "email": to_email,
+            "company": company,
+            "persona": persona,
+            "score": priority_score,
+            "subject": subject,
+            "status": outreach_status,
+            "draft_id": draft_id,
+        })
+
+    if should_close:
+        conn.close()
+
+    return {
+        "total_selected": len(top_leads),
+        "drafted": drafted_count,
+        "sent": sent_count,
+        "mode": mode,
+        "leads": processed_leads,
+    }
+
