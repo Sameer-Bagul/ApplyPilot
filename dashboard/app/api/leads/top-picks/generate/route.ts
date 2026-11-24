@@ -12,6 +12,8 @@ export async function POST(request: NextRequest) {
     const minScore = Math.max(0, parseInt(body.minScore || '60', 10));
     const mode = body.mode === 'auto_send' ? 'auto_send' : 'draft';
     const forceResearch = Boolean(body.forceResearch);
+    const liveScrape = body.liveScrape !== false;
+    const workspace = parseInt(body.workspace || '11', 10);
 
     const projectRoot = getProjectRoot();
     const pythonBin = getPythonBin();
@@ -24,7 +26,9 @@ res = run_top_pick_outreach(
     limit=${limit},
     min_score=${minScore},
     mode=${JSON.stringify(mode)},
-    force_research=${forceResearch ? "True" : "False"}
+    force_research=${forceResearch ? "True" : "False"},
+    live_scrape=${liveScrape ? "True" : "False"},
+    workspace=${workspace}
 )
 print("---AP_RESULT_START---")
 print(json.dumps(res))

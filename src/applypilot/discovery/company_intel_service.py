@@ -54,14 +54,24 @@ def _detect_ai_focus(text: str, tech_stack: list[str]) -> list[str]:
 class CompanyIntelService:
     """Manages company background investigation with intelligent multi-source aggregation and caching."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection | None = None,
+        workspace: int = 11,
+        headless: bool = False,
+        live_scrape: bool = False,
+    ) -> None:
         self.conn = conn
+        self.workspace = workspace
+        self.headless = headless
+        self.live_scrape = live_scrape
 
     def get_or_research(
         self,
         company_name: str,
         domain: str | None = None,
         force_refresh: bool = False,
+        live_scrape: bool | None = None,
     ) -> dict[str, Any]:
         """Retrieve cached company intel or perform fresh multi-source research."""
         c_name = (company_name or "").strip()
@@ -79,6 +89,8 @@ class CompanyIntelService:
                 "ai_focus_tags": [],
             }
 
+        should_crawl = self.live_scrape if live_scrape is None else live_scrape
+
         # 1. Check SQLite 30-day cache
         if not force_refresh:
             cached = get_company_intel(cache_key, conn=self.conn)
@@ -87,11 +99,15 @@ class CompanyIntelService:
 
             if cached:
                 intel_dict = self._format_intel_dict(cached)
-                logger.info(
-                    "⚡ [Cache Hit] Reusing 30-day cached intel for '%s' (domain: %s) -> Stack: %s | AI Tags: %s",
-                    c_name, c_domain, intel_dict.get("tech_stack", [])[:5], intel_dict.get("ai_focus_tags", [])
-                )
-                return intel_dict
+                # If cached but user explicitly requested live crawl and no roles cached, allow live crawl
+                if should_crawl and not intel_dict.get("open_roles"):
+                    logger.info("🔍 [Live Scrape Triggered] Cached intel has 0 roles for '%s'; crawling live careers on Workspace %d...", c_name, self.workspace)
+                else:
+                    logger.info(
+                        "⚡ [Cache Hit] Reusing 30-day cached intel for '%s' (domain: %s) -> Stack: %s | AI Tags: %s | Roles: %d",
+                        c_name, c_domain, intel_dict.get("tech_stack", [])[:5], intel_dict.get("ai_focus_tags", []), len(intel_dict.get("open_roles", []))
+                    )
+                    return intel_dict
 
         # 2. Cache miss -> Perform fresh investigation
         logger.info("🔎 [Online OSINT] Researching company '%s' (domain: %s)...", c_name, c_domain)
@@ -122,6 +138,24 @@ class CompanyIntelService:
                 logger.info("   ├─ Local Jobs DB: Matched %d active job openings for %s", len(local_jobs), c_name)
         except Exception as e:
             logger.debug("Local jobs lookup error for %s: %s", c_name, e)
+
+        # (a2) Live Headed Playwright Scrape on Hyprland Workspace 11
+        if should_crawl:
+            try:
+                from applypilot.discovery.career_page_crawler import crawl_company_careers_sync
+                crawl_res = crawl_company_careers_sync(
+                    company_name=c_name,
+                    domain=c_domain,
+                    workspace=self.workspace,
+                    headless=self.headless,
+                    conn=conn,
+                )
+                live_roles = crawl_res.get("jobs", [])
+                if live_roles:
+                    local_jobs = live_roles + local_jobs
+                    logger.info("   ├─ [Live Career Scrape] Workspace %d added %d live positions", self.workspace, len(live_roles))
+            except Exception as e:
+                logger.debug("Live career crawler error for %s: %s", c_name, e)
 
         # (b) Query Wikipedia REST API
         wiki_summary = ""
@@ -214,7 +248,12 @@ class CompanyIntelService:
 
         return self._format_intel_dict(intel_record)
 
-    def enrich_batch_for_leads(self, leads: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    def enrich_batch_for_leads(
+        self,
+        leads: list[dict[str, Any]],
+        force_refresh: bool = False,
+        live_scrape: bool | None = None,
+    ) -> dict[str, dict[str, Any]]:
         """Research all unique companies in a list of leads, deduplicating lookups."""
         unique_companies: dict[str, tuple[str, str | None]] = {}
         for lead in leads:
@@ -226,7 +265,12 @@ class CompanyIntelService:
 
         company_map: dict[str, dict[str, Any]] = {}
         for key, (c_name, domain) in unique_companies.items():
-            intel = self.get_or_research(c_name, domain=domain)
+            intel = self.get_or_research(
+                c_name,
+                domain=domain,
+                force_refresh=force_refresh,
+                live_scrape=live_scrape,
+            )
             company_map[key] = intel
             if c_name.lower() not in company_map:
                 company_map[c_name.lower()] = intel

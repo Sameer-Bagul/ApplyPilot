@@ -945,10 +945,13 @@ def run_top_pick_outreach(
     mode: str = "draft",
     dry_run: bool = False,
     force_research: bool = False,
+    live_scrape: bool = False,
+    workspace: int = 11,
+    headless: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     """Execute the Top-Pick High-Conversion Cold Outreach Workflow:
-    1. Selects and scores queued leads using LeadRanker (company intel + persona classification).
+    1. Selects and scores queued leads using LeadRanker (company intel + persona classification + live career crawling).
     2. Batches top leads through BatchDraftGenerator (Gemini with persona adaptation).
     3. Updates database with priority_score, persona, email_subject, email_body_text, email_body_html.
     4. Attaches tailored resume PDF.
@@ -963,8 +966,18 @@ def run_top_pick_outreach(
     from applypilot.outreach.lead_ranker import LeadRanker
     from applypilot.outreach.batch_draft_generator import BatchDraftGenerator
 
-    ranker = LeadRanker(conn=conn)
-    top_leads = ranker.select_daily_top_picks(limit=limit, min_score=min_score, force_research=force_research)
+    ranker = LeadRanker(
+        conn=conn,
+        workspace=workspace,
+        headless=headless,
+        live_scrape=live_scrape,
+    )
+    top_leads = ranker.select_daily_top_picks(
+        limit=limit,
+        min_score=min_score,
+        force_research=force_research,
+        live_scrape=live_scrape,
+    )
 
     if not top_leads:
         logger.info("No top-pick leads qualified for outreach (min_score=%d)", min_score)

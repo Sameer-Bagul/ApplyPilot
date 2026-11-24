@@ -151,18 +151,34 @@ def compute_lead_priority(
 class LeadRanker:
     """Ranks and selects top queued leads using company intel and persona classification."""
 
-    def __init__(self, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection | None = None,
+        workspace: int = 11,
+        headless: bool = False,
+        live_scrape: bool = False,
+    ) -> None:
         self.conn = conn
+        self.workspace = workspace
+        self.headless = headless
+        self.live_scrape = live_scrape
 
     def select_daily_top_picks(
         self,
         limit: int = 20,
         min_score: int = 60,
         force_research: bool = False,
+        live_scrape: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Rank all queued leads, research missing company intel, and return top picks."""
         conn = self.conn or get_connection()
-        intel_service = CompanyIntelService(conn=conn)
+        should_crawl = self.live_scrape if live_scrape is None else live_scrape
+        intel_service = CompanyIntelService(
+            conn=conn,
+            workspace=self.workspace,
+            headless=self.headless,
+            live_scrape=should_crawl,
+        )
 
         # 1. Fetch queued leads
         queued = get_recruiter_leads(status="queued", limit=None, conn=conn)
@@ -183,8 +199,12 @@ class LeadRanker:
         if not candidate_skills:
             candidate_skills = ["Python", "React", "FastAPI", "TypeScript", "LangGraph", "Docker", "LLM", "Playwright"]
 
-        # 3. Pre-fetch company intel for unique companies in the batch
-        company_map = intel_service.enrich_batch_for_leads(queued)
+        # 3. Pre-fetch company intel for unique companies in the batch (fast OSINT, no live crawl yet)
+        company_map = intel_service.enrich_batch_for_leads(
+            queued,
+            force_refresh=force_research,
+            live_scrape=False,
+        )
 
         # 4. Score each lead and update DB
         ranked_leads: list[tuple[int, str, dict[str, Any], dict[str, Any]]] = []
@@ -194,7 +214,7 @@ class LeadRanker:
             domain = lead.get("company_domain") or ""
             key = (domain or c_name).strip().lower()
 
-            intel = company_map.get(key) or intel_service.get_or_research(c_name, domain=domain, force_refresh=force_research)
+            intel = company_map.get(key) or intel_service.get_or_research(c_name, domain=domain, force_refresh=force_research, live_scrape=False)
             persona = classify_recipient_persona(
                 lead.get("contact_name", ""),
                 lead.get("contact_email", ""),
@@ -227,8 +247,31 @@ class LeadRanker:
         # 5. Sort by priority score DESC
         ranked_leads.sort(key=lambda x: x[0], reverse=True)
 
+        # 6. If live_scrape is requested, execute live headed crawl ONLY on top candidate companies!
+        top_candidates = list(ranked_leads[:limit])
+        if should_crawl and top_candidates:
+            crawled_keys: set[str] = set()
+            for idx, (score, persona, lead, intel) in enumerate(top_candidates):
+                c_name = lead.get("company_name") or ""
+                domain = lead.get("company_domain") or ""
+                key = (domain or c_name).strip().lower()
+
+                if key not in crawled_keys and (not intel.get("open_roles") or force_research):
+                    crawled_keys.add(key)
+                    logger.info("🎯 [Top Pick Live Crawl] Investigating top pick company '%s' on Workspace %d...", c_name, self.workspace)
+                    fresh_intel = intel_service.get_or_research(
+                        c_name, domain=domain, force_refresh=True, live_scrape=True
+                    )
+                    company_map[key] = fresh_intel
+                    intel.update(fresh_intel)
+                    new_score = compute_lead_priority(lead, fresh_intel, candidate_skills)
+                    lead["priority_score"] = new_score
+                    top_candidates[idx] = (new_score, persona, lead, fresh_intel)
+
+            top_candidates.sort(key=lambda x: x[0], reverse=True)
+
         selected: list[dict[str, Any]] = []
-        for score, persona, lead, intel in ranked_leads[:limit]:
+        for score, persona, lead, intel in top_candidates:
             lead_copy = dict(lead)
             lead_copy["company_intel"] = intel
             selected.append(lead_copy)
