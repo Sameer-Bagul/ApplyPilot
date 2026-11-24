@@ -9,10 +9,13 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || undefined;
     const type = searchParams.get('type') || undefined;
     const status = searchParams.get('status') || undefined;
+    const persona = searchParams.get('persona') || undefined;
+    const minScore = searchParams.get('minScore') ? parseInt(searchParams.get('minScore')!, 10) : undefined;
+    const sortBy = searchParams.get('sortBy') || undefined;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '25', 10);
 
-    const result = getLeads({ search, type, status, page, limit });
+    const result = getLeads({ search, type, status, persona, minScore, sortBy, page, limit });
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
     return NextResponse.json(

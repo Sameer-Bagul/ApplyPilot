@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import path from 'path';
-import fs from 'fs';
-import { getLeadDetail, getDb } from '@/lib/db';
+import { getLeadDetail, getDb, getProjectRoot, getPythonBin } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,9 +21,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const projectRoot = path.resolve(process.cwd(), '..');
-    const venvPython = path.join(projectRoot, '.venv', 'bin', 'python');
-    const pythonBin = fs.existsSync(venvPython) ? venvPython : 'python3';
+    const projectRoot = getProjectRoot();
+    const pythonBin = getPythonBin();
 
     const script = `
 import json, sys
@@ -114,4 +112,3 @@ print("__RESULT__" + json.dumps(res))
     );
   }
 }
-

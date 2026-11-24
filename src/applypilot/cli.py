@@ -1763,6 +1763,44 @@ def outreach_send(
     console.print(f"  • Errors: {res['errors']}")
 
 
+@outreach_app.command("send-lead")
+def outreach_send_lead(
+    lead_id: str = typer.Argument(..., help="Lead ID or prefix to send immediately."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """1-Click send email for a single lead via SMTP or Gmail API."""
+    _bootstrap()
+    from applypilot.outreach.mailer import send_single_lead_email
+
+    if not yes:
+        if not typer.confirm(f"Send outreach email now for lead {lead_id}?"):
+            console.print("[dim]Send cancelled.[/dim]")
+            return
+
+    res = send_single_lead_email(lead_id=lead_id)
+    if res.get("success"):
+        console.print(f"[bold green]Successfully sent email to {res.get('to_email')} (Subject: {res.get('subject')})[/bold green]")
+        if res.get("attachment"):
+            console.print(f"  [dim]Attached resume: {res.get('attachment')}[/dim]")
+    else:
+        console.print(f"[bold red]Failed sending lead {lead_id}: {res.get('error')}[/bold red]")
+
+
+@outreach_app.command("save-draft")
+def outreach_save_draft(
+    lead_id: str = typer.Argument(..., help="Lead ID or prefix to draft."),
+) -> None:
+    """Save lead draft and create Gmail draft."""
+    _bootstrap()
+    from applypilot.outreach.mailer import save_single_lead_draft
+
+    res = save_single_lead_draft(lead_id=lead_id)
+    if res.get("success"):
+        console.print(f"[bold green]Draft created for lead {lead_id} (Draft ID: {res.get('draft_id')})[/bold green]")
+    else:
+        console.print(f"[bold red]Failed drafting lead {lead_id}: {res.get('error')}[/bold red]")
+
+
 qa_app = typer.Typer(name="qa", help="Manage the Q&A knowledge base for screening questions.")
 app.add_typer(qa_app)
 

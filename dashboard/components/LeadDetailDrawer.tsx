@@ -19,6 +19,14 @@ import {
   Paperclip,
   Check,
   AlertTriangle,
+  FileText,
+  Briefcase,
+  Layers,
+  Cpu,
+  Flame,
+  Info,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface LeadDetailDrawerProps {
@@ -37,8 +45,11 @@ export function LeadDetailDrawer({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [dispatchResult, setDispatchResult] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [showTransportHelp, setShowTransportHelp] = useState(false);
 
   // Editable fields
   const [editName, setEditName] = useState('');
@@ -48,37 +59,41 @@ export function LeadDetailDrawer({
   const [preferredChannel, setPreferredChannel] = useState<'corporate' | 'personal'>('corporate');
   const [enriching, setEnriching] = useState(false);
   const [editRole, setEditRole] = useState('');
-  const [editType, setEditType] = useState('');
+  const [editPersona, setEditPersona] = useState('founder');
+  const [editScore, setEditScore] = useState(0);
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
   const [editLinkedin, setEditLinkedin] = useState('');
-  const [editStatus, setEditStatus] = useState('');
+  const [editStatus, setEditStatus] = useState('drafted');
 
   useEffect(() => {
     if (!leadId) {
       setData(null);
+      setFeedback(null);
       return;
     }
 
     const fetchLead = async () => {
       setLoading(true);
+      setFeedback(null);
       try {
         const res = await fetch(`/api/leads/detail?id=${encodeURIComponent(leadId)}`);
         const json = await res.json();
         if (json.success) {
-          setData(json.data);
-          const l = json.data.lead;
+          setData(json);
+          const l = json.lead;
           setEditName(l.contact_name || '');
           setEditEmail(l.contact_email || '');
           setEditPersonalEmail(l.personal_email || '');
           setEditPersonalSource(l.personal_email_source || '');
           setPreferredChannel((l.preferred_channel as any) || 'corporate');
           setEditRole(l.role_title || '');
-          setEditType(l.contact_type || 'recruiter');
-          setEditSubject(l.email_draft_subject || '');
-          setEditBody(l.email_draft_body || '');
+          setEditPersona(l.persona || l.contact_type || 'founder');
+          setEditScore(l.priority_score || 0);
+          setEditSubject(l.email_subject || l.email_draft_subject || '');
+          setEditBody(l.email_body_text || l.email_draft_body || '');
           setEditLinkedin(l.contact_linkedin_url || '');
-          setEditStatus(l.outreach_status || 'pending_review');
+          setEditStatus(l.outreach_status || 'drafted');
         }
       } catch (err) {
         console.error('Failed to load lead detail', err);
@@ -93,8 +108,123 @@ export function LeadDetailDrawer({
   if (!leadId) return null;
 
   const lead = data?.lead;
-  const company = data?.company;
-  const auditLogs = data?.audit_logs || [];
+  const company = data?.companyInfo;
+  const intel = data?.companyIntel;
+  const openJobs = data?.openJobs || [];
+  const resume = data?.resume;
+  const transport = data?.transport;
+
+  // 1-Click Send Email action
+  const handleSendEmail = async () => {
+    if (!leadId) return;
+    const destEmail = preferredChannel === 'personal' && editPersonalEmail ? editPersonalEmail : editEmail;
+    if (!destEmail) {
+      setFeedback({ type: 'error', message: 'No recipient email configured.' });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Send tailored outreach email now to ${editName || 'Lead'} at ${destEmail}?\n\nResume: ${resume?.filename || 'Default resume'}`
+    );
+    if (!confirmed) return;
+
+    setSendingEmail(true);
+    setFeedback(null);
+    try {
+      // First save any edits
+      await fetch(`/api/leads/detail?id=${encodeURIComponent(leadId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_name: editName,
+          contact_email: editEmail,
+          personal_email: editPersonalEmail,
+          preferred_channel: preferredChannel,
+          role_title: editRole,
+          persona: editPersona,
+          email_subject: editSubject,
+          email_body_text: editBody,
+        }),
+      });
+
+      const res = await fetch('/api/leads/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: leadId,
+          contact_name: editName,
+          contact_email: editEmail,
+          personal_email: editPersonalEmail,
+          preferred_channel: preferredChannel,
+          role_title: editRole,
+          persona: editPersona,
+          subject: editSubject,
+          body_text: editBody,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setEditStatus('sent');
+        setFeedback({
+          type: 'success',
+          message: `Email successfully sent to ${destEmail}! (Attached: ${resume?.filename || 'Tailored Resume'})`,
+        });
+        if (onLeadUpdated) onLeadUpdated();
+      } else {
+        setFeedback({
+          type: 'error',
+          message: json.error || 'Failed sending email',
+        });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Error executing email send' });
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  // 1-Click Save as Gmail Draft
+  const handleSaveAsDraft = async () => {
+    if (!leadId) return;
+    setSavingDraft(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/leads/save-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: leadId,
+          contact_name: editName,
+          contact_email: editEmail,
+          personal_email: editPersonalEmail,
+          personal_email_source: editPersonalSource,
+          preferred_channel: preferredChannel,
+          role_title: editRole,
+          persona: editPersona,
+          subject: editSubject,
+          body_text: editBody,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setEditStatus('drafted');
+        setFeedback({
+          type: 'success',
+          message: 'Saved to Gmail Drafts & database successfully!',
+        });
+        if (onLeadUpdated) onLeadUpdated();
+      } else {
+        setFeedback({
+          type: 'error',
+          message: json.error || 'Failed saving draft',
+        });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Error saving draft' });
+    } finally {
+      setSavingDraft(false);
+    }
+  };
 
   const handleApprove = async () => {
     setActionLoading(true);
@@ -107,6 +237,7 @@ export function LeadDetailDrawer({
       const json = await res.json();
       if (json.success) {
         setEditStatus('approved');
+        setFeedback({ type: 'success', message: 'Lead approved for outreach batch dispatch.' });
         if (onLeadUpdated) onLeadUpdated();
       }
     } catch (err) {
@@ -127,6 +258,7 @@ export function LeadDetailDrawer({
       const json = await res.json();
       if (json.success) {
         setEditStatus('rejected');
+        setFeedback({ type: 'success', message: 'Lead rejected.' });
         if (onLeadUpdated) onLeadUpdated();
       }
     } catch (err) {
@@ -156,6 +288,7 @@ export function LeadDetailDrawer({
           setEditPersonalEmail(json.huntResult.personal_emails[0]);
           setEditPersonalSource(json.huntResult.sources_used?.join(', ') || 'OSINT');
           setPreferredChannel('personal');
+          setFeedback({ type: 'success', message: `Found personal email: ${json.huntResult.personal_emails[0]}` });
         }
         if (onLeadUpdated) onLeadUpdated();
       }
@@ -168,6 +301,7 @@ export function LeadDetailDrawer({
 
   const handleSave = async () => {
     setSaving(true);
+    setFeedback(null);
     try {
       const res = await fetch(`/api/leads/detail?id=${encodeURIComponent(leadId)}`, {
         method: 'PATCH',
@@ -179,36 +313,22 @@ export function LeadDetailDrawer({
           personal_email_source: editPersonalSource,
           preferred_channel: preferredChannel,
           role_title: editRole,
-          contact_type: editType,
-          email_draft_subject: editSubject,
-          email_draft_body: editBody,
+          persona: editPersona,
+          priority_score: editScore,
+          email_subject: editSubject,
+          email_body_text: editBody,
           contact_linkedin_url: editLinkedin,
           outreach_status: editStatus,
         }),
       });
       const json = await res.json();
       if (json.success) {
-        setData((prev: any) => ({
-          ...prev,
-          lead: {
-            ...prev.lead,
-            contact_name: editName,
-            contact_email: editEmail,
-            personal_email: editPersonalEmail,
-            personal_email_source: editPersonalSource,
-            preferred_channel: preferredChannel,
-            role_title: editRole,
-            contact_type: editType,
-            email_draft_subject: editSubject,
-            email_draft_body: editBody,
-            contact_linkedin_url: editLinkedin,
-            outreach_status: editStatus,
-          },
-        }));
+        setFeedback({ type: 'success', message: 'Lead & email content saved successfully.' });
         if (onLeadUpdated) onLeadUpdated();
       }
     } catch (err) {
       console.error('Failed to save lead draft', err);
+      setFeedback({ type: 'error', message: 'Failed to save changes' });
     } finally {
       setSaving(false);
     }
@@ -231,62 +351,66 @@ export function LeadDetailDrawer({
     }
   };
 
-  const handleDispatch = async () => {
-    setActionLoading(true);
-    setDispatchResult(null);
-    try {
-      if (editStatus !== 'approved') {
-        await handleApprove();
-      }
-      const res = await fetch('/api/leads/dispatch', { method: 'POST' });
-      const json = await res.json();
-      if (json.success) {
-        setDispatchResult(`Dispatched! ${json.message}`);
-        setEditStatus('sent');
-        if (onLeadUpdated) onLeadUpdated();
-      } else {
-        setDispatchResult(`Error: ${json.error}`);
-      }
-    } catch (err: any) {
-      setDispatchResult(`Dispatch failed: ${err.message}`);
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const personaColor =
+    editPersona === 'founder'
+      ? 'bg-purple-50 text-purple-800 border-purple-200'
+      : editPersona === 'hr'
+      ? 'bg-blue-50 text-blue-800 border-blue-200'
+      : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+
+  const scoreBadgeColor =
+    editScore >= 80
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+      : editScore >= 60
+      ? 'bg-cyan-50 text-cyan-700 border-cyan-300'
+      : 'bg-zinc-100 text-zinc-700 border-zinc-200';
 
   return (
-    <div 
-      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/25 backdrop-blur-md flex justify-end animate-in fade-in duration-200"
+    <div
+      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-md flex justify-end animate-in fade-in duration-200"
       onClick={onClose}
     >
-      <div 
+      <div
         className="w-full max-w-2xl h-full liquid-glass-elevated bg-white/95 backdrop-blur-2xl border-l border-white/80 shadow-2xl flex flex-col relative text-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-6 border-b border-zinc-200/70 bg-white/70 flex items-start justify-between gap-4 relative">
-          <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
+        <div className="p-6 border-b border-zinc-200/70 bg-white/80 flex items-start justify-between gap-4 relative">
+          <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent pointer-events-none" />
 
-          <div className="space-y-1.5 flex-1 min-w-0">
+          <div className="space-y-2 flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                editStatus === 'approved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                editStatus === 'rejected' ? 'bg-rose-50 text-rose-800 border-rose-200' :
-                editStatus === 'sent' ? 'bg-cyan-50 text-cyan-800 border-cyan-200' :
-                'bg-amber-50 text-amber-800 border-amber-200'
-              }`}>
-                HITL Gate: {editStatus}
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${scoreBadgeColor} flex items-center gap-1`}>
+                <Flame className="w-3 h-3 text-amber-500" />
+                Score: {editScore}/100
               </span>
-              <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-zinc-100 text-zinc-600 border border-zinc-200">
-                {lead?.contact_type || 'recruiter'}
+
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider border ${personaColor}`}>
+                {editPersona === 'founder' ? '🚀 Founder Angle' : editPersona === 'hr' ? '💼 Recruiter Angle' : '⚡ Engineer Angle'}
+              </span>
+
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                  editStatus === 'approved'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : editStatus === 'sent'
+                    ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                    : editStatus === 'rejected'
+                    ? 'bg-rose-50 text-rose-800 border-rose-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}
+              >
+                Status: {editStatus}
               </span>
             </div>
+
             <h2 className="text-xl font-bold tracking-tight text-zinc-900 flex items-center gap-2 truncate">
               <User className="w-5 h-5 text-cyan-600 shrink-0" />
               <span>{editName || 'Hiring Lead'}</span>
             </h2>
-            <div className="flex items-center gap-3 text-xs text-zinc-500">
-              <span 
+
+            <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+              <span
                 onClick={() => lead?.company_name && onOpenCompany && onOpenCompany(lead.company_name)}
                 className="text-cyan-700 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
               >
@@ -294,85 +418,181 @@ export function LeadDetailDrawer({
                 {lead?.company_name}
               </span>
               <span>•</span>
-              <span>{editRole || 'Talent Acquisition'}</span>
+              <span>{editRole || 'Engineering Lead'}</span>
+              {lead?.company_domain && (
+                <>
+                  <span>•</span>
+                  <a
+                    href={`https://${lead.company_domain}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-zinc-500 hover:text-zinc-800 flex items-center gap-1"
+                  >
+                    {lead.company_domain}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={onClose}
-              className="liquid-pill rounded-full p-2 text-zinc-600 hover:text-zinc-950 transition shadow-2xs"
+              className="liquid-pill rounded-full p-2 text-zinc-600 hover:text-zinc-950 transition shadow-2xs cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* HITL Safety Control Bar */}
-        <div className="px-6 py-3 border-b border-zinc-200/60 bg-zinc-50/70 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-zinc-600">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span className="font-medium">Human-in-the-Loop Admin Safety</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {editStatus === 'pending_review' && (
-              <>
-                <button
-                  onClick={handleReject}
-                  disabled={actionLoading}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
-                >
-                  Reject Lead
-                </button>
-                <button
-                  onClick={handleApprove}
-                  disabled={actionLoading}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition flex items-center gap-1 cursor-pointer shadow-xs"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  Approve for Outreach
-                </button>
-              </>
-            )}
-
-            {editStatus === 'approved' && (
-              <button
-                onClick={handleDispatch}
-                disabled={actionLoading}
-                className="liquid-pill-dark px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Send className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{actionLoading ? 'Dispatching...' : 'Dispatch Now'}</span>
-              </button>
-            )}
-
-            {editStatus === 'sent' && (
-              <span className="px-3 py-1 rounded-xl text-xs font-semibold bg-cyan-50 text-cyan-800 border border-cyan-200 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Email Dispatched
+        {/* Transport & Sending Channel Status Banner */}
+        <div className="px-6 py-2.5 border-b border-zinc-200/60 bg-zinc-50/90 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-semibold text-zinc-700">Outreach Channel:</span>
+              <span className="font-mono font-medium text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md border border-emerald-200">
+                {transport?.label || 'SMTP / Gmail'}
               </span>
-            )}
+            </div>
+
+            <button
+              onClick={() => setShowTransportHelp(!showTransportHelp)}
+              className="text-zinc-500 hover:text-zinc-800 flex items-center gap-1 cursor-pointer font-medium"
+            >
+              <Info className="w-3.5 h-3.5" />
+              <span>How sending works</span>
+              {showTransportHelp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
           </div>
+
+          {showTransportHelp && (
+            <div className="mt-2.5 p-3 rounded-xl bg-white border border-zinc-200 shadow-2xs space-y-1.5 text-zinc-600 animate-in fade-in">
+              <div className="font-bold text-zinc-800 text-[11px] uppercase tracking-wider">
+                Flexible Sending: SMTP vs Gmail API
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                ApplyPilot gives you the choice between standard <strong>SMTP</strong> (e.g. Gmail App Passwords) or <strong>Gmail OAuth API</strong>:
+              </p>
+              <ul className="list-disc pl-4 text-[11px] space-y-0.5 text-zinc-700">
+                <li>
+                  <strong>Option A (Easiest - 1 minute):</strong> Use a standard <strong>Gmail App Password</strong>. In your Google Account &gt; Security &gt; App Passwords, generate a 16-character code. Set <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">SMTP_USER=you@gmail.com</code> and <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">SMTP_PASS=xxxx xxxx xxxx xxxx</code> in your <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">.env</code>.
+                </li>
+                <li>
+                  <strong>Option B:</strong> Gmail OAuth via <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">~/.gmail-mcp/credentials.json</code> directly creates drafts in your Gmail folder and sends via REST API.
+                </li>
+                <li>
+                  <strong>Option C (Local / Mock):</strong> Without credentials, ApplyPilot cleanly simulates drafts and sends locally so you can preview everything risk-free!
+                </li>
+              </ul>
+            </div>
+          )}
         </div>
 
-        {/* Dispatch result message */}
-        {dispatchResult && (
-          <div className="mx-6 mt-4 p-3 rounded-xl bg-cyan-50 border border-cyan-200 text-xs text-cyan-900 font-medium">
-            {dispatchResult}
+        {/* Action / Confirmation Feedback Banner */}
+        {feedback && (
+          <div
+            className={`mx-6 mt-4 p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between gap-2 shadow-2xs ${
+              feedback.type === 'success'
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border border-rose-200 text-rose-900'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {feedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+            <button onClick={() => setFeedback(null)} className="text-zinc-400 hover:text-zinc-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
-        {/* Content Body */}
+        {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {loading ? (
-            <div className="py-20 text-center text-sm text-zinc-400">Loading recruiter contact...</div>
+            <div className="py-20 text-center text-sm text-zinc-400">Loading cold email draft & intel...</div>
           ) : (
             <>
-              {/* Profile Inputs */}
+              {/* Company Intelligence Summary Card */}
+              {intel && (
+                <div className="liquid-glass rounded-2xl p-4.5 border border-white/90 shadow-2xs space-y-3 bg-gradient-to-br from-white/90 to-cyan-50/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-900 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-600" />
+                      Company Intelligence (30-day Cache)
+                    </span>
+                    {intel.funding_stage && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-100/70 text-cyan-800 border border-cyan-200">
+                        {intel.funding_stage}
+                      </span>
+                    )}
+                  </div>
+
+                  {intel.wikipedia_summary && (
+                    <p className="text-xs text-zinc-600 leading-relaxed italic bg-white/70 p-2.5 rounded-xl border border-zinc-200/60">
+                      "{intel.wikipedia_summary}"
+                    </p>
+                  )}
+
+                  {/* Tech stack badges */}
+                  {intel.tech_stack && intel.tech_stack.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-semibold text-zinc-500 block">Verified Tech Stack:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {intel.tech_stack.map((t: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="text-[11px] px-2 py-0.5 rounded-md font-mono bg-zinc-100 text-zinc-700 border border-zinc-200"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI focus tags */}
+                  {intel.ai_focus_tags && intel.ai_focus_tags.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-semibold text-zinc-500 block">AI Focus Vectors:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {intel.ai_focus_tags.map((tag: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1"
+                          >
+                            <Cpu className="w-2.5 h-2.5" />
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Open roles match */}
+                  {openJobs && openJobs.length > 0 && (
+                    <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-xs">
+                      <span className="text-zinc-600 flex items-center gap-1 font-medium">
+                        <Briefcase className="w-3.5 h-3.5 text-zinc-500" />
+                        {openJobs.length} active matching jobs at {lead?.company_name}
+                      </span>
+                      <span className="text-cyan-700 font-semibold">{openJobs[0]?.title}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Recipient Details & Channel */}
               <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700">
-                  Lead Information
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center justify-between">
+                  <span>Recipient & Target Channel</span>
+                  <span className="text-[10px] font-mono font-normal text-zinc-500">ID: {lead?.lead_id}</span>
                 </h3>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -383,10 +603,25 @@ export function LeadDetailDrawer({
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       placeholder="Jane Doe"
-                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs"
                     />
                   </div>
 
+                  <div>
+                    <label className="text-xs font-semibold text-zinc-600 block mb-1">Role / Persona Angle</label>
+                    <select
+                      value={editPersona}
+                      onChange={(e) => setEditPersona(e.target.value)}
+                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-semibold"
+                    >
+                      <option value="founder">Founder / CEO / CTO (Impact & Architecture)</option>
+                      <option value="hr">Recruiter / HR (Skills & Notice Period)</option>
+                      <option value="engineer">Engineering Lead (Peer Stack & Code)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold text-zinc-600 block mb-1">Corporate Work Email</label>
                     <input
@@ -394,193 +629,186 @@ export function LeadDetailDrawer({
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
                       placeholder="jane@company.com"
-                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs font-mono"
+                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-zinc-600">Personal Email (OSINT)</label>
+                      <button
+                        type="button"
+                        onClick={handleEnrich}
+                        disabled={enriching}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles className={`w-3 h-3 ${enriching ? 'animate-spin' : ''}`} />
+                        {enriching ? 'Hunting...' : 'Find'}
+                      </button>
+                    </div>
+                    <input
+                      type="email"
+                      value={editPersonalEmail}
+                      onChange={(e) => setEditPersonalEmail(e.target.value)}
+                      placeholder="jane.personal@gmail.com"
+                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 shadow-2xs font-mono"
                     />
                   </div>
                 </div>
 
-                {/* Personal Email & Channel Selection */}
-                <div className="p-3.5 rounded-2xl bg-zinc-50/90 border border-zinc-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-indigo-600" />
-                        Personal Email Address (OSINT)
-                      </span>
-                      {editPersonalSource && (
-                        <span className="text-[10px] text-zinc-500 font-mono block">
-                          Discovered via: {editPersonalSource}
-                        </span>
-                      )}
-                    </div>
-
+                {/* Target Channel Switcher */}
+                <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200/70 flex items-center justify-between text-xs">
+                  <span className="text-zinc-600 font-medium">Send Destination:</span>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleEnrich}
-                      disabled={enriching}
-                      className="liquid-pill px-2.5 py-1 rounded-lg text-[11px] font-bold text-indigo-700 bg-white border border-indigo-200 shadow-2xs hover:bg-indigo-50 flex items-center gap-1 cursor-pointer"
-                      title="Run GitHub commit & search dork OSINT to find this person's personal email"
+                      onClick={() => setPreferredChannel('corporate')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                        preferredChannel === 'corporate'
+                          ? 'bg-cyan-600 text-white shadow-2xs'
+                          : 'bg-zinc-200/70 text-zinc-600 hover:text-zinc-900'
+                      }`}
                     >
-                      <Sparkles className={`w-3 h-3 text-indigo-600 ${enriching ? 'animate-spin' : ''}`} />
-                      <span>{enriching ? 'Hunting...' : 'Find Personal Email'}</span>
+                      Corporate Email ({editEmail ? editEmail.split('@')[1] : 'Company'})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreferredChannel('personal')}
+                      disabled={!editPersonalEmail}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                        !editPersonalEmail
+                          ? 'opacity-40 cursor-not-allowed bg-zinc-100 text-zinc-400'
+                          : preferredChannel === 'personal'
+                          ? 'bg-indigo-600 text-white shadow-2xs cursor-pointer'
+                          : 'bg-zinc-200/70 text-zinc-600 hover:text-zinc-900 cursor-pointer'
+                      }`}
+                    >
+                      Personal Inbox {editPersonalEmail ? '(@gmail)' : ''}
                     </button>
                   </div>
-
-                  <input
-                    type="email"
-                    value={editPersonalEmail}
-                    onChange={(e) => setEditPersonalEmail(e.target.value)}
-                    placeholder="jane.doe@gmail.com (personal)"
-                    className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-indigo-200 font-mono shadow-2xs"
-                  />
-
-                  {/* Outreach Destination Switcher */}
-                  <div className="pt-2 border-t border-zinc-200/60 flex items-center justify-between text-xs">
-                    <span className="text-[11px] text-zinc-600 font-medium">Outreach Target:</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPreferredChannel('corporate')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition ${
-                          preferredChannel === 'corporate'
-                            ? 'bg-blue-600 text-white shadow-2xs'
-                            : 'bg-zinc-200/70 text-zinc-600 hover:text-zinc-900'
-                        }`}
-                      >
-                        Corporate
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreferredChannel('personal')}
-                        disabled={!editPersonalEmail}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
-                          !editPersonalEmail
-                            ? 'opacity-40 cursor-not-allowed bg-zinc-100 text-zinc-400'
-                            : preferredChannel === 'personal'
-                            ? 'bg-indigo-600 text-white shadow-2xs cursor-pointer'
-                            : 'bg-zinc-200/70 text-zinc-600 hover:text-zinc-900 cursor-pointer'
-                        }`}
-                        title={editPersonalEmail ? 'Send to personal inbox' : 'No personal email discovered yet'}
-                      >
-                        Personal {editPersonalEmail ? '(@gmail)' : ''}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600 block mb-1">Title / Role</label>
-                    <input
-                      type="text"
-                      value={editRole}
-                      onChange={(e) => setEditRole(e.target.value)}
-                      placeholder="Head of Talent Acquisition"
-                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-600 block mb-1">Contact Type</label>
-                    <select
-                      value={editType}
-                      onChange={(e) => setEditType(e.target.value)}
-                      className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
-                    >
-                      <option value="recruiter">Recruiter / Talent Partner</option>
-                      <option value="engineering_lead">Engineering Lead / VP</option>
-                      <option value="founder">Founder / CEO / CTO</option>
-                      <option value="sourcer">Sourcer / HR</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-zinc-600 block mb-1">LinkedIn Profile</label>
-                  <input
-                    type="url"
-                    value={editLinkedin}
-                    onChange={(e) => setEditLinkedin(e.target.value)}
-                    placeholder="https://linkedin.com/in/janedoe"
-                    className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs font-mono"
-                  />
                 </div>
               </div>
 
-              {/* Personalized Email Pitch Draft */}
+              {/* Email Content Editor */}
               <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
                     <Mail className="w-3.5 h-3.5 text-cyan-600" />
-                    Personalized Outreach Draft
+                    Personalized Outreach Email
                   </h3>
-                  <span className="text-[10px] text-zinc-500 font-mono">100% Free Engine</span>
+                  <span className="text-[10px] text-zinc-400 font-mono">Tailored for {editPersona}</span>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Email Subject</label>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Subject Line</label>
                   <input
                     type="text"
                     value={editSubject}
                     onChange={(e) => setEditSubject(e.target.value)}
-                    placeholder="Application & Introduction: Senior AI / Full-Stack Engineer"
-                    className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                    placeholder="Application: Software Engineer — Sameer Bagul"
+                    className="w-full bg-white border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Email Body</label>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">Email Body (Plaintext / HTML)</label>
                   <textarea
-                    rows={8}
+                    rows={10}
                     value={editBody}
                     onChange={(e) => setEditBody(e.target.value)}
-                    placeholder="Hi Jane, I noticed your team is building..."
-                    className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs font-sans leading-relaxed"
+                    placeholder="Hi there, I noticed your recent work at..."
+                    className="w-full bg-white border border-zinc-200/90 rounded-xl p-3 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-sans leading-relaxed"
                   />
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-zinc-200/70">
-                  <button
-                    onClick={handleDelete}
-                    type="button"
-                    className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Delete Lead
-                  </button>
+                {/* Resume Attachment Card */}
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-zinc-50 to-emerald-50/40 border border-zinc-200/80 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-zinc-800 truncate">
+                        {resume?.filename || 'Sameer_Bagul_Resume.pdf'}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 truncate font-mono">
+                        {resume?.path || '~/.applypilot/resume.pdf'}
+                      </div>
+                    </div>
+                  </div>
 
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    type="button"
-                    className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    {saving ? 'Saving...' : 'Save Draft'}
-                  </button>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    Attached &amp; Ready
+                  </span>
                 </div>
               </div>
-
-              {/* Discovery Audit Log */}
-              {auditLogs.length > 0 && (
-                <div className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs space-y-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 block">
-                    Discovery Audit Log
-                  </span>
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto text-xs text-zinc-600">
-                    {auditLogs.map((log: any, i: number) => (
-                      <div key={i} className="flex items-center justify-between py-1 border-b border-zinc-200/50">
-                        <span className="font-mono text-[11px] text-zinc-800">{log.action_name}</span>
-                        <span className="text-zinc-500 text-[10px]">
-                          {log.created_at ? new Date(log.created_at).toLocaleTimeString() : ''}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-5 border-t border-zinc-200/70 bg-white/90 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDelete}
+              type="button"
+              className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete</span>
+            </button>
+
+            {editStatus === 'pending_review' && (
+              <button
+                onClick={handleReject}
+                disabled={actionLoading}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 border border-zinc-300 transition cursor-pointer"
+              >
+                Reject
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              type="button"
+              className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <Save className="w-3.5 h-3.5 text-zinc-600" />
+              <span>{saving ? 'Saving...' : 'Save Draft'}</span>
+            </button>
+
+            <button
+              onClick={handleSaveAsDraft}
+              disabled={savingDraft}
+              type="button"
+              className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Create/Update draft directly in your real Gmail Drafts folder"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-600" />
+              <span>{savingDraft ? 'Syncing...' : 'Save as Gmail Draft'}</span>
+            </button>
+
+            {editStatus !== 'sent' ? (
+              <button
+                onClick={handleSendEmail}
+                disabled={sendingEmail}
+                type="button"
+                className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 flex items-center gap-2 cursor-pointer shadow-md hover:scale-[1.02] transition"
+              >
+                <Send className={`w-3.5 h-3.5 text-cyan-300 ${sendingEmail ? 'animate-bounce' : ''}`} />
+                <span>{sendingEmail ? 'Sending...' : 'Send Email Now'}</span>
+              </button>
+            ) : (
+              <span className="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Email Sent
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

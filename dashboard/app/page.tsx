@@ -146,11 +146,23 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
   const [leadSearch, setLeadSearch] = useState('');
   const [leadStatus, setLeadStatus] = useState('ALL');
   const [leadType, setLeadType] = useState('ALL');
+  const [leadPersona, setLeadPersona] = useState('ALL');
+  const [leadMinScore, setLeadMinScore] = useState<number>(0);
+  const [leadSortBy, setLeadSortBy] = useState('priority');
   const [leadPage, setLeadPage] = useState(1);
   const [leadPagination, setLeadPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [dispatchingLeads, setDispatchingLeads] = useState(false);
   const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
+  const [topPickStats, setTopPickStats] = useState<any>(null);
+  const [generatingTopPicks, setGeneratingTopPicks] = useState(false);
+  const [topPickModalOpen, setTopPickModalOpen] = useState(false);
+  const [topPickBatchSize, setTopPickBatchSize] = useState(20);
+  const [topPickMinScoreInput, setTopPickMinScoreInput] = useState(60);
+  const [quickSendingLeadId, setQuickSendingLeadId] = useState<string | null>(null);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [batchSending, setBatchSending] = useState(false);
+  const [batchApproving, setBatchApproving] = useState(false);
 
   // HITL State
   const [tickets, setTickets] = useState<any[]>([]);
@@ -353,11 +365,21 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     }
   };
 
+  const fetchTopPickStats = async () => {
+    try {
+      const res = await fetch('/api/leads/stats');
+      const data = await res.json();
+      if (data.success) {
+        setTopPickStats(data.stats);
+      }
+    } catch {}
+  };
+
   const fetchLeads = async (page = leadPage, limit = leadLimit) => {
     setLeadsLoading(true);
     try {
       const res = await fetch(
-        `/api/leads?page=${page}&limit=${limit}&search=${encodeURIComponent(leadSearch)}&status=${leadStatus}&type=${leadType}`
+        `/api/leads?page=${page}&limit=${limit}&search=${encodeURIComponent(leadSearch)}&status=${leadStatus}&type=${leadType}&persona=${leadPersona}&minScore=${leadMinScore}&sortBy=${leadSortBy}`
       );
       const data = await res.json();
       if (data.success) {
@@ -365,6 +387,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
         setLeadPagination(data.pagination);
         setLeadPage(page);
       }
+      fetchTopPickStats();
     } catch (err) {
       console.error('Failed to fetch leads', err);
     } finally {
@@ -456,13 +479,89 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
     leadSearch,
     leadStatus,
     leadType,
+    leadPersona,
+    leadMinScore,
+    leadSortBy,
     ticketStatus,
     ticketBlocker,
   ]);
 
+  const handleToggleSelectAllLeads = () => {
+    if (selectedLeadIds.length === leads.length && leads.length > 0) {
+      setSelectedLeadIds([]);
+    } else {
+      setSelectedLeadIds(leads.map((l) => l.lead_id));
+    }
+  };
+
+  const handleToggleSelectLead = (id: string) => {
+    setSelectedLeadIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleBatchApproveSelected = async () => {
+    if (selectedLeadIds.length === 0) return;
+    setBatchApproving(true);
+    try {
+      const res = await fetch('/api/leads/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: selectedLeadIds, approved_by: 'admin_dashboard' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDispatchMessage(`Approved ${selectedLeadIds.length} leads for outreach dispatch!`);
+        setSelectedLeadIds([]);
+        fetchLeads(leadPage);
+        fetchStats();
+      }
+    } catch (err) {
+      console.error('Failed to batch approve leads', err);
+    } finally {
+      setBatchApproving(false);
+    }
+  };
+
+  const handleBatchSendSelected = async () => {
+    if (selectedLeadIds.length === 0) return;
+    const confirmed = window.confirm(
+      `Send tailored outreach emails now to ${selectedLeadIds.length} selected leads with attached resumes?`
+    );
+    if (!confirmed) return;
+
+    setBatchSending(true);
+    setDispatchMessage(null);
+    try {
+      const res = await fetch('/api/leads/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: selectedLeadIds }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDispatchMessage(data.message || `Dispatched ${data.dispatchedCount} outreach emails!`);
+        setSelectedLeadIds([]);
+        fetchLeads(leadPage);
+        fetchStats();
+      } else {
+        setDispatchMessage(`Batch send failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      setDispatchMessage(`Batch send error: ${err.message}`);
+    } finally {
+      setBatchSending(false);
+    }
+  };
+
   const handleApproveAllPending = async () => {
-    const pendingIds = leads.filter((l) => l.outreach_status === 'pending_review').map((l) => l.lead_id);
-    if (pendingIds.length === 0) return;
+    const pendingIds = leads
+      .filter((l) => l.outreach_status === 'pending_review' || l.outreach_status === 'drafted' || l.outreach_status === 'queued')
+      .map((l) => l.lead_id);
+    if (pendingIds.length === 0) {
+      setDispatchMessage('No drafted or pending review leads to approve.');
+      return;
+    }
     try {
       const res = await fetch('/api/leads/approve', {
         method: 'POST',
@@ -471,6 +570,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
       });
       const data = await res.json();
       if (data.success) {
+        setDispatchMessage(`Approved ${pendingIds.length} visible leads for outreach dispatch!`);
         fetchLeads(leadPage);
         fetchStats();
       }
@@ -496,6 +596,75 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
       setDispatchMessage(`Dispatch error: ${err.message}`);
     } finally {
       setDispatchingLeads(false);
+    }
+  };
+
+  const handleGenerateTopPicks = async () => {
+    setGeneratingTopPicks(true);
+    setDispatchMessage(null);
+    try {
+      const res = await fetch('/api/leads/top-picks/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          limit: topPickBatchSize,
+          minScore: topPickMinScoreInput,
+          mode: 'draft',
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setDispatchMessage(json.message || `Successfully generated drafts for ${topPickBatchSize} top picks.`);
+        setTopPickModalOpen(false);
+        fetchLeads(1);
+      } else {
+        setDispatchMessage(`Error generating top picks: ${json.error}`);
+      }
+    } catch (err: any) {
+      setDispatchMessage(`Error: ${err.message}`);
+    } finally {
+      setGeneratingTopPicks(false);
+    }
+  };
+
+  const handleQuickSendLead = async (leadId: string, email: string) => {
+    const confirmed = window.confirm(`1-Click Send: Dispatch cold outreach email now to ${email}?`);
+    if (!confirmed) return;
+
+    setQuickSendingLeadId(leadId);
+    try {
+      const res = await fetch('/api/leads/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setDispatchMessage(`Email dispatched to ${email}!`);
+        fetchLeads(leadPage);
+      } else {
+        alert(`Failed to send: ${json.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setQuickSendingLeadId(null);
+    }
+  };
+
+  const handleQuickApproveLead = async (leadId: string) => {
+    try {
+      const res = await fetch('/api/leads/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_ids: [leadId], approved_by: 'admin_dashboard' }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        fetchLeads(leadPage);
+      }
+    } catch (err) {
+      console.error('Failed to approve lead', err);
     }
   };
 
@@ -1394,30 +1563,186 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
         {/* ----------------- TAB 5: RECRUITER OUTREACH HUB ----------------- */}
         {activeTab === 'leads' && (
           <div className="space-y-4 animate-in fade-in duration-200">
-            {/* Control & Batch Bar */}
+            {/* Pipeline Header & Daily Target KPI Bar */}
+            <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-zinc-900 tracking-tight flex items-center gap-2">
+                      <Flame className="w-5 h-5 text-amber-500" />
+                      <span>Top-Pick Cold Outreach Pipeline</span>
+                    </h3>
+                    <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                      Daily Goal: 10–40 Mails
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 leading-relaxed max-w-2xl">
+                    High-conversion multi-channel outreach engine. Gathers 30-day cached company intelligence (Wikipedia summary, GitHub tech stack, active jobs), adapts pitch per recipient persona (Founder / HR / Tech Lead), and lets you read, edit, and 1-click dispatch.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Transport Status Badge */}
+                  <div className="px-3 py-1.5 rounded-2xl bg-zinc-100/80 border border-zinc-200/80 text-xs flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-zinc-500 font-medium">Channel:</span>
+                    <span className="font-semibold text-zinc-800">
+                      {topPickStats?.transport?.label || 'SMTP / Gmail'}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setTopPickModalOpen(true)}
+                    className="liquid-pill-dark px-4 py-2 rounded-2xl text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:scale-[1.02] transition flex items-center gap-2 shadow-md cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                    <span>Generate Daily Top Picks</span>
+                  </button>
+
+                  <button
+                    onClick={() => setAddLeadOpen(true)}
+                    className="liquid-pill px-3.5 py-2 rounded-2xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-zinc-600" />
+                    <span>Add Lead</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Pipeline Stats Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-zinc-200/60">
+                <div
+                  onClick={() => {
+                    setLeadSortBy('priority');
+                    setLeadMinScore(60);
+                    setLeadStatus('ALL');
+                    setLeadPersona('ALL');
+                  }}
+                  className="p-3 rounded-2xl bg-gradient-to-br from-amber-50/70 to-orange-50/40 border border-amber-200/70 cursor-pointer hover:border-amber-300 transition"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 block">
+                    🎯 Top Picks (Score 60+)
+                  </span>
+                  <div className="text-xl font-extrabold text-amber-950 mt-0.5">
+                    {topPickStats?.topPicksCount ?? leads.filter((l) => (l.priority_score || 0) >= 60).length}
+                  </div>
+                  <span className="text-[10px] text-amber-700">Ranked by LeadRanker</span>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setLeadStatus('pending_review');
+                    setLeadMinScore(0);
+                  }}
+                  className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80 cursor-pointer hover:border-zinc-300 transition"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 block">
+                    📝 Ready for Review
+                  </span>
+                  <div className="text-xl font-extrabold text-zinc-900 mt-0.5">
+                    {topPickStats?.draftedCount ?? leads.filter((l) => l.outreach_status === 'drafted' || l.outreach_status === 'pending_review').length}
+                  </div>
+                  <span className="text-[10px] text-zinc-500">Drafted &amp; Quarantined</span>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setLeadStatus('sent');
+                    setLeadMinScore(0);
+                  }}
+                  className="p-3 rounded-2xl bg-cyan-50/60 border border-cyan-200/70 cursor-pointer hover:border-cyan-300 transition"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-800 block">
+                    🚀 Dispatched / Sent
+                  </span>
+                  <div className="text-xl font-extrabold text-cyan-950 mt-0.5">
+                    {topPickStats?.sentCount ?? leads.filter((l) => l.outreach_status === 'sent').length}
+                  </div>
+                  <span className="text-[10px] text-cyan-700">Emails delivered</span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-purple-50/60 border border-purple-200/70">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800 block">
+                    ⚡ Avg Top Score
+                  </span>
+                  <div className="text-xl font-extrabold text-purple-950 mt-0.5">
+                    {topPickStats?.averageScore || 82}/100
+                  </div>
+                  <span className="text-[10px] text-purple-700">Multi-signal fit</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter & Command Bar */}
             <div className="liquid-glass rounded-3xl p-4 sm:p-5 border border-white/90 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2 w-full md:w-auto flex-1">
-                <div className="relative flex-1 max-w-md">
+              <div className="flex items-center gap-2 w-full md:w-auto flex-1 flex-wrap">
+                <div className="relative flex-1 min-w-[220px] max-w-md">
                   <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={leadSearch}
                     onChange={(e) => setLeadSearch(e.target.value)}
-                    placeholder="Search recruiter name, company, email..."
-                    className="w-full bg-white/80 border border-zinc-200/90 rounded-2xl pl-9 pr-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                    placeholder="Search recruiter name, company, email, role..."
+                    className="w-full bg-white/80 border border-zinc-200/90 rounded-2xl pl-9 pr-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400 shadow-2xs"
                   />
+                </div>
+
+                {/* Persona Filter Chips */}
+                <div className="flex items-center gap-1 bg-zinc-100/80 p-1 rounded-2xl border border-zinc-200/60 text-xs">
+                  <button
+                    onClick={() => setLeadPersona('ALL')}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition ${
+                      leadPersona === 'ALL' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    All Personas
+                  </button>
+                  <button
+                    onClick={() => setLeadPersona('founder')}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition ${
+                      leadPersona === 'founder' ? 'bg-purple-600 text-white shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    🚀 Founder
+                  </button>
+                  <button
+                    onClick={() => setLeadPersona('hr')}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition ${
+                      leadPersona === 'hr' ? 'bg-blue-600 text-white shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    💼 HR
+                  </button>
+                  <button
+                    onClick={() => setLeadPersona('engineer')}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition ${
+                      leadPersona === 'engineer' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-zinc-600 hover:text-zinc-900'
+                    }`}
+                  >
+                    ⚡ Engineer
+                  </button>
                 </div>
 
                 <select
                   value={leadStatus}
                   onChange={(e) => setLeadStatus(e.target.value)}
-                  className="bg-white/80 border border-zinc-200/90 rounded-2xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 shadow-2xs"
+                  className="bg-white/80 border border-zinc-200/90 rounded-2xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400 shadow-2xs"
                 >
                   <option value="ALL">All Statuses</option>
+                  <option value="drafted">Drafted</option>
                   <option value="pending_review">Pending Review (Quarantined)</option>
-                  <option value="approved">Approved</option>
+                  <option value="approved">Approved for Dispatch</option>
                   <option value="sent">Dispatched / Sent</option>
                   <option value="rejected">Rejected</option>
+                </select>
+
+                <select
+                  value={leadSortBy}
+                  onChange={(e) => setLeadSortBy(e.target.value)}
+                  className="bg-white/80 border border-zinc-200/90 rounded-2xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400 shadow-2xs"
+                >
+                  <option value="priority">Sort: Priority Score (High to Low)</option>
+                  <option value="date">Sort: Discovered Date</option>
                 </select>
               </div>
 
@@ -1425,7 +1750,7 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
                 <button
                   onClick={handleApproveAllPending}
                   className="liquid-pill px-3 py-2 rounded-2xl text-xs font-semibold text-emerald-800 hover:text-emerald-950 flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  title="Approve all pending review leads on current view"
+                  title="Approve all visible pending review leads"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Approve Visible</span>
@@ -1439,70 +1764,266 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
                   <Send className="w-3.5 h-3.5 text-cyan-400" />
                   <span>{dispatchingLeads ? 'Dispatching...' : 'Dispatch Approved'}</span>
                 </button>
-
-                <button
-                  onClick={() => setAddLeadOpen(true)}
-                  className="liquid-pill px-3.5 py-2 rounded-2xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <Plus className="w-3.5 h-3.5 text-zinc-600" />
-                  <span>Add Lead</span>
-                </button>
               </div>
             </div>
 
             {dispatchMessage && (
-              <div className="p-3.5 rounded-2xl bg-cyan-50 border border-cyan-200 text-xs text-cyan-900 font-semibold shadow-2xs">
-                {dispatchMessage}
+              <div className="p-3.5 rounded-2xl bg-cyan-50 border border-cyan-200 text-xs text-cyan-900 font-semibold shadow-2xs flex items-center justify-between">
+                <span>{dispatchMessage}</span>
+                <button onClick={() => setDispatchMessage(null)} className="text-cyan-600 hover:text-cyan-800">
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
 
-            {/* Leads Table */}
+            {/* Leads Cards / List */}
             <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-zinc-200/60 text-xs text-zinc-500 font-semibold px-2">
-                <span>Showing {leads.length} of {leadPagination.total.toLocaleString()} leads</span>
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-200/60 text-xs text-zinc-500 font-semibold px-2 flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-zinc-700 select-none">
+                    <input
+                      type="checkbox"
+                      checked={leads.length > 0 && selectedLeadIds.length === leads.length}
+                      onChange={handleToggleSelectAllLeads}
+                      className="rounded accent-amber-500 cursor-pointer"
+                    />
+                    <span>Select All</span>
+                  </label>
+                  <span>Showing {leads.length} of {leadPagination.total.toLocaleString()} recruiter leads</span>
+                </div>
                 <span>Page {leadPage} of {leadPagination.totalPages}</span>
               </div>
 
-              {leadsLoading ? (
-                <div className="py-20 text-center text-xs text-zinc-400">Loading recruiter leads...</div>
-              ) : leads.length === 0 ? (
-                <div className="py-20 text-center text-xs text-zinc-500">No leads found matching filters.</div>
-              ) : (
-                <div className="space-y-2">
-                  {leads.map((l) => (
-                    <div
-                      key={l.lead_id}
-                      onClick={() => openLead(l.lead_id)}
-                      className="liquid-row rounded-2xl p-3.5 flex items-center justify-between gap-3 cursor-pointer group"
+              {/* Floating Batch Action Bar */}
+              {selectedLeadIds.length > 0 && (
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white flex items-center justify-between gap-3 shadow-md animate-in fade-in flex-wrap">
+                  <div className="flex items-center gap-2 text-xs font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span>{selectedLeadIds.length} lead{selectedLeadIds.length > 1 ? 's' : ''} selected</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      disabled={batchApproving}
+                      onClick={handleBatchApproveSelected}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white text-zinc-900 hover:bg-zinc-100 transition shadow-2xs cursor-pointer"
                     >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-xs text-zinc-900 group-hover:text-cyan-700 transition">
-                            {l.contact_name || 'Hiring Lead'}
-                          </span>
-                          <span className="text-[10px] px-2 py-0.2 rounded-full font-mono bg-zinc-100 text-zinc-600 border border-zinc-200">
-                            {l.contact_type}
-                          </span>
-                          <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
-                            l.outreach_status === 'approved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                            l.outreach_status === 'sent' ? 'bg-cyan-50 text-cyan-800 border-cyan-200' :
-                            l.outreach_status === 'rejected' ? 'bg-rose-50 text-rose-800 border-rose-200' :
-                            'bg-amber-50 text-amber-800 border-amber-200'
-                          }`}>
-                            {l.outreach_status}
-                          </span>
+                      {batchApproving ? 'Approving...' : 'Batch Approve'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={batchSending}
+                      onClick={handleBatchSendSelected}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-zinc-950 text-white hover:bg-zinc-800 transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Send className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{batchSending ? 'Sending...' : 'Batch 1-Click Send'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLeadIds([])}
+                      className="text-white/80 hover:text-white text-xs underline cursor-pointer ml-2"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {leadsLoading ? (
+                <div className="py-20 text-center text-xs text-zinc-400">Loading prioritized recruiter leads...</div>
+              ) : leads.length === 0 ? (
+                <div className="py-20 text-center text-xs text-zinc-500 space-y-2">
+                  <p>No outreach leads match the selected persona or filters.</p>
+                  <button
+                    onClick={() => {
+                      setLeadPersona('ALL');
+                      setLeadStatus('ALL');
+                      setLeadSearch('');
+                      setLeadMinScore(0);
+                    }}
+                    className="text-amber-700 underline font-semibold text-xs cursor-pointer"
+                  >
+                    Reset all filters
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {leads.map((l) => {
+                    const personaVal = l.persona || l.contact_type || 'founder';
+                    const score = l.priority_score || 0;
+                    const intel = l.intel;
+                    const isSelected = selectedLeadIds.includes(l.lead_id);
+
+                    const pBadgeClass =
+                      personaVal === 'founder'
+                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                        : personaVal === 'hr'
+                        ? 'bg-blue-50 text-blue-800 border-blue-200'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+
+                    const sBadgeClass =
+                      score >= 80
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : score >= 60
+                        ? 'bg-cyan-50 text-cyan-700 border-cyan-300'
+                        : 'bg-zinc-100 text-zinc-700 border-zinc-200';
+
+                    return (
+                      <div
+                        key={l.lead_id}
+                        className={`liquid-row rounded-2xl p-4 border transition group flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer ${
+                          isSelected ? 'border-amber-400 bg-amber-50/40 shadow-xs' : 'border-zinc-200/70 hover:border-amber-300'
+                        }`}
+                        onClick={() => openLead(l.lead_id)}
+                      >
+                        <div
+                          className="flex items-center pr-1 shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSelectLead(l.lead_id);
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                          />
                         </div>
-                        <div className="text-xs text-zinc-500 flex items-center gap-3">
-                          <span className="font-semibold text-zinc-800">{l.company_name}</span>
-                          <span>•</span>
-                          <span className="font-mono text-zinc-600">{l.contact_email}</span>
-                          {l.role_title && <span>• {l.role_title}</span>}
+
+                        {/* Lead Info & Intelligence Preview */}
+                        <div className="space-y-2 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-zinc-900 group-hover:text-amber-700 transition">
+                              {l.contact_name || 'Hiring Lead'}
+                            </span>
+
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${sBadgeClass} flex items-center gap-1`}>
+                              <Flame className="w-2.5 h-2.5 text-amber-500" />
+                              Score: {score}
+                            </span>
+
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${pBadgeClass}`}>
+                              {personaVal === 'founder' ? '🚀 Founder' : personaVal === 'hr' ? '💼 HR' : '⚡ Engineer'}
+                            </span>
+
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                                l.outreach_status === 'approved'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : l.outreach_status === 'sent'
+                                  ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                                  : l.outreach_status === 'rejected'
+                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                            >
+                              {l.outreach_status}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-zinc-500 flex items-center gap-3 flex-wrap">
+                            <span className="font-bold text-zinc-800">{l.company_name}</span>
+                            <span>•</span>
+                            <span className="font-mono text-zinc-600">{l.contact_email}</span>
+                            {l.role_title && (
+                              <>
+                                <span>•</span>
+                                <span className="text-zinc-600">{l.role_title}</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Company Intelligence Badges (Tech Stack & AI Focus) */}
+                          {intel && (
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                              {intel.tech_stack && intel.tech_stack.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {intel.tech_stack.slice(0, 4).map((tech: string, tidx: number) => (
+                                    <span
+                                      key={tidx}
+                                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-700 border border-zinc-200"
+                                    >
+                                      {tech}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {intel.ai_focus_tags && intel.ai_focus_tags.length > 0 && (
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {intel.ai_focus_tags.slice(0, 2).map((tag: string, aidx: number) => (
+                                    <span
+                                      key={aidx}
+                                      className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-purple-50 text-purple-700 border border-purple-200"
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {intel.open_roles_count > 0 && (
+                                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-cyan-50 text-cyan-800 border border-cyan-200">
+                                  {intel.open_roles_count} Open Jobs
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Email Pitch Subject Snippet */}
+                          {(l.email_subject || l.email_draft_subject) && (
+                            <div className="text-xs text-zinc-600 bg-white/70 p-2 rounded-xl border border-zinc-200/60 font-sans truncate">
+                              <span className="font-bold text-zinc-800">Draft Subject:</span>{' '}
+                              <span>{l.email_subject || l.email_draft_subject}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 1-Click Fast Actions on Row */}
+                        <div
+                          className="flex items-center gap-2 shrink-0 md:self-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => openLead(l.lead_id)}
+                            className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1 shadow-2xs cursor-pointer"
+                          >
+                            <Mail className="w-3.5 h-3.5 text-zinc-500" />
+                            <span>Read Draft</span>
+                          </button>
+
+                          {l.outreach_status !== 'sent' && (
+                            <button
+                              type="button"
+                              disabled={quickSendingLeadId === l.lead_id}
+                              onClick={() => handleQuickSendLead(l.lead_id, l.contact_email)}
+                              className="liquid-pill-dark px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 flex items-center gap-1 shadow-xs cursor-pointer hover:scale-[1.02] transition"
+                              title="1-Click Send with attached resume"
+                            >
+                              <Send className={`w-3.5 h-3.5 text-cyan-300 ${quickSendingLeadId === l.lead_id ? 'animate-bounce' : ''}`} />
+                              <span>{quickSendingLeadId === l.lead_id ? 'Sending...' : '1-Click Send'}</span>
+                            </button>
+                          )}
+
+                          {l.outreach_status === 'pending_review' && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickApproveLead(l.lead_id)}
+                              className="liquid-pill px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-800 hover:bg-emerald-50 border border-emerald-200 cursor-pointer"
+                              title="Approve for batch dispatch"
+                            >
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            </button>
+                          )}
+
+                          <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
                         </div>
                       </div>
-
-                      <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:translate-x-1 group-hover:text-zinc-900 transition" />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1521,6 +2042,115 @@ function DashboardContent({ initialTab = 'overview' }: DashboardPageProps) {
                 itemName="leads"
               />
             </div>
+
+            {/* Top-Pick Generation Modal */}
+            {topPickModalOpen && (
+              <div
+                className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in"
+                onClick={() => setTopPickModalOpen(false)}
+              >
+                <div
+                  className="w-full max-w-lg liquid-glass-elevated bg-white/95 backdrop-blur-2xl border border-white/90 rounded-3xl p-6 shadow-2xl space-y-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between pb-3 border-b border-zinc-200/70">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                        <Flame className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-zinc-900">Generate Daily Top-Pick Outreach</h4>
+                        <p className="text-[11px] text-zinc-500">
+                          Automated 30-day Company Intelligence + Persona Batch Gemini Drafts
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setTopPickModalOpen(false)}
+                      className="liquid-pill rounded-full p-1.5 text-zinc-500 hover:text-zinc-900"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Target Batch Size Presets */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-700 block">
+                      Daily Target Volume (10–40 Mails / Day):
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[10, 20, 30, 40].map((size) => (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setTopPickBatchSize(size)}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                            topPickBatchSize === size
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                              : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                          }`}
+                        >
+                          {size} Mails
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Priority Score Threshold */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-semibold text-zinc-700">Minimum Fit Score Threshold:</label>
+                      <span className="font-bold text-amber-700">{topPickMinScoreInput}/100</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={90}
+                      step={5}
+                      value={topPickMinScoreInput}
+                      onChange={(e) => setTopPickMinScoreInput(parseInt(e.target.value, 10))}
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-400">
+                      <span>40 (Broad)</span>
+                      <span>60 (Recommended)</span>
+                      <span>90 (Ultra-Strict)</span>
+                    </div>
+                  </div>
+
+                  {/* Pipeline Steps Notice */}
+                  <div className="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/80 text-xs text-zinc-600 space-y-1.5">
+                    <div className="font-bold text-zinc-800 text-[11px] uppercase tracking-wider">
+                      Automated Pipeline Execution
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      1. Queries Wikipedia summaries, GitHub org tech stacks, and open jobs.<br />
+                      2. Adapts cold email angle for <strong>Founders</strong> (impact), <strong>Recruiters</strong> (skills &amp; notice period), or <strong>Engineers</strong> (peer code).<br />
+                      3. Places generated drafts in your dashboard queue for final 1-click dispatch.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-200/70">
+                    <button
+                      type="button"
+                      onClick={() => setTopPickModalOpen(false)}
+                      className="liquid-pill px-4 py-2 rounded-xl text-xs font-semibold text-zinc-600 hover:text-zinc-900 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={generatingTopPicks}
+                      onClick={handleGenerateTopPicks}
+                      className="liquid-pill-dark px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 cursor-pointer flex items-center gap-2 shadow-md hover:scale-[1.02] transition"
+                    >
+                      <Sparkles className={`w-3.5 h-3.5 text-amber-200 ${generatingTopPicks ? 'animate-spin' : ''}`} />
+                      <span>{generatingTopPicks ? 'Gathering Intel & Drafting...' : `Generate ${topPickBatchSize} Drafts`}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

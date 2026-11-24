@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, getPythonBin, getProjectRoot } from '@/lib/db';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
@@ -25,10 +25,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Call python CLI in background to safely run dispatch_approved_leads
-    const projectRoot = path.resolve(process.cwd(), '..');
-    const venvPython = path.join(projectRoot, '.venv', 'bin', 'python');
+    const projectRoot = getProjectRoot();
+    const venvPython = getPythonBin();
 
-    const py = spawn(venvPython, ['-m', 'applypilot.cli', 'outreach', 'send'], {
+    const py = spawn(venvPython, ['-m', 'applypilot.cli', 'outreach', 'send', '--yes'], {
       cwd: projectRoot,
       env: { ...process.env, PYTHONPATH: path.join(projectRoot, 'src') },
     });
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
 
     await new Promise((resolve) => {
       py.on('close', resolve);
-      // Timeout after 8 seconds
-      setTimeout(resolve, 8000);
+      // Timeout after 15 seconds
+      setTimeout(resolve, 15000);
     });
 
     return NextResponse.json({
@@ -58,4 +58,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -220,14 +220,41 @@ Edit `.env` to configure your settings:
   ```env
   GEMINI_API_KEY=your_gemini_api_key
   ```
-- **Email Notifications & Cold Outreach**:
+- **Email Notifications & Cold Outreach (SMTP or Gmail API)**:
   ```env
+  # Option A: Standard SMTP / Gmail App Passwords (Recommended for fast setup)
   SMTP_HOST=smtp.gmail.com
   SMTP_PORT=587
   SMTP_USER=you@gmail.com
-  SMTP_PASS=your_app_password
+  SMTP_PASS=xxxx xxxx xxxx xxxx
   APPLYPILOT_USER_EMAIL=you@gmail.com
+
+  # Optional: For SendGrid, SES, or custom From address
+  # SMTP_FROM_EMAIL=you@yourcustomdomain.com
   ```
+
+### Email Outreach & Transport Setup: SMTP vs Gmail API
+
+> **Do you need SMTP or anything like that?**
+> **No, it is optional!** ApplyPilot supports three flexible outreach transport options depending on your setup:
+
+1. **Option A: Standard SMTP via Gmail App Passwords (Recommended — 1 minute setup)**
+   - No Google Cloud Console project or OAuth app verification needed.
+   - Go to your **Google Account** > **Security** > **2-Step Verification** > **App passwords**.
+   - Create a 16-character password for "ApplyPilot" and set in `~/.applypilot/.env` or `.env`:
+     ```env
+     SMTP_HOST=smtp.gmail.com
+     SMTP_PORT=587
+     SMTP_USER=you@gmail.com
+     SMTP_PASS=abcd efgh ijkl mnop
+     ```
+   - Works with any SMTP provider (Gmail, Outlook `smtp.office365.com:587`, Zoho `smtp.zoho.com:465`, SendGrid, or custom mail servers).
+2. **Option B: Gmail API OAuth (`~/.gmail-mcp/credentials.json`)**
+   - Directly creates drafts in your personal Gmail "Drafts" folder and sends via Google REST API.
+   - Ideal if you already have Google OAuth credentials configured from Gmail MCP.
+3. **Option C: Zero-Config Mock / Development Mode**
+   - Without any credentials, ApplyPilot runs safely in mock mode.
+   - You can test generating daily 10–40 top-pick drafts, reading intel, editing subjects and email bodies, and clicking "1-Click Send" completely risk-free.
 
 ### 3. Start Local Mini LLM (Ollama CPU)
 

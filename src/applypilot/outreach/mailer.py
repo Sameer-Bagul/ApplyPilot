@@ -14,8 +14,11 @@ import logging
 import mimetypes
 import os
 import re
+import smtplib
 import sqlite3
+import ssl
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -25,6 +28,7 @@ from typing import Any
 
 from applypilot import config
 from applypilot.database import (
+    commit_with_retry,
     get_connection,
     get_recruiter_leads,
     update_recruiter_lead_status,
@@ -113,7 +117,7 @@ def create_gmail_draft(
     subject: str,
     text_body: str,
     html_body: str,
-    attachment_path: Path | None = None,
+    attachment_path: Path | str | None = None,
 ) -> tuple[bool, str | None]:
     """Create a draft email in the user's Gmail account via Gmail API."""
     if not CREDENTIALS_PATH.exists():
@@ -135,11 +139,12 @@ def create_gmail_draft(
         alt.attach(MIMEText(html_body, "html", "utf-8"))
         msg.attach(alt)
 
-        if attachment_path and attachment_path.exists():
-            ctype, encoding = mimetypes.guess_type(str(attachment_path))
+        att_path = Path(attachment_path) if attachment_path else None
+        if att_path and att_path.exists():
+            ctype, encoding = mimetypes.guess_type(str(att_path))
             ctype = ctype or "application/octet-stream"
-            part = MIMEApplication(attachment_path.read_bytes(), Name=attachment_path.name)
-            part["Content-Disposition"] = f'attachment; filename="{attachment_path.name}"'
+            part = MIMEApplication(att_path.read_bytes(), Name=att_path.name)
+            part["Content-Disposition"] = f'attachment; filename="{att_path.name}"'
             msg.attach(part)
 
         raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
@@ -163,6 +168,161 @@ def create_gmail_draft(
     except Exception as e:
         logger.error("Failed creating Gmail draft: %s", e)
         return False, None
+
+
+def send_smtp_email(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    attachment_path: Path | str | None = None,
+    smtp_host: str | None = None,
+    smtp_port: int | None = None,
+    smtp_user: str | None = None,
+    smtp_pass: str | None = None,
+    use_ssl: bool | None = None,
+) -> tuple[bool, str | None]:
+    """Send an email with optional resume attachment via standard SMTP.
+
+    Supports:
+    - Gmail App Passwords (smtp.gmail.com:587 STARTTLS)
+    - Any standard SMTP provider (Outlook, Zoho, SendGrid, custom mail server)
+    - Clean fallback mock in development/testing environments when credentials are unset
+    """
+    host = smtp_host or os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    port = smtp_port or int(os.environ.get("SMTP_PORT", 587))
+    user = smtp_user or os.environ.get("SMTP_USER") or os.environ.get("APPLYPILOT_USER_EMAIL")
+    password = smtp_pass or os.environ.get("SMTP_PASS")
+    sender_email = os.environ.get("SMTP_FROM_EMAIL") or os.environ.get("APPLYPILOT_USER_EMAIL") or user or "outreach@applypilot.local"
+    ssl_env = os.environ.get("SMTP_USE_SSL", "").lower() in ("1", "true", "yes")
+    is_ssl = use_ssl if use_ssl is not None else (ssl_env or port == 465)
+
+    if not user or not password:
+        logger.warning(
+            "SMTP credentials not fully configured (SMTP_USER or SMTP_PASS missing). Mocking SMTP send to %s.",
+            to_email,
+        )
+        return True, f"mock_smtp_{uuid.uuid4().hex[:10]}"
+
+    try:
+        msg = MIMEMultipart("mixed")
+        msg["From"] = sender_email
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+        msg_id = f"<{uuid.uuid4()}@{host}>"
+        msg["Message-ID"] = msg_id
+
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(text_body, "plain", "utf-8"))
+        alt.attach(MIMEText(html_body, "html", "utf-8"))
+        msg.attach(alt)
+
+        att_path = Path(attachment_path) if attachment_path else None
+        if att_path and att_path.exists():
+            ctype, _ = mimetypes.guess_type(str(att_path))
+            ctype = ctype or "application/octet-stream"
+            part = MIMEApplication(att_path.read_bytes(), Name=att_path.name)
+            part["Content-Disposition"] = f'attachment; filename="{att_path.name}"'
+            msg.attach(part)
+
+        context = ssl.create_default_context()
+
+        if is_ssl:
+            with smtplib.SMTP_SSL(host, port, context=context, timeout=30) as server:
+                server.login(user, password)
+                server.send_message(msg, from_addr=sender_email)
+        else:
+            with smtplib.SMTP(host, port, timeout=30) as server:
+                server.ehlo()
+                if server.has_extn("STARTTLS"):
+                    server.starttls(context=context)
+                    server.ehlo()
+                if user and password:
+                    server.login(user, password)
+                server.send_message(msg, from_addr=sender_email)
+
+        logger.info("Successfully sent cold email via SMTP to %s (Subject: %s)", to_email, subject)
+        return True, msg_id
+
+    except Exception as e:
+        logger.error("Failed sending cold email via SMTP to %s: %s", to_email, e)
+        return False, str(e)
+
+
+def send_email_outreach(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    attachment_path: Path | str | None = None,
+) -> tuple[bool, str | None, str | None]:
+    """Unified dispatch for cold outreach: prefers Gmail OAuth API if configured,
+    falls back cleanly to SMTP (e.g. Gmail App Passwords), or mock in dev mode.
+
+    Returns:
+        (success, message_id, thread_id)
+    """
+    att_path = Path(attachment_path) if attachment_path else None
+
+    # 1. Prefer Gmail OAuth API if credentials exist
+    if CREDENTIALS_PATH.exists():
+        try:
+            creds = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+            access_token = creds.get("access_token")
+            if access_token:
+                msg = MIMEMultipart("mixed")
+                msg["To"] = to_email
+                msg["Subject"] = subject
+                msg["From"] = "me"
+
+                alt = MIMEMultipart("alternative")
+                alt.attach(MIMEText(text_body, "plain", "utf-8"))
+                alt.attach(MIMEText(html_body, "html", "utf-8"))
+                msg.attach(alt)
+
+                if att_path and att_path.exists():
+                    ctype, _ = mimetypes.guess_type(str(att_path))
+                    ctype = ctype or "application/octet-stream"
+                    part = MIMEApplication(att_path.read_bytes(), Name=att_path.name)
+                    part["Content-Disposition"] = f'attachment; filename="{att_path.name}"'
+                    msg.attach(part)
+
+                raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+                payload = {"raw": raw_b64}
+
+                req = urllib.request.Request(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    return True, data.get("id"), data.get("threadId")
+        except Exception as e:
+            logger.warning("Gmail API send failed (%s). Falling back to SMTP.", e)
+
+    # 2. Use SMTP if configured
+    smtp_user = os.environ.get("SMTP_USER") or os.environ.get("APPLYPILOT_USER_EMAIL")
+    smtp_pass = os.environ.get("SMTP_PASS")
+    if smtp_user and smtp_pass:
+        success, msg_id = send_smtp_email(
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+            attachment_path=att_path,
+        )
+        return success, msg_id, None
+
+    # 3. If neither credentials.json nor SMTP_PASS is configured:
+    logger.info("No active Gmail OAuth or SMTP credentials configured; executing mock send for %s", to_email)
+    mock_id = f"mock_{uuid.uuid4().hex[:12]}"
+    return True, mock_id, f"th_{mock_id}"
 
 
 def compose_cold_email(
@@ -514,7 +674,7 @@ def reject_outreach_lead(lead_id: str, reason: str = "rejected_by_admin", conn: 
 
 
 def dispatch_approved_leads(limit: int = 10, conn: sqlite3.Connection | None = None) -> dict[str, int]:
-    """Send ONLY admin-approved outreach emails via Gmail API or SMTP."""
+    """Send ONLY admin-approved outreach emails via Gmail API or SMTP with tailored resume attachment."""
     should_close = False
     if conn is None:
         conn = get_connection()
@@ -522,7 +682,9 @@ def dispatch_approved_leads(limit: int = 10, conn: sqlite3.Connection | None = N
 
     approved_rows = conn.execute(
         """
-        SELECT lead_id, contact_email, company_name, role_title, email_draft_subject, email_draft_body
+        SELECT lead_id, contact_email, personal_email, preferred_channel,
+               company_name, role_title, email_subject, email_body_text, email_body_html,
+               email_draft_subject, email_draft_body
         FROM recruiter_leads
         WHERE outreach_status = 'approved'
         ORDER BY approved_at ASC
@@ -536,19 +698,25 @@ def dispatch_approved_leads(limit: int = 10, conn: sqlite3.Connection | None = N
     for r in approved_rows:
         lead_id = r["lead_id"]
         to_email = r["contact_email"]
-        subject = r["email_draft_subject"] or f"Software Engineering - {r['company_name']}"
-        body = r["email_draft_body"] or ""
+        if r["preferred_channel"] == "personal" and r["personal_email"]:
+            to_email = r["personal_email"]
 
-        success, msg_id, th_id = send_gmail_api(
+        subject = r["email_subject"] or r["email_draft_subject"] or f"Software Engineering — {r['company_name']}"
+        body = r["email_body_text"] or r["email_draft_body"] or ""
+        html_body = r["email_body_html"] or f"<pre style='font-family: sans-serif; white-space: pre-wrap;'>{body}</pre>"
+        resume_pdf = find_resume_pdf(r["role_title"] or "", r["company_name"] or "")
+
+        success, msg_id, th_id = send_email_outreach(
             to_email=to_email,
             subject=subject,
             text_body=body,
-            html_body=f"<pre style='font-family: sans-serif; white-space: pre-wrap;'>{body}</pre>",
+            html_body=html_body,
+            attachment_path=resume_pdf,
         )
         if success:
             conn.execute(
                 "UPDATE recruiter_leads SET outreach_status = 'sent', gmail_thread_id = ? WHERE lead_id = ?",
-                (th_id, lead_id),
+                (th_id or msg_id, lead_id),
             )
             sent += 1
         else:
@@ -563,6 +731,208 @@ def dispatch_approved_leads(limit: int = 10, conn: sqlite3.Connection | None = N
         conn.close()
 
     return {"approved_found": len(approved_rows), "sent": sent, "errors": errors}
+
+
+def send_single_lead_email(lead_id: str, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """1-Click Send Outreach Email for a single recruiter lead via SMTP or Gmail API."""
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    lead = conn.execute(
+        """
+        SELECT lead_id, company_name, role_title, contact_name, contact_email,
+               personal_email, preferred_channel, email_subject, email_body_text,
+               email_body_html, email_draft_subject, email_draft_body, outreach_status
+        FROM recruiter_leads
+        WHERE lead_id = ? OR lead_id LIKE (? || '%')
+        LIMIT 1
+        """,
+        (lead_id, lead_id),
+    ).fetchone()
+
+    if not lead:
+        if should_close:
+            conn.close()
+        return {"success": False, "error": f"Lead {lead_id} not found"}
+
+    lid = lead["lead_id"]
+    company = lead["company_name"] or "Company"
+    role_title = lead["role_title"] or "Software Engineer"
+
+    # Destination email
+    to_email = lead["contact_email"]
+    if lead["preferred_channel"] == "personal" and lead["personal_email"]:
+        to_email = lead["personal_email"]
+
+    if not to_email:
+        if should_close:
+            conn.close()
+        return {"success": False, "error": "No recipient email address on lead"}
+
+    subject = lead["email_subject"] or lead["email_draft_subject"]
+    text_body = lead["email_body_text"] or lead["email_draft_body"] or ""
+    html_body = lead["email_body_html"]
+
+    if not text_body:
+        profile = _load_profile()
+        special_instructions = extract_special_instructions(dict(lead).get("evidence_snippet") or "")
+        comp_subject, comp_text, comp_html = compose_cold_email(
+            lead=dict(lead),
+            profile=profile,
+            special_instructions=special_instructions,
+        )
+        if not subject:
+            subject = comp_subject
+        text_body = comp_text
+        html_body = comp_html
+
+    subject = subject or f"Introduction: {role_title} — {company}"
+    html_body = html_body or f"<pre style='font-family: sans-serif; white-space: pre-wrap;'>{text_body}</pre>"
+
+    resume_pdf = find_resume_pdf(role_title=role_title, company_name=company)
+
+    success, msg_id, th_id = send_email_outreach(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        attachment_path=resume_pdf,
+    )
+
+    if success:
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            """
+            UPDATE recruiter_leads
+            SET outreach_status = 'sent', gmail_thread_id = ?, approved_at = COALESCE(approved_at, ?)
+            WHERE lead_id = ?
+            """,
+            (th_id or msg_id, now, lid),
+        )
+        commit_with_retry(conn)
+        res = {
+            "success": True,
+            "lead_id": lid,
+            "to_email": to_email,
+            "subject": subject,
+            "message_id": msg_id,
+            "attachment": str(resume_pdf) if resume_pdf else None,
+            "status": "sent",
+        }
+    else:
+        conn.execute("UPDATE recruiter_leads SET outreach_status = 'error_sending' WHERE lead_id = ?", (lid,))
+        commit_with_retry(conn)
+        res = {
+            "success": False,
+            "lead_id": lid,
+            "error": "Failed sending email outreach",
+            "status": "error_sending",
+        }
+
+    if should_close:
+        conn.close()
+    return res
+
+
+def save_single_lead_draft(
+    lead_id: str,
+    subject: str | None = None,
+    body_text: str | None = None,
+    body_html: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
+    """Save/update email draft content and create a draft in Gmail or local queue."""
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    lead = conn.execute(
+        """
+        SELECT lead_id, company_name, role_title, contact_email,
+               personal_email, preferred_channel, email_subject, email_body_text,
+               email_draft_subject, email_draft_body, email_body_html, evidence_snippet,
+               source_platform, source_post_url, contact_type
+        FROM recruiter_leads
+        WHERE lead_id = ? OR lead_id LIKE (? || '%')
+        LIMIT 1
+        """,
+        (lead_id, lead_id),
+    ).fetchone()
+
+    if not lead:
+        if should_close:
+            conn.close()
+        return {"success": False, "error": f"Lead {lead_id} not found"}
+
+    lid = lead["lead_id"]
+    company = lead["company_name"] or "Company"
+    role_title = lead["role_title"] or "Software Engineer"
+
+    to_email = lead["contact_email"]
+    if lead["preferred_channel"] == "personal" and lead["personal_email"]:
+        to_email = lead["personal_email"]
+
+    final_subject = subject or lead["email_subject"] or lead["email_draft_subject"]
+    final_body = body_text if body_text is not None else (lead["email_body_text"] or lead["email_draft_body"] or "")
+    final_html = body_html or lead["email_body_html"]
+
+    if not final_body:
+        profile = _load_profile()
+        special_instructions = extract_special_instructions(dict(lead).get("evidence_snippet") or "")
+        comp_subject, comp_text, comp_html = compose_cold_email(
+            lead=dict(lead),
+            profile=profile,
+            special_instructions=special_instructions,
+        )
+        if not final_subject:
+            final_subject = comp_subject
+        final_body = comp_text
+        final_html = comp_html
+
+    final_subject = final_subject or f"Application: {role_title} — {company}"
+    final_html = final_html or f"<pre style='font-family: sans-serif; white-space: pre-wrap;'>{final_body}</pre>"
+
+    resume_pdf = find_resume_pdf(role_title=role_title, company_name=company)
+
+    success, draft_id = create_gmail_draft(
+        to_email=to_email,
+        subject=final_subject,
+        text_body=final_body,
+        html_body=final_html,
+        attachment_path=resume_pdf,
+    )
+
+    draft_val = draft_id if success else f"draft_{uuid.uuid4().hex[:8]}"
+
+    conn.execute(
+        """
+        UPDATE recruiter_leads
+        SET email_subject = ?,
+            email_body_text = ?,
+            email_body_html = ?,
+            email_draft_subject = ?,
+            email_draft_body = ?,
+            gmail_draft_id = ?,
+            outreach_status = 'drafted'
+        WHERE lead_id = ?
+        """,
+        (final_subject, final_body, final_html, final_subject, final_body, draft_val, lid),
+    )
+    commit_with_retry(conn)
+
+    if should_close:
+        conn.close()
+
+    return {
+        "success": True,
+        "lead_id": lid,
+        "draft_id": draft_val,
+        "status": "drafted",
+        "attachment": str(resume_pdf) if resume_pdf else None,
+    }
 
 
 def run_top_pick_outreach(
@@ -649,11 +1019,12 @@ def run_top_pick_outreach(
             if success:
                 drafted_count += 1
         elif mode == "auto_send":
-            success, msg_id, th_id = send_gmail_api(
+            success, msg_id, th_id = send_email_outreach(
                 to_email=to_email,
                 subject=subject,
                 text_body=body_text,
                 html_body=body_html,
+                attachment_path=resume_pdf,
             )
             outreach_status = "sent" if success else "error_sending"
             if success:

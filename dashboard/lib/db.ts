@@ -16,6 +16,78 @@ export function getApplypilotBin(): string {
   return 'applypilot';
 }
 
+export function getProjectRoot(): string {
+  if (process.env.APPLYPILOT_PROJECT_ROOT && fs.existsSync(process.env.APPLYPILOT_PROJECT_ROOT)) {
+    return process.env.APPLYPILOT_PROJECT_ROOT;
+  }
+  const cwd = process.cwd();
+  if (fs.existsSync(path.join(cwd, 'src', 'applypilot'))) {
+    return cwd;
+  }
+  const parent = path.resolve(cwd, '..');
+  if (fs.existsSync(path.join(parent, 'src', 'applypilot'))) {
+    return parent;
+  }
+  return cwd;
+}
+
+export function getPythonBin(): string {
+  if (process.env.VIRTUAL_ENV && fs.existsSync(path.join(process.env.VIRTUAL_ENV, 'bin', 'python'))) {
+    return path.join(process.env.VIRTUAL_ENV, 'bin', 'python');
+  }
+  const rootDir = getProjectRoot();
+  const venvPython = path.join(rootDir, '.venv', 'bin', 'python');
+  if (fs.existsSync(venvPython)) return venvPython;
+  const rootVenv = path.resolve(process.cwd(), '.venv/bin/python');
+  if (fs.existsSync(rootVenv)) return rootVenv;
+  const parentVenv = path.resolve(process.cwd(), '../.venv/bin/python');
+  if (fs.existsSync(parentVenv)) return parentVenv;
+  return 'python';
+}
+
+export function getTransportStatus(): {
+  mode: 'gmail_oauth' | 'smtp' | 'dev_mock';
+  label: string;
+  ready: boolean;
+  user: string;
+  details: string;
+} {
+  const gmailCredsPath = path.join(os.homedir(), '.gmail-mcp', 'credentials.json');
+  const hasGmailOauth = fs.existsSync(gmailCredsPath);
+
+  const smtpUser = process.env.SMTP_USER || process.env.APPLYPILOT_USER_EMAIL || '';
+  const smtpPass = process.env.SMTP_PASS || '';
+  const hasSmtp = Boolean(smtpUser && smtpPass);
+
+  if (hasGmailOauth) {
+    return {
+      mode: 'gmail_oauth',
+      label: 'Gmail API (OAuth)',
+      ready: true,
+      user: 'Authenticated via ~/.gmail-mcp/credentials.json',
+      details: 'Direct integration with your Gmail Drafts & REST API sending.',
+    };
+  }
+
+  if (hasSmtp) {
+    return {
+      mode: 'smtp',
+      label: 'SMTP (App Password)',
+      ready: true,
+      user: smtpUser,
+      details: `Connecting via ${process.env.SMTP_HOST || 'smtp.gmail.com'}:${process.env.SMTP_PORT || '587'} with TLS.`,
+    };
+  }
+
+  return {
+    mode: 'dev_mock',
+    label: 'Ready (Local / Mock Mode)',
+    ready: true,
+    user: smtpUser || 'No credentials configured',
+    details: 'You can test generating drafts & reading emails now. Configure SMTP_USER/SMTP_PASS or Gmail OAuth to dispatch real emails.',
+  };
+}
+
 export function getDb(): DatabaseSync {
   if (_db) return _db;
 
@@ -627,6 +699,9 @@ export function getLeads(params: {
   search?: string;
   type?: string;
   status?: string;
+  persona?: string;
+  minScore?: number;
+  sortBy?: string;
   page?: number;
   limit?: number;
 }) {
@@ -641,7 +716,11 @@ export function getLeads(params: {
            contact_type, contact_linkedin_url, 
            linkedin_connection_note, source_platform, evidence_snippet, 
            execution_route, outreach_status, created_at,
-           email_draft_subject, email_draft_body, approved_at, approved_by
+           COALESCE(email_subject, email_draft_subject) as email_subject,
+           COALESCE(email_body_text, email_draft_body) as email_body_text,
+           email_draft_subject, email_draft_body, email_body_html,
+           persona, priority_score, gmail_draft_id, gmail_thread_id,
+           approved_at, approved_by
     FROM recruiter_leads 
     WHERE 1=1
   `;
@@ -658,6 +737,16 @@ export function getLeads(params: {
     queryParams.push(params.type);
   }
 
+  if (params.persona && params.persona !== 'ALL') {
+    query += ` AND (persona = ? OR (persona IS NULL AND contact_type = ?))`;
+    queryParams.push(params.persona, params.persona);
+  }
+
+  if (params.minScore !== undefined && !isNaN(params.minScore) && params.minScore > 0) {
+    query += ` AND priority_score >= ?`;
+    queryParams.push(params.minScore);
+  }
+
   if (params.status && params.status !== 'ALL') {
     if (params.status === 'pending_review') {
       query += ` AND outreach_status IN ('pending_review', 'queued', 'drafted')`;
@@ -670,10 +759,48 @@ export function getLeads(params: {
   const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
 
-  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  if (params.sortBy === 'priority' || params.sortBy === 'score') {
+    query += ` ORDER BY priority_score DESC, created_at DESC LIMIT ? OFFSET ?`;
+  } else {
+    query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  }
   queryParams.push(limit, offset);
 
-  const leads = db.prepare(query).all(...queryParams);
+  const rawLeads: any[] = db.prepare(query).all(...queryParams);
+
+  // Attach company intel summary & resume info
+  const leads = rawLeads.map((lead) => {
+    let intel: any = null;
+    if (lead.company_domain || lead.company_name) {
+      try {
+        const row: any = db.prepare(`
+          SELECT wikipedia_summary, tech_stack_json, ai_focus_tags, open_roles_json
+          FROM company_intel
+          WHERE official_domain = ? OR domain_or_name = ? OR company_name = ?
+          LIMIT 1
+        `).get(lead.company_domain || '', lead.company_domain || '', lead.company_name || '');
+        if (row) {
+          let techStack: string[] = [];
+          let aiTags: string[] = [];
+          let openRolesCount = 0;
+          try { techStack = JSON.parse(row.tech_stack_json || '[]'); } catch {}
+          try { aiTags = JSON.parse(row.ai_focus_tags || '[]'); } catch {}
+          try { openRolesCount = (JSON.parse(row.open_roles_json || '[]') || []).length; } catch {}
+          intel = {
+            summary: row.wikipedia_summary ? row.wikipedia_summary.slice(0, 160) + '...' : null,
+            tech_stack: techStack.slice(0, 6),
+            ai_focus_tags: aiTags.slice(0, 4),
+            open_roles_count: openRolesCount,
+          };
+        }
+      } catch {}
+    }
+
+    return {
+      ...lead,
+      intel,
+    };
+  });
 
   return {
     leads,
@@ -689,12 +816,16 @@ export function getLeads(params: {
 export function getLeadDetail(lead_id: string) {
   const db = getDb();
   const lead: any = db.prepare(`
-    SELECT * FROM recruiter_leads WHERE lead_id = ? OR lead_id LIKE (? || '%')
+    SELECT *,
+           COALESCE(email_subject, email_draft_subject) as email_subject,
+           COALESCE(email_body_text, email_draft_body) as email_body_text
+    FROM recruiter_leads 
+    WHERE lead_id = ? OR lead_id LIKE (? || '%')
   `).get(lead_id, lead_id);
 
   if (!lead) return null;
 
-  // Linked company info
+  // Linked company info from career_watchlist
   let companyInfo: any = null;
   if (lead.company_name) {
     try {
@@ -702,18 +833,76 @@ export function getLeadDetail(lead_id: string) {
     } catch {}
   }
 
-  // Linked open jobs
+  // Linked company intel from 30-day cache table company_intel
+  let companyIntel: any = null;
+  if (lead.company_domain || lead.company_name) {
+    try {
+      const intelRow: any = db.prepare(`
+        SELECT * FROM company_intel 
+        WHERE official_domain = ? OR domain_or_name = ? OR company_name = ?
+        LIMIT 1
+      `).get(lead.company_domain || '', lead.company_domain || '', lead.company_name || '');
+      if (intelRow) {
+        let tech_stack: string[] = [];
+        let open_roles: any[] = [];
+        let ai_focus_tags: string[] = [];
+        try { tech_stack = JSON.parse(intelRow.tech_stack_json || '[]'); } catch {}
+        try { open_roles = JSON.parse(intelRow.open_roles_json || '[]'); } catch {}
+        try { ai_focus_tags = JSON.parse(intelRow.ai_focus_tags || '[]'); } catch {}
+        companyIntel = {
+          ...intelRow,
+          tech_stack,
+          open_roles,
+          ai_focus_tags,
+        };
+      }
+    } catch {}
+  }
+
+  // Linked open jobs from jobs table
   let openJobs: any[] = [];
   if (lead.company_name) {
     try {
-      openJobs = db.prepare('SELECT url, title, location, fit_score FROM jobs WHERE company = ? LIMIT 10').all(lead.company_name);
+      openJobs = db.prepare('SELECT url, title, location, fit_score, site FROM jobs WHERE company = ? LIMIT 10').all(lead.company_name);
     } catch {}
+  }
+
+  // Resume check
+  const tailoredDir = path.join(os.homedir(), '.applypilot', 'tailored_resumes');
+  const baseResume = path.join(os.homedir(), '.applypilot', 'resume.pdf');
+  let resumePath: string | null = null;
+  let resumeExists = false;
+
+  if (fs.existsSync(tailoredDir)) {
+    try {
+      const files = fs.readdirSync(tailoredDir);
+      const match = files.find((f) => lead.company_name && f.toLowerCase().includes(lead.company_name.toLowerCase()) && f.endsWith('.pdf'));
+      if (match) {
+        resumePath = path.join(tailoredDir, match);
+        resumeExists = true;
+      } else if (files.length > 0 && files.some((f) => f.endsWith('.pdf'))) {
+        const first = files.find((f) => f.endsWith('.pdf'))!;
+        resumePath = path.join(tailoredDir, first);
+        resumeExists = true;
+      }
+    } catch {}
+  }
+  if (!resumeExists && fs.existsSync(baseResume)) {
+    resumePath = baseResume;
+    resumeExists = true;
   }
 
   return {
     lead,
     companyInfo,
+    companyIntel,
     openJobs,
+    resume: {
+      path: resumePath,
+      exists: resumeExists,
+      filename: resumePath ? path.basename(resumePath) : null,
+    },
+    transport: getTransportStatus(),
   };
 }
 
@@ -728,17 +917,25 @@ export function createLead(data: {
   execution_route?: string;
   email_draft_subject?: string;
   email_draft_body?: string;
+  email_subject?: string;
+  email_body_text?: string;
+  persona?: string;
+  priority_score?: number;
 }) {
   const db = getDb();
   const lead_id = `lead_${Math.random().toString(36).substring(2, 12)}`;
   const now = new Date().toISOString();
 
+  const subject = data.email_subject || data.email_draft_subject || `Application & Introduction: ${data.role_title || 'Software Engineer'}`;
+  const bodyText = data.email_body_text || data.email_draft_body || `Hi ${data.contact_name || 'Hiring Team'},\n\nI noticed the open role at ${data.company_name} and wanted to reach out directly with my background in high-performance distributed systems and AI agents.`;
+
   db.prepare(`
     INSERT OR REPLACE INTO recruiter_leads (
       lead_id, company_name, contact_email, contact_name, role_title,
       contact_type, contact_linkedin_url, company_domain, execution_route,
-      outreach_status, email_draft_subject, email_draft_body, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?)
+      outreach_status, email_draft_subject, email_draft_body,
+      email_subject, email_body_text, persona, priority_score, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?, ?, ?, ?)
   `).run(
     lead_id,
     data.company_name,
@@ -749,8 +946,12 @@ export function createLead(data: {
     data.contact_linkedin_url || null,
     data.company_domain || (data.contact_email.split('@')[1] || null),
     data.execution_route || 'DUAL_ATTACK',
-    data.email_draft_subject || `Application & Introduction: ${data.role_title || 'Software Engineer'}`,
-    data.email_draft_body || `Hi ${data.contact_name || 'Hiring Team'},\n\nI noticed the open role at ${data.company_name} and wanted to reach out directly with my background in high-performance distributed systems and AI agents.`,
+    subject,
+    bodyText,
+    subject,
+    bodyText,
+    data.persona || 'founder',
+    data.priority_score || 0,
     now
   );
 
@@ -760,12 +961,21 @@ export function createLead(data: {
 export function updateLead(lead_id: string, updates: Partial<{
   contact_name: string;
   contact_email: string;
+  personal_email: string;
+  personal_email_source: string;
+  preferred_channel: string;
   role_title: string;
   contact_type: string;
+  persona: string;
+  priority_score: number;
   contact_linkedin_url: string;
   outreach_status: string;
   email_draft_subject: string;
   email_draft_body: string;
+  email_subject: string;
+  email_body_text: string;
+  email_body_html: string;
+  gmail_draft_id: string;
   approved_at: string;
   approved_by: string;
 }>) {
@@ -773,9 +983,51 @@ export function updateLead(lead_id: string, updates: Partial<{
   const fields: string[] = [];
   const params: any[] = [];
 
-  for (const [key, value] of Object.entries(updates)) {
-    fields.push(`${key} = ?`);
-    params.push(value);
+  // Ensure compatibility between email_subject / email_draft_subject
+  const finalUpdates: any = { ...updates };
+  if (finalUpdates.email_subject && !finalUpdates.email_draft_subject) {
+    finalUpdates.email_draft_subject = finalUpdates.email_subject;
+  } else if (finalUpdates.email_draft_subject && !finalUpdates.email_subject) {
+    finalUpdates.email_subject = finalUpdates.email_draft_subject;
+  }
+
+  if (finalUpdates.email_body_text && !finalUpdates.email_draft_body) {
+    finalUpdates.email_draft_body = finalUpdates.email_body_text;
+  } else if (finalUpdates.email_draft_body && !finalUpdates.email_body_text) {
+    finalUpdates.email_body_text = finalUpdates.email_draft_body;
+  }
+
+  const ALLOWED_LEAD_COLUMNS = new Set([
+    'contact_name',
+    'contact_email',
+    'personal_email',
+    'personal_email_source',
+    'preferred_channel',
+    'role_title',
+    'contact_type',
+    'contact_linkedin_url',
+    'linkedin_connection_note',
+    'company_name',
+    'company_domain',
+    'persona',
+    'priority_score',
+    'outreach_status',
+    'email_draft_subject',
+    'email_draft_body',
+    'email_subject',
+    'email_body_text',
+    'email_body_html',
+    'gmail_draft_id',
+    'gmail_thread_id',
+    'approved_at',
+    'approved_by',
+  ]);
+
+  for (const [key, value] of Object.entries(finalUpdates)) {
+    if (ALLOWED_LEAD_COLUMNS.has(key)) {
+      fields.push(`${key} = ?`);
+      params.push(value);
+    }
   }
 
   if (fields.length === 0) return getLeadDetail(lead_id);
@@ -784,6 +1036,26 @@ export function updateLead(lead_id: string, updates: Partial<{
   db.prepare(`UPDATE recruiter_leads SET ${fields.join(', ')} WHERE lead_id = ? OR lead_id LIKE (? || '%')`).run(...params);
 
   return getLeadDetail(lead_id);
+}
+
+export function getTopPickStats() {
+  const db = getDb();
+  const totalLeads = (db.prepare('SELECT COUNT(*) as c FROM recruiter_leads').get() as any)?.c || 0;
+  const topPicksCount = (db.prepare('SELECT COUNT(*) as c FROM recruiter_leads WHERE priority_score >= 60').get() as any)?.c || 0;
+  const draftedCount = (db.prepare("SELECT COUNT(*) as c FROM recruiter_leads WHERE outreach_status = 'drafted'").get() as any)?.c || 0;
+  const pendingReviewCount = (db.prepare("SELECT COUNT(*) as c FROM recruiter_leads WHERE outreach_status = 'pending_review'").get() as any)?.c || 0;
+  const sentCount = (db.prepare("SELECT COUNT(*) as c FROM recruiter_leads WHERE outreach_status = 'sent'").get() as any)?.c || 0;
+  const avgScore = (db.prepare('SELECT AVG(priority_score) as a FROM recruiter_leads WHERE priority_score > 0').get() as any)?.a || 0;
+
+  return {
+    totalLeads,
+    topPicksCount,
+    draftedCount,
+    pendingReviewCount,
+    sentCount,
+    averageScore: Math.round(avgScore),
+    transport: getTransportStatus(),
+  };
 }
 
 export function approveLead(lead_id: string, approvedBy: string = 'admin') {
