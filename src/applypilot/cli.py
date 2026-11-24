@@ -588,6 +588,35 @@ def outreach_top_picks(
     console.print(f"\n[bold green]✓ Outreach complete:[/bold green] Selected: {res['total_selected']} | Drafted: {res['drafted']} | Sent: {res['sent']} | Mode: {res['mode']}")
 
 
+@app.command("test-smtp")
+def test_smtp_cli(
+    to: Optional[str] = typer.Option(None, "--to", "-t", help="Recipient email (defaults to SMTP_USER or candidate email)."),
+) -> None:
+    """Verify SMTP connection and send a test email to ensure your email credentials work."""
+    _bootstrap()
+    from applypilot.outreach.mailer import send_smtp_email
+    import os
+
+    user = os.environ.get("SMTP_USER") or os.environ.get("APPLYPILOT_USER_EMAIL")
+    target = to or user
+    if not target:
+        console.print("[bold red]Error:[/bold red] No recipient specified and SMTP_USER is not set in environment.")
+        console.print("[yellow]Please set SMTP_USER and SMTP_PASS in your .env or pass --to you@example.com[/yellow]")
+        return
+
+    console.print(f"[bold cyan]Testing SMTP dispatch to {target} (Host: {os.environ.get('SMTP_HOST', 'smtp.gmail.com')})...[/bold cyan]")
+    success, msg_id = send_smtp_email(
+        to_email=target,
+        subject="ApplyPilot SMTP Test Email",
+        text_body="Hello from ApplyPilot! Your SMTP configuration and email credentials are functioning properly.",
+        html_body="<p>Hello from <strong>ApplyPilot</strong>! Your SMTP configuration and email credentials are functioning properly.</p>",
+    )
+    if success:
+        console.print(f"[bold green]✓ Success![/bold green] Email dispatched successfully (ID: {msg_id})")
+    else:
+        console.print(f"[bold red]✗ Failed to send email:[/bold red] {msg_id}")
+
+
 
 @app.command("run-daily")
 def run_daily(
