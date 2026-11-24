@@ -1,14 +1,21 @@
-# User data (NEVER commit)
+# User data & PII (NEVER commit)
 profile.json
 resume.txt
 resume.pdf
 *.pdf
 *.env
+.env
 .env.*
 !.env.example
+config/my-experience.txt
+config/sample_resume.pdf
 
-# Runtime artifacts
+# Runtime artifacts & databases
 *.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 tailored_resumes/
 cover_letters/
 chrome-workers/
@@ -16,26 +23,33 @@ apply-workers/
 apply_logs/
 logs/
 tmp_*
+proofs/
 
 # MCP configs (per-machine)
 .mcp*.json
 
-# Playwright MCP
+# Playwright MCP & artifacts
 .playwright-mcp/
+test-results/
+playwright-report/
 
 # direnv (per-machine venv activation)
 .envrc
 .direnv/
 
-# Node
+# Node & Next.js
 node_modules/
 dashboard/.next/
 dashboard/node_modules/
+*.tsbuildinfo
 
-# Python venv
+# Python venv & testing
 .venv/
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Python
+# Python compiled
 __pycache__/
 *.py[cod]
 *$py.class
@@ -44,7 +58,7 @@ dist/
 build/
 *.egg
 
-# IDE
+# IDE & editors
 .vscode/
 .idea/
 *.swp
@@ -56,5 +70,4 @@ Thumbs.db
 
 # Claude Code
 .claude/
-# CLAUDE.md is machine/user-specific — copy CLAUDE.md.example to customize
-CLAUDE.md
+

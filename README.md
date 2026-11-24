@@ -2,13 +2,15 @@
 
 **Autonomous Omni-Channel Job Discovery, Cold Outreach & Browser-Driven Application Agent**
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16%20Turbopack-black.svg)](https://nextjs.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-Chromium-green.svg)](https://playwright.dev/)
 [![FastMCP](https://img.shields.io/badge/MCP-FastMCP-purple.svg)](https://modelcontextprotocol.io/)
+[![Ollama CPU](https://img.shields.io/badge/Ollama-CPU%20Llama%203.2-orange.svg)](https://ollama.com/)
+[![Tests](https://img.shields.io/badge/tests-523%20passed-brightgreen.svg)](tests/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-442%20passed-brightgreen.svg)](tests/)
 
-ApplyPilot is an end-to-end, multi-channel autonomous hiring assistant. It executes the **Dual-Attack Strategy**: discovering thousands of open engineering roles across social platforms and enterprise ATS boards, extracting direct founder and recruiter emails, dispatching personalized cold email pitches with tailored PDF resumes, and autonomously completing complex web application forms via a **5-Tier Zero-Token Learning Engine** in headless Playwright.
+ApplyPilot is an autonomous, multi-channel engineering hiring assistant and browser automation system. It executes the **Dual-Attack Strategy**: discovering open software engineering roles across social feeds, curated startup maps, and enterprise ATS boards, extracting direct founder and recruiter emails, dispatching tailored cold email pitches with compiled PDF resumes, and autonomously completing complex web application forms via a **5-Tier Zero-Token Learning Engine** featuring **local mini-LLM inference on CPU** (`llama3.2:1b`) and an **iOS-inspired Next.js 16 Liquid-Glass Dashboard**.
 
 ---
 
@@ -19,8 +21,8 @@ flowchart TD
     subgraph Part1["Part 1: Omni-Channel Discovery"]
         HN[Hacker News 'Who is Hiring'\nAlgolia API] --> Extractor[Zero-Token Extractor\nRegex & De-obfuscation]
         LI[LinkedIn Public Collections\nHeadless Playwright] --> Extractor
-        ATS[Career Watchlist Feeds\nGreenhouse / Lever / Ashby] --> Extractor
-        FH[FreeHire IT Catalogue\nWorkday / iCIMS / Dayforce] --> Extractor
+        ATS[Career Watchlist Feeds\nGreenhouse / Lever / Ashby / Workday] --> Extractor
+        SM[Startup Maps & VC Talent Boards\nBengaluru Map / TopStartups / YC] --> Extractor
 
         Extractor --> Router{Route Classifier}
         Router -->|Direct Email Found| RLeads[(recruiter_leads)]
@@ -32,26 +34,34 @@ flowchart TD
         RLeads --> OutEngine[Outreach Mailer]
         OutEngine --> Tailor[Typst / LaTeX Compiler]
         Tailor --> Attach[Bespoke PDF Resume]
-        Attach --> SMTP[SMTP Dispatcher\n15 Emails/Day Max]
+        Attach --> SMTP[SMTP Dispatcher\nRate-Limited 15/Day]
     end
 
     subgraph Part2B["Part 2B: Autonomous Portal Apply"]
-        RJobs --> PW[Headless Playwright Agent]
+        RJobs --> PW[Playwright Engine\nHeaded / Headless CDP]
         PW --> T0[Tier 0: Deterministic Action Replay]
         T0 -.->|Unseen Field| T1[Tier 1: SQLite FTS5 Q&A Matcher]
-        T1 -.->|Unseen Pattern| T2[Tier 2: Regex & Unit Heuristics]
-        T2 -.->|Ambiguous| T3[Tier 3: Fast LLM Gemini Flash]
-        T3 -.->|Complex Essay| T4[Tier 4: Pro LLM Gemini Pro]
+        T1 -.->|Unseen Pattern| T2[Tier 2: Regex & Format Sanitizers]
+        T2 -.->|Unresolved Field| T3[Tier 3: Local Mini LLM\nOllama CPU llama3.2:1b]
+        T3 -.->|Complex Essay / Offline| T4[Tier 4: Cloud LLM Fallback\nGemini 2.0 Flash / Pro]
 
         PW --> Learn[Trace Analyzer & Cache\nats_selector_cache & qa_knowledge]
+        T3 -->|Auto-Promote| Learn
     end
 
-    subgraph HITL["Asynchronous Email HITL Loop"]
-        PW -.->|Login / CAPTCHA / OTP| Park[park_and_notify_user]
-        Park --> Notify[Email User Ticket]
-        User[User Replies via Email / OTP] --> Poll[poll_hitl_replies & OTP Interceptor]
-        Poll --> FTS[(qa_fts Virtual Table)]
-        Poll --> Resume[Auto-Unpark & Resume Playwright]
+    subgraph HITL["Safety Guardrails & Asynchronous HITL"]
+        PW -.->|Login / CAPTCHA / OTP / Unresolved| Park[Park & Alert Candidate]
+        Park --> Audio[Audible Chime & Browser Banner]
+        Park --> Notify[Email HITL Ticket to User]
+        User[User Solves or Replies via Email] --> Poll[poll_hitl_replies & OTP Interceptor]
+        Poll --> Resume[Auto-Unpark & Resume Application]
+    end
+
+    subgraph UI["Control & Monitoring Studio"]
+        DB[(Local SQLite / Turso LibSQL)] <--> Next[Next.js 16 Liquid-Glass Dashboard]
+        Next --> Radar[Branching Agent DAG Radar]
+        Next --> Tables[Jobs / Leads / Companies / HITL Tables]
+        MCP[FastMCP Server] <--> DB
     end
 ```
 
@@ -60,45 +70,52 @@ flowchart TD
 ## 🌟 Key Capabilities & Innovations
 
 ### 1. The Dual-Attack Strategy
-Standard job bots only submit ATS forms that get lost in candidate resume piles. ApplyPilot implements the **Dual-Attack Strategy**:
-- **Route 1 (`EMAIL_ONLY`)**: For social posts containing published recruiter/founder emails, it compiles tailored resumes and dispatches high-conversion cold emails directly to decision-makers.
-- **Route 2 (`PORTAL_ONLY`)**: For enterprise career portals, it launches headless Playwright to complete form fields autonomously.
-- **Route 3 (`DUAL_ATTACK`)**: When both an official portal URL and a direct email exist, ApplyPilot simultaneously applies through the portal AND sends an email pitch to the hiring team noting the application was submitted.
+Traditional job seekers submit portal applications that disappear into large resume queues. ApplyPilot executes a synchronized multi-vector approach:
+- **Route 1 (`EMAIL_ONLY`)**: For social posts containing verified hiring manager or founder emails, compiles tailored resumes and dispatches high-conversion cold emails directly to decision-makers.
+- **Route 2 (`PORTAL_ONLY`)**: For enterprise career portals, launches Playwright to automatically complete form fields with verified candidate facts.
+- **Route 3 (`DUAL_ATTACK`)**: When both an official portal URL and a direct email exist, ApplyPilot simultaneously applies through the portal AND dispatches a concise email pitch confirming the application.
 
-### 2. Zero-Cookie Social Harvesting
+### 2. 5-Tier Zero-Token Learning Engine
+Instead of spending expensive LLM tokens on routine inputs, ApplyPilot processes web forms through an escalating 5-tier architecture:
+1. **Tier 0 (Deterministic Action Replay)**: Matches previously solved forms by field hash & canonical key; replays exact actions in milliseconds with 0 tokens.
+2. **Tier 1 (SQLite FTS5 Matcher)**: Full-text lexical search across candidate knowledge base (`qa_knowledge`) for instant matches.
+3. **Tier 2 (Regex & Heuristics)**: Static pattern compiler and unit transformers for phone numbers, salaries, dates, and citizenship booleans.
+4. **Tier 3 (Local Mini LLM on CPU)**: When unseen screening questions or ambiguous dropdowns appear, prompts a local `llama3.2:1b` model running purely on CPU via Ollama (<1,500 token contextual slice from `candidate_vault.json`). Resolves fields in ~700ms with **0 MB VRAM** and **0 cloud API tokens**, then auto-promotes successful answers to Tier 1 SQLite memory.
+5. **Tier 4 (Cloud Fallback LLM)**: Gracefully falls back to Gemini 2.0 Flash / GPT-4o only if local Ollama is offline or for extended essay prompts.
+
+### 3. Real-Time CAPTCHA Detection & Audio Cues
+When a Cloudflare Turnstile, reCAPTCHA, hCaptcha, or 2FA/OTP code is detected in headed mode:
+- ApplyPilot alerts the candidate with audible sound cues (system audio + browser chime + terminal bell).
+- Injects a real-time status banner into the browser window.
+- Automatically resumes execution once the human or browser finishes the challenge.
+
+### 4. Zero-Cookie Social Harvesting
 ApplyPilot operates under a strict **Zero-Cookie Policy**:
-- **LinkedIn Public Scraper**: Uses headless Playwright to monitor public guest collections (`/jobs/remote-software-engineer-jobs`, `/jobs/backend-engineer-jobs`) with **zero account credentials**, eliminating account ban risks.
-- **Hacker News Harvester**: Queries the public Algolia API to analyze monthly "Ask HN: Who is Hiring?" threads, extracting verified founder emails (`founder@...`, `cto@...`, `hiring@...`) with zero rate limits.
-- **Public ATS Feeds**: Directly queries official public JSON endpoints for **Greenhouse** (`boards-api.greenhouse.io`), **Lever** (`api.lever.co`), and **Ashby** (`api.ashbyhq.com`).
+- **LinkedIn Public Harvester**: Uses Playwright to monitor public guest collections (`/jobs/remote-software-engineer-jobs`) with **zero account credentials**, eliminating account ban risks.
+- **Hacker News Algolia Harvester**: Queries the public Algolia API to analyze monthly "Ask HN: Who is Hiring?" threads, extracting verified founder emails (`founder@...`, `cto@...`, `hiring@...`) with zero rate limits.
+- **Public ATS Feeds**: Directly queries official public keyless JSON endpoints for **Greenhouse** (`boards-api.greenhouse.io`), **Lever** (`api.lever.co`), **Ashby** (`api.ashbyhq.com`), and **Workday**.
 
-### 3. 5-Tier Zero-Token Learning Engine
-Instead of spending costly LLM tokens on every single form input, ApplyPilot processes web forms through an escalating 5-tier architecture:
-1. **Tier 0 (Deterministic Action Replay)**: Matches previously solved forms by field hash & canonical key; replays exact actions in milliseconds with zero LLM API calls.
-2. **Tier 1 (SQLite FTS5 Matcher)**: Full-text search across historical Q&A database for high-confidence question matching.
-3. **Tier 2 (Regex & Heuristics)**: Static pattern compiler and unit transformers for dates, salaries, phone formats, and citizenship questions.
-4. **Tier 3 (Cheap Fast LLM)**: Gemini 2.0 Flash fallback only for novel semantic questions.
-5. **Tier 4 (Premium LLM)**: Gemini 2.5 Pro for complex essay prompts.
-
-### 4. Asynchronous Email HITL (Human-in-the-Loop)
-No web UI required. When an autonomous application hits a CAPTCHA, login wall, or 2FA/OTP code:
-- ApplyPilot parks the job and emails you a structured ticket with the question or OTP request.
-- You reply to the email (e.g. `A1: Yes, Authorized`, or `123456`).
-- ApplyPilot intercepts the reply via IMAP, records the answer into SQLite FTS5 for future reuse, unparks the job, and resumes submission automatically.
+### 5. Liquid-Glass Next.js 16 Dashboard
+A modern command center built with Next.js 16, Tailwind CSS, and Turso/SQLite:
+- **Agent Radar View**: Interactive SVG Directed Acyclic Graph (DAG) visualizing autonomous agent states, harvester executions, and pipeline telemetry in real-time.
+- **Pipeline Workspaces**: Dedicated workspaces for Jobs, Leads, Companies, Applied Applications, Sources, and Human-in-the-Loop (HITL) tickets.
+- **Profile Studio**: Manage candidate skills, story matrix, salary boundaries, and Q&A knowledge directly from the browser.
 
 ---
 
-## 💻 Tech Stack & Architecture
+## 💻 Tech Stack
 
 | Layer | Technologies Used | Purpose |
 | :--- | :--- | :--- |
-| **Language & Environment** | Python 3.12+, `uv` package manager | Core runtime, dependency isolation, rapid execution |
-| **Browser Automation** | Playwright (Headless Chromium) | Form automation, session management, public guest scraping |
-| **Database & Search** | SQLite3, SQLite FTS5 Full-Text Search | Local persistence, lead tracking, Q&A knowledge indexing |
-| **Agent / Protocol** | FastMCP (`mcp_server.py`) | Model Context Protocol server exposing 9 tools to AI assistants |
-| **Document Generation** | Typst, pdfLaTeX | Deterministic compilation of tailored PDF resumes per application |
-| **AI & LLM Cascade** | Gemini 2.5 Pro, Gemini 2.0 Flash, GPT-4o | Multi-provider fallback for scoring, tailoring, and novel Q&A |
-| **Discovery Sources** | Algolia HN API, FreeHire MCP, Greenhouse, Lever, Ashby | Omni-channel lead harvesting without scraping barriers |
-| **Email Protocols** | IMAP (Gmail/OAuth), SMTP, MIME | Asynchronous HITL parsing, OTP interception, cold outreach mailer |
+| **Language & Core Runtime** | Python 3.12+, `uv` | Core engine, dependency isolation, rapid execution |
+| **Frontend Dashboard** | Next.js 16 (Turbopack), React 19, Tailwind CSS | Liquid-glass UI, real-time telemetry, agent radar DAG |
+| **Browser Automation** | Playwright (Chromium), CDP | Form automation, session vaulting, public guest scraping |
+| **Local AI Inference** | Ollama (`llama3.2:1b`), CPU-optimized | 100% offline, private, zero-token form Q&A resolution |
+| **Cloud AI Fallbacks** | Google Gemini 2.0 Flash / 2.5 Pro, OpenAI | Resume tailoring, cover letter compilation, essay fallback |
+| **Database & Search** | SQLite3, SQLite FTS5, Turso LibSQL | Local persistence, lead tracking, Q&A memory indexing |
+| **Agent / Protocol** | FastMCP (`src/applypilot/mcp_server.py`) | Model Context Protocol server exposing 9 tools to AI IDEs |
+| **Document Generation** | Typst, pdfLaTeX, JSON Resume | Deterministic compilation of tailored PDF resumes |
+| **Email Protocols** | IMAP (OAuth/App Passwords), SMTP, MIME | HITL reply parsing, OTP interception, cold outreach |
 
 ---
 
@@ -106,37 +123,62 @@ No web UI required. When an autonomous application hits a CAPTCHA, login wall, o
 
 ```text
 ApplyPilot/
-├── src/applypilot/
-│   ├── career_resolver/          # Public ATS board pollers & career site resolution
-│   │   ├── ats_feeds.py          # Greenhouse, Lever, Ashby public JSON APIs
-│   │   └── resolver.py           # Company domain & ATS portal resolution
-│   ├── hitl/                     # Asynchronous Email Human-in-the-Loop
-│   │   ├── email_notifier.py     # Park & notify user via email
-│   │   ├── email_reply_parser.py # IMAP poller & reply parser
-│   │   └── otp_interceptor.py    # Automatic ATS OTP code extractor
-│   ├── learning/                 # 5-Tier Zero-Token Learning Engine
-│   │   ├── canonical_matcher.py  # FTS5 & canonical question matching
-│   │   ├── migrations.py         # DB schema migrations (leads, watchlist, FTS5)
-│   │   ├── tier0_replay.py       # Deterministic action replay cache
-│   │   └── trace_analyzer.py     # Playwright execution trace analyzer
-│   ├── outreach/                 # Automated Cold Mailer (Part 2A)
-│   │   └── mailer.py             # Cold email dispatcher & rate limiter
-│   ├── social_discovery/         # Omni-channel Discovery (Part 1)
-│   │   ├── dork_searcher.py      # Time-bounded search dorks
-│   │   ├── extractor.py          # Zero-token regex & entity classifier
-│   │   ├── hn_scraper.py         # Multi-month Hacker News hiring harvester
-│   │   ├── linkedin_scraper.py   # Playwright LinkedIn public guest harvester
-│   │   ├── orchestrator.py       # Discovery coordinator
-│   │   └── reddit_scraper.py     # Subreddit hiring feed harvester
-│   ├── cli.py                    # ApplyPilot command-line interface
-│   ├── daily_runner.py           # End-to-end daily cron runner
-│   ├── database.py               # SQLite connection, CRUD, and migrations
-│   └── mcp_server.py             # FastMCP 9-tool server implementation
-├── scripts/
-│   └── harvest_job_data.py       # Large-scale multi-channel discovery script
-├── tests/                        # 442+ unit and integration tests
-├── pyproject.toml                # Build configuration & dependencies
-└── README.md                     # Project documentation
+├── src/applypilot/               # Core Python application package
+│   ├── apply/                   # Playwright automation & form filling engine
+│   │   ├── captcha_detector.py  # Turnstile, reCAPTCHA, hCaptcha detector
+│   │   ├── human_input.py       # Humanized keystroke typing & delay jitter
+│   │   ├── ocr_reader.py        # Visual OCR verification of form fields
+│   │   ├── playwright_engine.py # Main Playwright low-AI execution engine
+│   │   └── prompt.py            # ATS form inspection and field parsing
+│   ├── career_resolver/         # Company career site & ATS feed resolvers
+│   ├── discovery/               # Omni-channel job & recruiter harvesters
+│   │   ├── ats_direct_feeds.py  # Direct keyless Greenhouse/Lever/Ashby APIs
+│   │   ├── hackernews.py        # HN Algolia Who is Hiring harvester
+│   │   ├── linkedin_guest.py    # Zero-cookie LinkedIn guest scraper
+│   │   └── omni_orchestrator.py # Multi-source discovery coordinator
+│   ├── hitl/                    # Asynchronous Human-in-the-Loop workflows
+│   │   ├── audio.py             # Audible chimes and system notifications
+│   │   ├── checkpoint.py        # Form DOM state serialization & recovery
+│   │   ├── email_notifier.py    # Ticket dispatcher for blocked jobs
+│   │   ├── email_reply_parser.py# IMAP reply poller & answer extractor
+│   │   └── otp_interceptor.py   # Live OTP code interceptor
+│   ├── learning/                # 5-Tier Zero-Token Learning Engine
+│   │   ├── canonical_matcher.py # SQLite FTS5 lexical matching
+│   │   ├── tier0_playbook.py    # Deterministic action replay cache
+│   │   ├── tier1_semantic_qa.py # Normalized Q&A knowledge matcher
+│   │   ├── tier2_heuristics.py  # Unit converters & regex pattern sanitizers
+│   │   └── trace_analyzer.py    # Form trace analyzer & selector learner
+│   ├── outreach/                # Automated cold email engine
+│   │   └── mailer.py            # SMTP dispatcher with safety rate limits
+│   ├── scoring/                 # Match scoring & resume tailoring
+│   │   ├── cover_letter.py      # Bespoke cover letter synthesis
+│   │   ├── scorer.py            # Role match evaluation (0-10)
+│   │   └── tailor.py            # Tailored resume compiler
+│   ├── social_discovery/        # Social dorking and recruiter extraction
+│   ├── tracking/                # Application tracking & Gmail triage
+│   ├── cli.py                   # Rich CLI interface (Typer)
+│   ├── database.py              # SQLite CRUD & schema migrations
+│   ├── llm.py                   # Multi-provider LLM client (Ollama/Gemini/OpenAI)
+│   └── mcp_server.py            # FastMCP server exposing 9 tools
+├── dashboard/                   # Next.js 16 iOS Liquid-Glass Control Center
+│   ├── app/                     # App router pages (jobs, leads, radar, hitl, etc.)
+│   ├── components/              # UI components, modals, and Agent DAG visualizer
+│   └── lib/                     # Database client (Turso/SQLite) & NextAuth
+├── config/                      # Candidate configuration & vault data
+│   ├── candidate_vault.json     # Master candidate profile, stories & locked facts
+│   └── sites.yaml               # Discovery targets and ATS configurations
+├── docs/                        # Complete technical documentation
+│   ├── guide/                   # Deep architectural guides (01 - 05)
+│   └── specs/                   # Detailed specifications & design blueprints
+├── scripts/                     # Helper utilities and candidate vault builders
+│   ├── build_candidate_vault.py # Offline candidate vault compiler
+│   └── harvest_job_data.py      # Standalone batch discovery script
+├── tests/                       # Automated test suite (523 passing tests)
+├── docker-compose.yml           # Multi-container Docker deployment
+├── Dockerfile                   # Headless Playwright + Python runtime image
+├── pyproject.toml               # Python project configuration & dependencies
+├── package.json                 # Top-level workspace runner scripts
+└── README.md                    # System documentation
 ```
 
 ---
@@ -150,38 +192,77 @@ Clone the repository and install dependencies using `uv`:
 ```bash
 git clone https://github.com/Sameer-Bagul/ApplyPilot.git
 cd ApplyPilot
+
+# Sync Python virtualenv
 uv sync
+
+# Install Playwright browser binaries
 uv run playwright install chromium
 ```
 
-### 2. Configuration
+### 2. Environment Configuration
 
-Run the one-time interactive setup to initialize your profile and API keys:
+Copy the example environment template:
 
 ```bash
-uv run python -m applypilot init
+cp .env.example .env
 ```
 
-This generates `~/.applypilot/profile.json` (your experience, skills, and locked facts) and `~/.applypilot/.env`. Add your credentials in `~/.applypilot/.env`:
+Edit `.env` to configure your settings:
+- **Local Mini LLM (Tier 3)**:
+  ```env
+  OLLAMA_HOST=http://localhost:11434
+  OLLAMA_MODEL=llama3.2:1b
+  OLLAMA_NUM_GPU=0
+  OLLAMA_NUM_THREADS=8
+  ```
+- **Cloud Fallback LLM (Optional)**:
+  ```env
+  GEMINI_API_KEY=your_gemini_api_key
+  ```
+- **Email Notifications & Cold Outreach**:
+  ```env
+  SMTP_HOST=smtp.gmail.com
+  SMTP_PORT=587
+  SMTP_USER=you@gmail.com
+  SMTP_PASS=your_app_password
+  APPLYPILOT_USER_EMAIL=you@gmail.com
+  ```
 
-```env
-GEMINI_API_KEY=your_gemini_api_key      # Free tier at aistudio.google.com
-OPENAI_API_KEY=your_openai_key          # Optional fallback
-SMTP_HOST=smtp.gmail.com                # Required for outreach & HITL notifications
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASS=your_app_password
-IMAP_HOST=imap.gmail.com                # Required for HITL reply polling & OTP
-IMAP_USER=your_email@gmail.com
-IMAP_PASS=your_app_password
+### 3. Start Local Mini LLM (Ollama CPU)
+
+Ensure Ollama is running in CPU mode:
+
+```bash
+CUDA_VISIBLE_DEVICES="" OLLAMA_NUM_GPU=0 ollama serve
+```
+
+Pull the lightweight `llama3.2:1b` model (only ~1.3 GB, runs in ~700ms on CPU):
+
+```bash
+ollama pull llama3.2:1b
+```
+
+### 4. Launch Next.js Dashboard
+
+Start the Next.js control center:
+
+```bash
+npm run dashboard
+# Dashboard opens at http://localhost:3000
+```
+
+Or run everything (backend workers + dashboard) simultaneously:
+
+```bash
+./run_all.sh
 ```
 
 ---
 
 ## 💻 CLI Commands
 
-### 1. Omni-Channel Job & HR Email Discovery (`Part 1`)
-
+### 1. Omni-Channel Discovery (`Part 1`)
 Harvest thousands of active jobs and direct founder/recruiter emails:
 
 ```bash
@@ -193,8 +274,7 @@ uv run python -m applypilot discover-all --limit 50
 ```
 
 ### 2. Automated HR & Founder Cold Outreach (`Part 2A`)
-
-Send personalized pitches with attached tailored resumes to discovered founders:
+Send personalized pitches with attached tailored resumes to discovered hiring managers:
 
 ```bash
 # Preview cold email queue without sending
@@ -204,21 +284,19 @@ uv run python -m applypilot outreach --dry-run
 uv run python -m applypilot outreach --limit 10
 ```
 
-### 3. Playwright Autonomous Portal Applications (`Part 2B`)
-
-Launch headless Playwright with the 5-Tier Zero-Token Learning Engine:
+### 3. Playwright Autonomous Applications (`Part 2B`)
+Launch Playwright with the 5-Tier Zero-Token Learning Engine:
 
 ```bash
-# Apply to a specific ATS URL
-uv run python -m applypilot apply --url "https://jobs.ashbyhq.com/company/role"
+# Apply to a specific ATS URL in headed mode (for visual review)
+uv run python -m applypilot apply --url "https://jobs.ashbyhq.com/company/role" --headed
 
 # Run autonomous application queue with parallel workers
-uv run python -m applypilot apply --workers 3 --min-score 8
+uv run python -m applypilot apply --workers 2 --min-score 7
 ```
 
 ### 4. End-to-End Daily Automation
-
-Execute the complete end-to-end autonomous cycle:
+Execute the complete daily hiring pipeline:
 
 ```bash
 # Runs Discovery -> Outreach -> Application -> HITL Polling -> Tracking
@@ -226,64 +304,46 @@ uv run python -m applypilot run-daily
 ```
 
 ### 5. FastMCP Server Integration
-
-Expose all ApplyPilot tools to AI IDEs (Claude Desktop, Antigravity, Cursor) via MCP:
+Connect ApplyPilot to Claude Desktop, Antigravity, or Cursor via Model Context Protocol:
 
 ```bash
 uv run python -m applypilot mcp
 ```
 
-Available FastMCP Tools:
-- `discover_opportunities`: Triggers omni-channel discovery.
-- `get_recruiter_leads`: Queries discovered founder/recruiter emails by role and status.
-- `send_outreach_emails`: Dispatches cold email outreach.
-- `resolve_company_career_portal`: Resolves official ATS portals for any employer.
+Exposed MCP Tools:
+- `discover_opportunities`: Initiates multi-channel discovery.
+- `get_recruiter_leads`: Queries filtered founder and recruiter leads.
+- `send_outreach_emails`: Dispatches rate-limited cold outreach emails.
+- `resolve_company_career_portal`: Resolves official career pages and ATS endpoints.
 - `poll_hitl_email_replies`: Checks incoming user answers and OTP codes.
-- `get_qa_knowledge`: Searches the SQLite FTS5 knowledge base.
-- `get_application_stats`: Returns real-time metrics across all stages.
-
----
-
-## 📊 Discovered Metrics & Benchmarks
-
-In live execution across 5 discrete discovery channels, ApplyPilot achieved:
-- **`1,695`** Active Portal Jobs persisted in `~/.applypilot/applypilot.db`.
-- **`240`** Unique Recruiter & Founder Leads extracted and classified.
-- **`260`** Published Direct Inboxes (Founders: 35.0%, Recruiters: 37.7%, Careers Inboxes: 25.0%).
-- **`1,242`** Enterprise ATS Jobs polled directly from Cloudflare, Figma, Ramp, Datadog, Sentry, and Dropbox.
-- **`102`** Verified LinkedIn Public Roles harvested via headless Playwright without personal account cookies.
-
-For complete source breakdowns and tables, view the generated report at:
-👉 [**`job_discovery_report.md`**](file:///home/sameer/.gemini/antigravity-ide/brain/42ea54e5-c1cd-44a0-b31c-dc83502bbb8f/job_discovery_report.md)
+- `get_qa_knowledge`: Searches SQLite FTS5 for saved screening questions.
+- `get_application_stats`: Retrieves real-time pipeline funnel metrics.
 
 ---
 
 ## 🧪 Testing
 
-ApplyPilot is backed by a comprehensive automated test suite covering all units, integrations, state machines, and migration idempotency:
+ApplyPilot includes a comprehensive automated test suite with **523 passing tests**:
 
 ```bash
-# Run complete test suite (442+ passing tests)
-uv run pytest
+# Run complete test suite
+uv run pytest -q --tb=short
 
-# Run social discovery & extractor tests
-uv run pytest tests/test_social_discovery.py
-
-# Run 5-tier learning engine tests
+# Run specific functional suites
 uv run pytest tests/test_5tier_learning.py
-
-# Run outreach mailer tests
-uv run pytest tests/test_outreach_mailer.py
+uv run pytest tests/test_playwright_engine.py
+uv run pytest tests/test_social_discovery.py
+uv run pytest tests/test_mcp_server.py
 ```
 
 ---
 
-## 🔒 Security & Anti-Detection Safeguards
+## 🔒 Security & Privacy Guarantees
 
-1. **Zero-Cookie Social Policy**: ApplyPilot **never** requests or stores personal LinkedIn or X session cookies. Social discovery uses public guest endpoints, public APIs, and search engine syndication.
-2. **Safe Outreach Rate Limiting**: The cold mailer strictly enforces a cap of 15 emails per day with randomized dispatch intervals to maintain domain reputation and avoid spam flags.
-3. **No Fact Fabrication**: The resume tailoring engine preserves locked facts (`resume_facts` in `profile.json`). Experience details and metrics are never invented.
-4. **Local Data Sovereignty**: All credentials, job statuses, traces, and Q&A answers are stored locally on your machine in SQLite (`~/.applypilot/applypilot.db`).
+1. **Zero-Cookie Social Policy**: ApplyPilot **never** asks for or stores personal LinkedIn, X, or social media session cookies.
+2. **Safe Outreach Rate Limiting**: The cold mailer strictly caps outbound email at 15 emails per day with randomized intervals.
+3. **No Fact Hallucination**: The resume tailoring and Q&A engines strictly adhere to facts stored in `candidate_vault.json`.
+4. **Local Data Sovereignty**: All credentials, job statuses, traces, and Q&A answers are persisted locally in SQLite (`~/.applypilot/applypilot.db`).
 
 ---
 

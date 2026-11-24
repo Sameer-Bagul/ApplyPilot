@@ -73,6 +73,18 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[type='file'][aria-label*='resume' i]",
             "input[type='file']",
         ],
+        "cover_letter_file": [
+            "input#cover_letter[type='file']",
+            "input[type='file'][name*='cover' i]",
+            "input[type='file'][aria-label*='cover' i]",
+            "input[type='file'][id*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea#cover_letter_text",
+            "textarea[name*='cover_letter' i]",
+            "textarea[aria-label*='cover letter' i]",
+            "textarea[placeholder*='cover letter' i]",
+        ],
     },
     "lever": {
         "profile.full_name": [
@@ -114,6 +126,17 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[type='file'][name*='resume' i]",
             "input[type='file']",
         ],
+        "cover_letter_file": [
+            "input#cover-letter-upload-input",
+            "input[type='file'][name*='cover' i]",
+            "input[type='file'][id*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea[name='comments']",
+            "textarea[name*='cover' i]",
+            "textarea[placeholder*='additional' i]",
+            "textarea[placeholder*='cover letter' i]",
+        ],
     },
     "workday": {
         "profile.first_name": [
@@ -144,6 +167,14 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
         "resume_file": [
             "input[data-automation-id='file-upload-input-ref']",
             "input[type='file']",
+        ],
+        "cover_letter_file": [
+            "input[data-automation-id*='cover' i][type='file']",
+            "input[type='file'][name*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea[data-automation-id*='cover' i]",
+            "textarea[name*='cover' i]",
         ],
     },
     "ashby": {
@@ -182,8 +213,20 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[name*='portfolio' i]",
         ],
         "resume_file": [
+            "input#_systemfield_resume[type='file']",
+            "input[id*='resume' i][type='file']",
             "input[type='file'][name*='resume' i]",
             "input[type='file']",
+        ],
+        "cover_letter_file": [
+            "input#_systemfield_coverLetter[type='file']",
+            "input[id*='coverLetter' i][type='file']",
+            "input[type='file'][name*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea[name*='cover' i]",
+            "textarea[id*='cover' i]",
+            "textarea[placeholder*='cover letter' i]",
         ],
     },
     "smartrecruiters": {
@@ -211,6 +254,15 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
         ],
         "resume_file": [
             "input[type='file']",
+        ],
+        "cover_letter_file": [
+            "input[type='file'][name*='cover' i]",
+            "input[type='file'][id*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea#messageToHiringManager",
+            "textarea[name*='messageToHiringManager' i]",
+            "textarea[name*='cover' i]",
         ],
     },
     "workable": {
@@ -263,6 +315,15 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[data-ui='resume'][type='file']",
             "input[type='file'][name*='resume' i]",
             "input[type='file']",
+        ],
+        "cover_letter_file": [
+            "input[data-ui='cover_letter'][type='file']",
+            "input[type='file'][name*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea[data-ui='cover_letter']",
+            "textarea#cover_letter",
+            "textarea[name='cover_letter']",
         ],
     },
     "custom_domain": {
@@ -320,6 +381,18 @@ _BASELINE_ATS_SELECTORS: dict[str, dict[str, list[str]]] = {
             "input[type='file'][name*='cv' i]",
             "input[type='file']",
         ],
+        "cover_letter_file": [
+            "input[type='file'][name*='cover' i]",
+            "input[type='file'][id*='cover' i]",
+            "input[type='file'][aria-label*='cover' i]",
+        ],
+        "cover_letter_text": [
+            "textarea[name*='cover' i]",
+            "textarea[id*='cover' i]",
+            "textarea[aria-label*='cover' i]",
+            "textarea[placeholder*='cover letter' i]",
+            "textarea[placeholder*='motivation' i]",
+        ],
     },
 }
 
@@ -345,6 +418,16 @@ def detect_form_ats(url: str, html_snippet: str | None = None) -> str:
         return "workable"
     if "icims.com" in host:
         return "icims"
+    if "applytojob.com" in host or "jazzhr.com" in host:
+        return "custom_domain"
+    if "freshteam.com" in host:
+        return "custom_domain"
+    if "breezy.hr" in host:
+        return "custom_domain"
+    if "rippling.com" in host:
+        return "custom_domain"
+    if "bamboohr.com" in host:
+        return "custom_domain"
 
     # Secondary inspection: check html snippet if available
     if html_snippet:
@@ -512,10 +595,12 @@ def get_tier0_field_mappings(ats_type: str, domain: str,
 async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
                                          domain: str | None = None,
                                          resume_path: str | None = None,
+                                         cover_letter_path: str | None = None,
+                                         cover_letter_text: str | None = None,
                                          conn: sqlite3.Connection | None = None) -> dict:
     """Execute Tier 0 deterministic Playwright form fill.
 
-    Fills all recognized fields and uploads the resume file.
+    Fills all recognized fields, uploads resume and cover letter if present.
     Captures unhandled interactive elements for Tier 1 / HITL resolution.
 
     Returns:
@@ -542,20 +627,38 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
         selector_id = m.get("selector_id")
 
         try:
-            # Check element visibility with short 400ms timeout
+            # Check element visibility with resilient 800ms timeout
             loc = page.locator(selector).first
-            if not await loc.is_visible(timeout=400):
+            if not await loc.is_visible(timeout=800):
                 continue
 
             if action == "upload":
-                if resume_path and Path(resume_path).exists():
+                upload_file = None
+                if "cover" in target_key:
+                    if cover_letter_path and Path(cover_letter_path).exists():
+                        upload_file = str(cover_letter_path)
+                elif resume_path and Path(resume_path).exists():
+                    upload_file = str(resume_path)
+
+                if upload_file:
                     from applypilot.apply.human_input import human_upload
-                    await human_upload(loc, str(resume_path), page=page)
-                    filled[target_key] = str(resume_path)
+                    await human_upload(loc, upload_file, page=page)
+                    filled[target_key] = upload_file
                     if selector_id:
                         record_selector_result(selector_id, success=True, conn=conn)
             else:
-                val = _resolve_profile_value(target_key, profile)
+                if target_key == "cover_letter_text":
+                    val = cover_letter_text or profile.get("cover_letter_text") or profile.get("cover_letter")
+                    if not val and cover_letter_path and Path(cover_letter_path).suffix in (".txt", ".md"):
+                        try:
+                            val = Path(cover_letter_path).read_text(encoding="utf-8")
+                        except Exception:
+                            val = None
+                    if not val:
+                        val = profile.get("summary")
+                else:
+                    val = _resolve_profile_value(target_key, profile)
+
                 if val:
                     val_str = str(val)
                     if "phone" in target_key:
@@ -593,62 +696,77 @@ async def fill_standard_fields_playwright(page, profile: dict, ats_type: str,
             );
 
             for (const el of elements) {
-                if (!isVisible(el)) continue;
-                const val = ('value' in el) ? el.value : '';
-                if (val && val.trim()) continue;
+                try {
+                    if (!isVisible(el)) continue;
+                    const val = ('value' in el) ? el.value : '';
+                    if (val && val.trim()) continue;
 
-                const tag = el.tagName.toLowerCase();
-                const elType = el.getAttribute('type') || tag;
-                const elId = el.getAttribute('id') || el.getAttribute('name') || '';
-                const required = el.required || el.getAttribute('aria-required') === 'true';
+                    const tag = el.tagName.toLowerCase();
+                    const elType = el.getAttribute('type') || tag;
+                    const elId = el.getAttribute('id') || el.getAttribute('name') || '';
+                    const required = el.required || el.getAttribute('aria-required') === 'true';
 
-                let label = '';
-                if (el.id) {
-                    const lbl = document.querySelector(`label[for="${el.id}"], #${el.id}_label, #${el.id}-label`);
-                    if (lbl) label = lbl.innerText;
-                }
-                if (!label) {
-                    const parent = el.closest('label');
-                    if (parent) label = parent.innerText;
-                }
-                if (!label) {
-                    const qCard = el.closest('.application-question, .card-field, [data-qa*="custom"], .form-group, .field, fieldset, li, .section-wrapper');
-                    if (qCard) {
-                        const header = qCard.querySelector('.application-label, .card-field-name, .text, label, legend, .label, .prompt, h3, h4');
-                        if (header) label = header.innerText;
+                    let label = '';
+                    // 1. Native HTML5 labels collection
+                    if (el.labels && el.labels.length > 0) {
+                        label = el.labels[0].innerText;
                     }
-                }
-                if (!label) {
-                    const container = el.closest('div, fieldset');
-                    if (container) {
-                        const header = container.querySelector('label, legend, .label, .application-label');
-                        if (header) label = header.innerText;
+                    // 2. Safe getElementById lookups (never throws CSS syntax error on numeric IDs)
+                    if (!label && el.id) {
+                        const l1 = document.getElementById(el.id + '_label') || document.getElementById(el.id + '-label') || document.getElementById(el.id + '_prompt');
+                        if (l1) label = l1.innerText;
+                        if (!label && typeof CSS !== 'undefined' && CSS.escape) {
+                            try {
+                                const l2 = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+                                if (l2) label = l2.innerText;
+                            } catch(e) {}
+                        }
                     }
-                }
-                if (!label) {
-                    label = el.getAttribute('aria-label') || '';
-                }
-                if (!label) {
-                    const ph = el.getAttribute('placeholder') || '';
-                    if (!/type your response|enter response|type here|your answer/i.test(ph)) {
-                        label = ph;
+                    if (!label) {
+                        const parent = el.closest('label');
+                        if (parent) label = parent.innerText;
                     }
-                }
+                    if (!label) {
+                        const qCard = el.closest('.application-question, .card-field, [data-qa*="custom"], .form-group, .field, fieldset, li, .section-wrapper, [class*="question" i], [class*="field" i]');
+                        if (qCard) {
+                            const header = qCard.querySelector('.application-label, .card-field-name, .text, label, legend, .label, .prompt, h3, h4, [class*="label" i], [class*="title" i]');
+                            if (header) label = header.innerText;
+                        }
+                    }
+                    if (!label) {
+                        const container = el.closest('div, fieldset');
+                        if (container) {
+                            const header = container.querySelector('label, legend, .label, .application-label');
+                            if (header) label = header.innerText;
+                        }
+                    }
+                    if (!label) {
+                        label = el.getAttribute('aria-label') || '';
+                    }
+                    if (!label) {
+                        const ph = el.getAttribute('placeholder') || '';
+                        if (!/type your response|enter response|type here|your answer/i.test(ph)) {
+                            label = ph;
+                        }
+                    }
 
-                let options = [];
-                if (tag === 'select') {
-                    options = Array.from(el.options).map(o => o.text.trim()).filter(Boolean);
-                }
+                    let options = [];
+                    if (tag === 'select') {
+                        options = Array.from(el.options).map(o => o.text.trim()).filter(Boolean);
+                    }
 
-                const cleanLabel = (label || '').replace(/\\s+/g, ' ').trim();
-                if (cleanLabel || elId) {
-                    list.push({
-                        field_id: elId,
-                        label: cleanLabel || elId,
-                        field_type: elType,
-                        options: options,
-                        required: !!required,
-                    });
+                    const cleanLabel = (label || '').replace(/\\s+/g, ' ').trim();
+                    if (cleanLabel || elId) {
+                        list.push({
+                            field_id: elId,
+                            label: cleanLabel || elId,
+                            field_type: elType,
+                            options: options,
+                            required: !!required,
+                        });
+                    }
+                } catch (elemErr) {
+                    continue;
                 }
             }
             return list;

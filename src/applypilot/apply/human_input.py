@@ -167,3 +167,4 @@ async def human_upload(locator: Any, file_path: str, page: Any = None) -> None:
     await asyncio.sleep(random.uniform(0.2, 0.45))
     await locator.set_input_files(str(file_path))
     await asyncio.sleep(random.uniform(0.35, 0.65))
+

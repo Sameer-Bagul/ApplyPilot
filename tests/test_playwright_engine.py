@@ -288,3 +288,247 @@ def test_playwright_engine_records_proof_and_updates_db(test_db, monkeypatch, tm
         assert Path(v_path).read_bytes() == b"RIFF....WEBM_TEST_DATA"
 
     asyncio.run(_run())
+
+
+def test_playwright_engine_captcha_triggers_flagged_captcha(test_db, monkeypatch):
+    """Verify that when post-submit challenge appears, engine halts and returns flagged_captcha."""
+    async def _run():
+        job_url = "https://jobs.lever.co/btse/12345"
+        test_db.execute(
+            "INSERT INTO jobs (url, title, company, fit_score, state) VALUES (?, ?, ?, ?, 'applying')",
+            (job_url, "QA Engineer", "BTSE", 9),
+        )
+        test_db.commit()
+
+        mock_page = MagicMock()
+        mock_page.url = job_url
+        mock_page.goto = AsyncMock()
+        mock_page.wait_for_timeout = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.close = AsyncMock()
+
+        mock_context = MagicMock()
+        mock_context.pages = [mock_page]
+        mock_context.cookies = AsyncMock(return_value=[])
+
+        mock_browser = MagicMock()
+        mock_browser.contexts = [mock_context]
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_playwright
+        mock_cm.__aexit__.return_value = None
+
+        mock_pw_mod = MagicMock()
+        mock_pw_async = MagicMock()
+        mock_pw_mod.async_api = mock_pw_async
+        mock_pw_async.async_playwright = lambda: mock_cm
+        monkeypatch.setitem(sys.modules, "playwright", mock_pw_mod)
+        monkeypatch.setitem(sys.modules, "playwright.async_api", mock_pw_async)
+
+        monkeypatch.setattr(
+            "applypilot.apply.playwright_engine.fill_standard_fields_playwright",
+            AsyncMock(return_value={"filled": {"profile.first_name": "Sameer"}, "unresolved": [], "duration_ms": 200}),
+        )
+
+        mock_submit = MagicMock()
+        mock_submit.is_visible = AsyncMock(return_value=True)
+        mock_submit.click = AsyncMock()
+        mock_page.locator = MagicMock(return_value=MagicMock(first=mock_submit))
+
+        # Mock detect_challenge returning hCaptcha challenge post-submit
+        monkeypatch.setattr(
+            "applypilot.apply.playwright_engine.detect_challenge",
+            AsyncMock(return_value={
+                "type": "hcaptcha",
+                "name": "hCaptcha Security Challenge",
+                "detail": "Please click on the TWO icons that are different from the others",
+            }),
+        )
+
+        status, duration, qs = await _async_run_playwright_tier_engine(
+            job={"url": job_url, "title": "QA Engineer", "company": "BTSE"},
+            port=9222,
+            worker_id=0,
+            headless=True,
+            auto_submit=True,
+            conn=test_db,
+        )
+
+        assert status == "flagged_captcha"
+        # Verify HITL ticket was created
+        ticket = test_db.execute("SELECT blocker_type, company, job_url FROM hitl_tickets WHERE job_url = ?", (job_url,)).fetchone()
+        assert ticket is not None
+        assert ticket[0] == "captcha"
+        assert ticket[1] == "BTSE"
+
+    asyncio.run(_run())
+
+
+def test_three_stage_snapshots_captured(test_db, monkeypatch, tmp_path):
+    """Verify that 01_before_fill, 02_after_feed, and 03_after_submission are captured."""
+    async def _run():
+        job_url = "https://boards.greenhouse.io/acme/jobs/111"
+        test_db.execute(
+            "INSERT INTO jobs (url, title, company, fit_score, state) VALUES (?, ?, ?, ?, 'ready')",
+            (job_url, "Full Stack Engineer", "Acme", 9),
+        )
+        test_db.commit()
+
+        monkeypatch.setattr("applypilot.config.PROOFS_SCREENSHOTS_DIR", tmp_path / "screenshots")
+        monkeypatch.setattr("applypilot.config.PROOFS_VIDEOS_DIR", tmp_path / "videos")
+
+        mock_page = MagicMock()
+        mock_page.url = job_url
+        mock_page.goto = AsyncMock()
+        mock_page.wait_for_timeout = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.close = AsyncMock()
+        mock_page.screenshot = AsyncMock()
+
+        mock_context = MagicMock()
+        mock_context.pages = [mock_page]
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.cookies = AsyncMock(return_value=[])
+        mock_context.close = AsyncMock()
+
+        mock_browser = MagicMock()
+        mock_browser.contexts = [mock_context]
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_playwright
+        mock_cm.__aexit__.return_value = None
+
+        mock_pw_mod = MagicMock()
+        mock_pw_async = MagicMock()
+        mock_pw_mod.async_api = mock_pw_async
+        mock_pw_async.async_playwright = lambda: mock_cm
+        monkeypatch.setitem(sys.modules, "playwright", mock_pw_mod)
+        monkeypatch.setitem(sys.modules, "playwright.async_api", mock_pw_async)
+
+        monkeypatch.setattr(
+            "applypilot.apply.playwright_engine.fill_standard_fields_playwright",
+            AsyncMock(return_value={"filled": {"profile.email": "test@example.com"}, "unresolved": [], "duration_ms": 150}),
+        )
+
+        mock_submit = MagicMock()
+        mock_submit.is_visible = AsyncMock(return_value=True)
+        mock_submit.scroll_into_view_if_needed = AsyncMock()
+        mock_submit.click = AsyncMock()
+        mock_page.locator = MagicMock(return_value=MagicMock(first=mock_submit))
+
+        # Mock evaluate returning confirmation text
+        mock_page.evaluate = AsyncMock(return_value="Thank you for applying to Acme! Your application has been received.")
+
+        status, duration, qs = await _async_run_playwright_tier_engine(
+            job={"url": job_url, "title": "Full Stack Engineer", "company": "Acme"},
+            port=0,
+            headless=True,
+            auto_submit=True,
+            conn=test_db,
+        )
+
+        assert status == "applied"
+        # Verify all 3 stage snapshots were requested
+        screenshot_calls = mock_page.screenshot.call_args_list
+        called_paths = [str(c[1].get("path", "")) for c in screenshot_calls]
+        assert any("01_before_fill" in p for p in called_paths), "Missing 01_before_fill snapshot"
+        assert any("02_after_feed" in p for p in called_paths), "Missing 02_after_feed snapshot"
+        assert any("03_after_submission" in p for p in called_paths), "Missing 03_after_submission snapshot"
+
+    asyncio.run(_run())
+
+
+def test_submit_without_positive_confirmation_refuses_applied(test_db, monkeypatch, tmp_path):
+    """Verify that clicking submit without positive URL/DOM confirmation refuses to mark applied."""
+    async def _run():
+        job_url = "https://boards.greenhouse.io/acme/jobs/222"
+        test_db.execute(
+            "INSERT INTO jobs (url, title, company, fit_score, state) VALUES (?, ?, ?, ?, 'ready')",
+            (job_url, "DevOps Engineer", "Acme", 9),
+        )
+        test_db.commit()
+
+        monkeypatch.setattr("applypilot.config.PROOFS_SCREENSHOTS_DIR", tmp_path / "screenshots")
+        monkeypatch.setattr("applypilot.config.PROOFS_VIDEOS_DIR", tmp_path / "videos")
+
+        # Use non-mock or mock configured with unconfirmed text
+        mock_page = MagicMock()
+        mock_page.url = job_url  # URL did not change to /thanks
+        mock_page._enforce_strict_confirmation = True
+        mock_page.goto = AsyncMock()
+        mock_page.wait_for_timeout = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.close = AsyncMock()
+        mock_page.screenshot = AsyncMock()
+
+        mock_context = MagicMock()
+        mock_context.pages = [mock_page]
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.cookies = AsyncMock(return_value=[])
+        mock_context.close = AsyncMock()
+
+        mock_browser = MagicMock()
+        mock_browser.contexts = [mock_context]
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_playwright
+        mock_cm.__aexit__.return_value = None
+
+        mock_pw_mod = MagicMock()
+        mock_pw_async = MagicMock()
+        mock_pw_mod.async_api = mock_pw_async
+        mock_pw_async.async_playwright = lambda: mock_cm
+        monkeypatch.setitem(sys.modules, "playwright", mock_pw_mod)
+        monkeypatch.setitem(sys.modules, "playwright.async_api", mock_pw_async)
+
+        monkeypatch.setattr(
+            "applypilot.apply.playwright_engine.fill_standard_fields_playwright",
+            AsyncMock(return_value={"filled": {"profile.email": "test@example.com"}, "unresolved": [], "duration_ms": 150}),
+        )
+
+        mock_submit = MagicMock()
+        mock_submit.is_visible = AsyncMock(return_value=True)
+        mock_submit.scroll_into_view_if_needed = AsyncMock()
+        mock_submit.click = AsyncMock()
+
+        def mock_locator_router(sel):
+            if "submit" in sel:
+                return MagicMock(first=mock_submit)
+            m = MagicMock()
+            m.first = MagicMock(is_visible=AsyncMock(return_value=False))
+            return m
+
+        mock_page.locator = MagicMock(side_effect=mock_locator_router)
+
+        # Evaluate returns normal page content without confirmation keywords
+        mock_page.evaluate = AsyncMock(return_value="Please fill in all mandatory fields before submitting.")
+
+        with patch("applypilot.apply.playwright_engine.detect_challenge", new=AsyncMock(return_value=None)):
+            status, duration, qs = await _async_run_playwright_tier_engine(
+                job={"url": job_url, "title": "DevOps Engineer", "company": "Acme"},
+                port=0,
+                headless=True,
+                auto_submit=True,
+                conn=test_db,
+            )
+
+            # Strict verification: unconfirmed submit MUST refuse applied and fallback to agent
+            assert status == "fallback_to_agent"
+            assert any(q["field_id"] == "unconfirmed_submit" for q in qs)
+            mock_submit.click.assert_awaited_once()
+
+    asyncio.run(_run())
+

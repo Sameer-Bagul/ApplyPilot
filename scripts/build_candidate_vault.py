@@ -167,7 +167,10 @@ def build_vault():
     ]
 
     print("⚡ [3/6] Curating flagship high-tech projects and filtering out trivial ones...")
-    with open(project_root / "all-projects.json", "r", encoding="utf-8") as f:
+    data_path = project_root / "scripts" / "data" / "all-projects.json"
+    if not data_path.exists():
+        data_path = project_root / "all-projects.json"
+    with open(data_path, "r", encoding="utf-8") as f:
         all_raw_projects = json.load(f)
 
     # Flagship curated projects

@@ -13,6 +13,7 @@ Welcome to the definitive architecture and developer manual for ApplyPilot. This
 | **[03. Company Looping & Email Enrichment](file:///home/sameer/Projects/ApplyPilot/docs/guide/03_company_looping_and_email_enrichment.md)** | How we loop over companies, DuckDuckGo active web search, recruiter extraction, Google DoH MX verification, and the 8-12 email guarantee. |
 | **[04. Agent Execution & Dual-Attack Model](file:///home/sameer/Projects/ApplyPilot/docs/guide/04_agent_execution_and_dual_attack.md)** | Sequential vs. parallel execution, multi-worker Chrome CDP isolation, Dual-Attack application strategy, asynchronous email HITL, and the multi-lane animated Agent Radar DAG. |
 | **[05. MCP System & Tool Inventory](file:///home/sameer/Projects/ApplyPilot/docs/guide/05_mcp_system_and_tool_inventory.md)** | Complete topology of 9 MCP servers, tool invocation triggers, and the 24 native FastMCP tools catalog. |
+| **[Specs & Design Blueprints](file:///home/sameer/Projects/ApplyPilot/docs/specs/autonomous_agent_and_mcp_spec.md)** | Deep endpoint specifications, keyless ATS scraping contracts, and architectural specs. |
 
 ---
 

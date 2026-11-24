@@ -99,3 +99,62 @@ async def test_wait_for_human_challenge_resolution_success():
                 assert mock_alert.called
                 assert mock_res.called
 
+
+@pytest.mark.anyio
+async def test_detect_challenge_hcaptcha_nested_frame():
+    """Verify detection of hCaptcha odd-one-out icon challenge inside nested subframe."""
+    mock_frame = MagicMock()
+    mock_frame.url = "https://newassets.hcaptcha.com/captcha/v1/12345/static/hcaptcha.html#frame=challenge"
+    mock_frame.evaluate = AsyncMock(return_value="Please click on the TWO icons that are different from the others\nSkip\nEN")
+
+    mock_page = MagicMock()
+    mock_page.title = AsyncMock(return_value="Job Application")
+    mock_page.frames = [mock_frame]
+    mock_page.query_selector_all = AsyncMock(return_value=[])
+
+    challenge = await detect_challenge(mock_page)
+    assert challenge is not None
+    assert challenge["type"] == "hcaptcha"
+    assert "hCaptcha" in challenge["name"]
+    assert "Active hCaptcha prompt" in challenge["detail"]
+
+
+@pytest.mark.anyio
+async def test_detect_challenge_hcaptcha_visible_modal_iframe():
+    """Verify detection of full-screen hCaptcha modal iframe on Lever."""
+    mock_iframe = MagicMock()
+    mock_iframe.is_visible = AsyncMock(return_value=True)
+    mock_iframe.bounding_box = AsyncMock(return_value={"width": 1280, "height": 720, "x": 0, "y": 0})
+    mock_iframe.get_attribute = AsyncMock(side_effect=lambda attr: {
+        "title": "Widget containing checkbox for hCaptcha security challenge",
+        "src": "https://newassets.hcaptcha.com/captcha/v1/static/hcaptcha-enclave.html#frame=enclave",
+    }.get(attr))
+
+    mock_page = MagicMock()
+    mock_page.title = AsyncMock(return_value="BTSE - Senior QA Engineer")
+    mock_page.frames = []
+    mock_page.query_selector_all = AsyncMock(return_value=[mock_iframe])
+
+    challenge = await detect_challenge(mock_page)
+    assert challenge is not None
+    assert challenge["type"] == "hcaptcha"
+    assert "Visible hCaptcha modal" in challenge["detail"]
+
+
+@pytest.mark.anyio
+async def test_detect_challenge_arkose_funcaptcha():
+    """Verify detection of Arkose Labs / FunCaptcha modal."""
+    mock_frame = MagicMock()
+    mock_frame.url = "https://client-api.arkoselabs.com/fc/api/?token=xyz"
+    mock_frame.evaluate = AsyncMock(return_value="Please solve this puzzle\nAudio\nVerify")
+
+    mock_page = MagicMock()
+    mock_page.title = AsyncMock(return_value="Careers")
+    mock_page.frames = [mock_frame]
+    mock_page.query_selector_all = AsyncMock(return_value=[])
+
+    challenge = await detect_challenge(mock_page)
+    assert challenge is not None
+    assert challenge["type"] == "funcaptcha"
+    assert "Arkose" in challenge["name"]
+

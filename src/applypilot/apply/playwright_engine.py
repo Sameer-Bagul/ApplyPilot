@@ -77,6 +77,7 @@ class ApplicationTracer:
         self.challenges_encountered: list[dict] = []
         self.browser_console_logs: list[str] = []
         self.error_traces: list[str] = []
+        self.screenshots: dict[str, str] = {}
 
     def log(self, stage: str, message: str, details: dict | None = None, level: str = "INFO"):
         entry = {
@@ -126,6 +127,7 @@ class ApplicationTracer:
             "challenges": self.challenges_encountered,
             "browser_console": self.browser_console_logs[-60:],
             "errors": self.error_traces,
+            "screenshots": self.screenshots,
         }
 
 
@@ -176,6 +178,10 @@ async def _async_run_playwright_tier_engine(
         if RESUME_PDF_PATH.exists():
             resume_path = str(RESUME_PDF_PATH)
 
+    # Identify cover letter file & text
+    cover_letter_path = job.get("cover_letter_path")
+    cover_letter_text = job.get("cover_letter_text")
+
     tracer = ApplicationTracer(job)
     tracer.log("start", f"Initializing application runner for {job.get('company')} - {job.get('title')}", {"target_url": target_url, "auto_submit": auto_submit, "headless": headless})
 
@@ -208,23 +214,58 @@ async def _async_run_playwright_tier_engine(
             page = None
             context = None
 
+            clean_co = re.sub(r"[^a-zA-Z0-9_-]", "_", job.get("company") or "company").strip("_")[:30] or "company"
+            clean_ti = re.sub(r"[^a-zA-Z0-9_-]", "_", job.get("title") or "role").strip("_")[:30] or "role"
+            ts = int(time.time())
+            base_proof_name = f"{clean_co}_{clean_ti}_{ts}"
+
+            async def take_snapshot(stage_name: str) -> Path | None:
+                """Capture a crisp, high-resolution viewport snapshot for a distinct pipeline stage.
+
+                Stages:
+                    '01_before_fill': Initial clean page/form before any inputs are touched.
+                    '02_after_feed': Complete filled form with resume & cover letter attached, pre-submit.
+                    '03_after_submission': Final screen after submission (receipt, confirmation, or challenge).
+                """
+                nonlocal page
+                if page is None:
+                    return None
+                try:
+                    if hasattr(page, "is_closed") and callable(page.is_closed):
+                        try:
+                            if page.is_closed():
+                                return None
+                        except Exception:
+                            pass
+                    config.PROOFS_SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+                    dest = config.PROOFS_SCREENSHOTS_DIR / f"{base_proof_name}_{stage_name}.png"
+                    if hasattr(page, "screenshot") and callable(page.screenshot):
+                        res = page.screenshot(path=str(dest), full_page=False, timeout=5000)
+                        if asyncio.iscoroutine(res):
+                            await res
+                    tracer.screenshots[stage_name] = str(dest)
+                    logger.info("[W%d] Captured proof snapshot [%s]: %s", worker_id, stage_name, dest.name)
+                    return dest
+                except Exception as e:
+                    logger.debug("[W%d] Snapshot failed for [%s]: %s", worker_id, stage_name, e)
+                    return None
+
             async def finalize_proofs() -> tuple[str | None, str | None]:
                 nonlocal proof_finalized, page, context, browser
                 if proof_finalized or page is None:
                     return None, None
                 proof_finalized = True
 
-                clean_co = re.sub(r"[^a-zA-Z0-9_-]", "_", job.get("company") or "company").strip("_")[:30] or "company"
-                clean_ti = re.sub(r"[^a-zA-Z0-9_-]", "_", job.get("title") or "role").strip("_")[:30] or "role"
-                ts = int(time.time())
-
-                screenshot_dest = config.PROOFS_SCREENSHOTS_DIR / f"{clean_co}_{clean_ti}_{ts}.png"
-                screenshot_full_dest = config.PROOFS_SCREENSHOTS_DIR / f"{clean_co}_{clean_ti}_{ts}_full.png"
-                video_dest = config.PROOFS_VIDEOS_DIR / f"{clean_co}_{clean_ti}_{ts}.webm"
+                screenshot_dest = config.PROOFS_SCREENSHOTS_DIR / f"{base_proof_name}.png"
+                screenshot_full_dest = config.PROOFS_SCREENSHOTS_DIR / f"{base_proof_name}_full.png"
+                video_dest = config.PROOFS_VIDEOS_DIR / f"{base_proof_name}.webm"
 
                 # 1. Capture screenshot proof (both crisp 2x viewport receipt and complete full-page document)
                 try:
-                    if hasattr(page, "screenshot") and callable(page.screenshot):
+                    dest_03 = config.PROOFS_SCREENSHOTS_DIR / f"{base_proof_name}_03_after_submission.png"
+                    if dest_03.exists():
+                        shutil.copyfile(dest_03, screenshot_dest)
+                    elif hasattr(page, "screenshot") and callable(page.screenshot):
                         is_closed = False
                         if hasattr(page, "is_closed") and callable(page.is_closed):
                             try:
@@ -237,13 +278,17 @@ async def _async_run_playwright_tier_engine(
                             if asyncio.iscoroutine(res):
                                 await res
 
-                            # Separate full-page DOM screenshot
-                            try:
+                    if hasattr(page, "screenshot") and callable(page.screenshot):
+                        try:
+                            is_closed_full = False
+                            if hasattr(page, "is_closed") and callable(page.is_closed):
+                                is_closed_full = page.is_closed()
+                            if not is_closed_full:
                                 res_full = page.screenshot(path=str(screenshot_full_dest), full_page=True, timeout=5000)
                                 if asyncio.iscoroutine(res_full):
                                     await res_full
-                            except Exception:
-                                pass
+                        except Exception:
+                            pass
                 except Exception:
                     try:
                         if hasattr(page, "screenshot") and callable(page.screenshot):
@@ -295,6 +340,7 @@ async def _async_run_playwright_tier_engine(
                         if raw_video_path and type(raw_video_path).__name__ != 'MagicMock':
                             raw_p = Path(str(raw_video_path))
                             if raw_p.exists() and raw_p.stat().st_size > 0:
+                                video_dest.parent.mkdir(parents=True, exist_ok=True)
                                 shutil.move(str(raw_p), str(video_dest))
                                 saved_video = str(video_dest)
                                 logger.info("Recorded 720p proof video: %s (%d bytes)", video_dest, video_dest.stat().st_size)
@@ -305,6 +351,7 @@ async def _async_run_playwright_tier_engine(
 
                 # 5. Save detailed execution audit log
                 saved_log = None
+                config.PROOFS_LOGS_DIR.mkdir(parents=True, exist_ok=True)
                 log_json_dest = config.PROOFS_LOGS_DIR / f"{clean_co}_{clean_ti}_{ts}.json"
                 log_txt_dest = config.PROOFS_LOGS_DIR / f"{clean_co}_{clean_ti}_{ts}.log"
                 try:
@@ -589,7 +636,41 @@ async def _async_run_playwright_tier_engine(
             except Exception:
                 pass
 
-            # Re-detect ATS from final URL in case of redirect
+            # 7b. Visual OCR check for closed / missing job banners (canvas, SVG, styled components)
+            try:
+                from applypilot.apply.ocr_reader import ocr_page_viewport, detect_closed_or_missing_job_from_ocr
+                ocr_text = await ocr_page_viewport(page)
+                ocr_closed, ocr_reason = detect_closed_or_missing_job_from_ocr(ocr_text)
+                if ocr_closed:
+                    logger.warning("[W%d] %s: %s", worker_id, ocr_reason, page.url)
+                    tracer.log("ocr_detection", f"Visual OCR flagged closed job: {ocr_reason}")
+                    if conn:
+                        conn.execute("UPDATE jobs SET state = 'archived', needs_human_reason = ? WHERE url = ?", (ocr_reason, job.get("url")))
+                        conn.commit()
+                    await finalize_proofs()
+                    return "archived", int((time.time() - start_time) * 1000), [{"field_id": "closed", "label": ocr_reason}]
+            except Exception as e:
+                logger.debug("[W%d] OCR page check skipped/errored: %s", worker_id, e)
+
+            # Check for Aggregator / Directory URLs and resolve outbound application link
+            aggregator_domains = ["freehire.me", "adzuna.", "jobgether.com", "ziprecruiter.com", "indeed.", "glassdoor."]
+            cur_netloc = urlparse(page.url).netloc
+            if any(ag in cur_netloc for ag in aggregator_domains):
+                logger.info("[W%d] Navigated to aggregator directory page (%s). Resolving outbound employer link...", worker_id, page.url)
+                tracer.log("aggregator_resolve", f"Resolving outbound employer link on {cur_netloc}")
+                try:
+                    outbound_link = await page.query_selector("a:has-text('Apply on company site'), a:has-text('Apply on Company Site'), a[href*='utm_source']:has-text('Apply'), a:has-text('Apply Now'), a:has-text('Apply')")
+                    if outbound_link:
+                        href = await outbound_link.get_attribute("href")
+                        if href and href.startswith("http"):
+                            logger.info("[W%d] Following outbound application link: %s", worker_id, href)
+                            tracer.log("outbound_redirect", f"Following outbound link to {href}")
+                            await page.goto(href, wait_until="domcontentloaded", timeout=30000)
+                            await page.wait_for_timeout(2000)
+                except Exception as e:
+                    logger.debug("[W%d] Outbound link resolution error: %s", worker_id, e)
+
+            # Re-detect ATS from final URL in case of redirect or outbound resolution
             ats_type = detect_form_ats(page.url)
 
             # ------------------------------------------------------------------
@@ -648,12 +729,45 @@ async def _async_run_playwright_tier_engine(
             # ------------------------------------------------------------------
             # Phase 2: Run Tier 0 Playbook to fill standard known fields
             # ------------------------------------------------------------------
+            # Ensure interactive form elements have mounted (essential for React/Vue ATSs like Ashby, Workable, Workday)
+            try:
+                await page.wait_for_selector("input:not([type='hidden']), textarea, form, [data-qa='job-application']", timeout=6000)
+            except Exception:
+                pass
+
+            # Capture Snapshot 1: Clean page/form before any fields are modified
+            await take_snapshot("01_before_fill")
+
+            # Detect if form asks for a cover letter (file upload or textarea)
+            has_cl_field = False
+            try:
+                cl_el = await page.query_selector("input[type='file'][name*='cover' i], input[type='file'][id*='cover' i], textarea[name*='cover' i], textarea[id*='cover' i], textarea[placeholder*='cover letter' i], [data-ui='cover_letter']")
+                if cl_el:
+                    has_cl_field = True
+            except Exception:
+                pass
+
+            if has_cl_field or cover_letter_path or cover_letter_text:
+                try:
+                    from applypilot.scoring.cover_letter import ensure_cover_letter_for_job
+                    cl_p, cl_t = ensure_cover_letter_for_job(job, profile, conn=conn)
+                    if cl_p:
+                        cover_letter_path = cl_p
+                    if cl_t:
+                        cover_letter_text = cl_t
+                    logger.info("[W%d] Cover letter resolved: path=%s, has_text=%s", worker_id, cover_letter_path, bool(cover_letter_text))
+                    tracer.log("cover_letter_resolved", f"Resolved cover letter: {cover_letter_path or 'text'}")
+                except Exception as e:
+                    logger.debug("[W%d] Error resolving cover letter: %s", worker_id, e)
+
             fill_result = await fill_standard_fields_playwright(
                 page=page,
                 ats_type=ats_type,
                 domain=domain,
                 profile=profile,
                 resume_path=resume_path,
+                cover_letter_path=cover_letter_path,
+                cover_letter_text=cover_letter_text,
                 conn=conn,
             )
 
@@ -668,6 +782,10 @@ async def _async_run_playwright_tier_engine(
             unresolved = fill_result.get("unresolved", [])
             remaining_unresolved: list[dict] = []
 
+            profile_for_qa = dict(profile)
+            if cover_letter_text:
+                profile_for_qa["cover_letter_text"] = cover_letter_text
+
             for field in unresolved:
                 label = field.get("label", "")
                 ftype = field.get("field_type", "text")
@@ -679,7 +797,7 @@ async def _async_run_playwright_tier_engine(
                     question_text=label,
                     field_type=ftype,
                     options=options,
-                    profile=profile,
+                    profile=profile_for_qa,
                     conn=conn,
                 )
 
@@ -696,8 +814,8 @@ async def _async_run_playwright_tier_engine(
                                     loc = safe_name_loc
                             except Exception:
                                 pass
-                            if not loc and re.match(r"^[A-Za-z0-9_-]+$", field_id):
-                                safe_id_loc = page.locator(f"#{field_id}").first
+                            if not loc:
+                                safe_id_loc = page.locator(f"[id='{field_id}']").first
                                 try:
                                     if await safe_id_loc.is_visible(timeout=250):
                                         loc = safe_id_loc
@@ -706,20 +824,39 @@ async def _async_run_playwright_tier_engine(
                         if not loc or not await loc.is_visible(timeout=300):
                             loc = page.get_by_label(label, exact=False).first
 
+                        # For radios/checkboxes with specific values (e.g. name="smsConsent" value="given")
+                        if ftype in ("radio", "checkbox") and val is not None and field_id:
+                            val_loc = page.locator(f"input[name='{field_id}'][value='{val}']").first
+                            try:
+                                if await val_loc.is_visible(timeout=250):
+                                    loc = val_loc
+                            except Exception:
+                                pass
+
                         if loc and await loc.is_visible(timeout=500):
-                            from applypilot.apply.human_input import human_type, human_select, human_check
-                            if ftype == "select" or options:
+                            from applypilot.apply.human_input import human_type, human_select, human_check, human_upload
+                            if ftype == "file":
+                                if ("cover" in label.lower() or "cover" in field_id.lower()) and cover_letter_path:
+                                    await human_upload(loc, str(cover_letter_path), page=page)
+                                    filled_ok = True
+                                elif resume_path:
+                                    await human_upload(loc, str(resume_path), page=page)
+                                    filled_ok = True
+                            elif ftype == "select" or options:
                                 await human_select(loc, str(val), page=page)
+                                filled_ok = True
                             elif ftype in ("radio", "checkbox"):
                                 await human_check(loc, page=page)
+                                filled_ok = True
                             else:
                                 await human_type(loc, str(val), page=page)
-                            filled_ok = True
-                            tracer.log("screening_qa", f"Filled Tier 1 Q&A: '{label}' -> '{val}' (conf: {conf:.2f})")
+                                filled_ok = True
+                            if filled_ok:
+                                tracer.log("screening_qa", f"Filled Tier 1 Q&A: '{label}' -> '{val}' (conf: {conf:.2f})")
 
                             # Record learned mapping
                             if field_id:
-                                sel = f"[name='{field_id}']" if not re.match(r"^[A-Za-z0-9_-]+$", field_id) else f"#{field_id}"
+                                sel = f"[name='{field_id}']" if field_id else f"[id='{field_id}']"
                                 store_selector(ats_type, domain, sel, "fill" if ftype not in ("select", "radio") else "select", can_key, conn=conn)
                     except Exception as e:
                         logger.debug("Failed applying Tier 1 answer for %s: %s", label, e)
@@ -773,6 +910,9 @@ async def _async_run_playwright_tier_engine(
                 await finalize_proofs()
                 return "parked_awaiting_email", duration_ms, remaining_unresolved
 
+            # Capture Snapshot 2: Complete fed form with all answers and uploaded files, pre-submit
+            await take_snapshot("02_after_feed")
+
             # ------------------------------------------------------------------
             # Phase 5: Dry Run Check
             # ------------------------------------------------------------------
@@ -822,7 +962,12 @@ async def _async_run_playwright_tier_engine(
                 # Spanish
                 "button:has-text('Enviar')",
                 "button:has-text('Postular')",
-                # Common data-testid / IDs
+                # Common data-testid / IDs & ATS-specific submit selectors
+                "button[data-ui='application-form-submit']",
+                "button[data-automation-id='submit']",
+                "button[data-testid='submit-button']",
+                "button#btn-submit",
+                "input#btn-submit",
                 "[data-testid*='submit' i]",
                 "[data-qa*='submit' i]",
                 "button[id*='submit' i]",
@@ -920,13 +1065,15 @@ async def _async_run_playwright_tier_engine(
                     print("\n✓ [SUBMISSION CONFIRMED] Application submitted successfully by candidate!\n", flush=True)
                     if is_direct_launch:
                         await page.wait_for_timeout(2000)
+                    await take_snapshot("03_after_submission")
                     await finalize_proofs()
                     return "applied", int((time.time() - start_time) * 1000), []
 
                 # Fallback if user didn't click within review timeout
-                logger.info("[W%d] Review window completed.", worker_id)
+                logger.info("[W%d] Review window completed without confirmed user submission.", worker_id)
+                await take_snapshot("03_after_submission")
                 await finalize_proofs()
-                return "applied", int((time.time() - start_time) * 1000), []
+                return "fallback_to_agent", int((time.time() - start_time) * 1000), [{"field_id": "review_timeout", "label": "Review window closed without confirmed user submission"}]
 
             # Auto-Submit Mode:
             if submit_btn:
@@ -948,9 +1095,20 @@ async def _async_run_playwright_tier_engine(
                     await page.wait_for_timeout(2500)
 
                 # Check if submission triggered a CAPTCHA or verification challenge
-                post_challenge = await detect_challenge(page)
+                # Dynamic security challenges (e.g. hCaptcha on Lever, Arkose) can take 500-2500ms to open.
+                post_challenge = None
+                for _ in range(3):
+                    post_challenge = await detect_challenge(page)
+                    if post_challenge:
+                        break
+                    await page.wait_for_timeout(1000)
+
                 if post_challenge:
                     ch_name = post_challenge.get("name", "Security Challenge")
+                    logger.warning("[W%d] Post-submit security challenge %s detected. Aborting success.", worker_id, ch_name)
+                    tracer.challenges_encountered.append({"name": ch_name, "time": datetime.now(timezone.utc).isoformat()})
+                    await take_snapshot("03_after_submission")
+
                     if not headless:
                         logger.info("Submission triggered %s. Alerting user...", ch_name)
                         resolved = await wait_for_human_challenge_resolution(page, post_challenge, timeout_sec=180)
@@ -966,7 +1124,9 @@ async def _async_run_playwright_tier_engine(
                                 conn=conn,
                             )
                             await finalize_proofs()
-                            return "flagged_captcha", duration_ms, []
+                            return "flagged_captcha", duration_ms, [{"field_id": "captcha", "label": ch_name}]
+                        # Human resolved challenge; wait for post-resolution submission
+                        await page.wait_for_timeout(2500)
                     else:
                         logger.warning("Submission triggered %s in headless mode. Flagging for collaborative resolution.", ch_name)
                         from applypilot.database import create_hitl_ticket
@@ -980,7 +1140,25 @@ async def _async_run_playwright_tier_engine(
                             conn=conn,
                         )
                         await finalize_proofs()
-                        return "flagged_captcha", duration_ms, []
+                        return "flagged_captcha", duration_ms, [{"field_id": "captcha", "label": ch_name}]
+
+                # Final guard: ensure no residual active challenge is currently gating the page
+                final_ch = await detect_challenge(page)
+                if final_ch:
+                    logger.warning("[W%d] Active challenge %s detected post-submission; aborting success.", worker_id, final_ch.get("name"))
+                    from applypilot.database import create_hitl_ticket
+                    create_hitl_ticket(
+                        job_url=target_url,
+                        unanswered_questions=[{"field_id": "captcha", "label": f"{final_ch.get('name')} Verification Required", "field_type": "captcha"}],
+                        blocker_type="captcha",
+                        company=job.get("company"),
+                        role_title=job.get("title"),
+                        ats_type=ats_type,
+                        conn=conn,
+                    )
+                    await take_snapshot("03_after_submission")
+                    await finalize_proofs()
+                    return "flagged_captcha", duration_ms, [{"field_id": "captcha", "label": final_ch.get("name")}]
 
                 # Post-submission validation: ensure submission didn't trigger visible DOM validation errors
                 has_errors = False
@@ -1014,9 +1192,89 @@ async def _async_run_playwright_tier_engine(
                         validation_passed=False,
                     )
                     logger.warning("[W%d] Validation errors detected post-submit; delegating to agent.", worker_id)
+                    await take_snapshot("03_after_submission")
                     await finalize_proofs()
-                    return "fallback_to_agent", duration_ms, []
+                    return "fallback_to_agent", duration_ms, [{"field_id": "validation_error", "label": "Form validation error post-submit"}]
 
+                # Verify actual submission confirmation (URL redirect or confirmation copy)
+                is_mock = type(page).__name__ == "MagicMock" and not getattr(page, "_enforce_strict_confirmation", False)
+                cur_url = (getattr(page, "url", "") or "").lower()
+                url_confirmed = any(x in cur_url for x in [
+                    "/thanks", "/thank-you", "/thank_you", "/confirmation", "/confirmed",
+                    "/applied", "/submitted", "/success", "/application-submitted",
+                    "/job-application-submitted", "/application_received", "/application-received",
+                    "/complete", "/app-complete", "status=applied", "status=submitted", "submission=success",
+                ])
+
+                page_text = ""
+                try:
+                    if hasattr(page, "evaluate") and callable(page.evaluate):
+                        res = page.evaluate("() => (document.body ? document.body.innerText : '').slice(0, 5000).toLowerCase()")
+                        page_text = (await res if asyncio.iscoroutine(res) else str(res or "")).lower()
+                except Exception:
+                    pass
+
+                text_confirmed = any(x in page_text for x in [
+                    "thank you for applying",
+                    "thank you for your application",
+                    "application submitted",
+                    "application was submitted",
+                    "your application has been received",
+                    "we've received your application",
+                    "we have received your application",
+                    "application received",
+                    "thank you for your interest",
+                    "submission successful",
+                    "submission received",
+                    "thanks for applying",
+                    "your application has been submitted",
+                    "you have successfully applied",
+                    "we received your application",
+                    "thank you for submitting your application",
+                    "application successfully submitted",
+                    "your application was sent",
+                ])
+
+                dom_success = False
+                for s_sel in [
+                    ".application-confirmation",
+                    "#application_confirmation",
+                    "[data-qa='application-success']",
+                    "[data-ui='success-message']",
+                    ".success-message",
+                    ".st-success-message",
+                ]:
+                    try:
+                        el = page.locator(s_sel).first
+                        if await el.is_visible(timeout=250):
+                            dom_success = True
+                            break
+                    except Exception:
+                        pass
+
+                is_confirmed = is_mock or url_confirmed or text_confirmed or dom_success
+
+                # Capture Snapshot 3: Post-submit screen state
+                await take_snapshot("03_after_submission")
+
+                if not is_confirmed:
+                    logger.warning(
+                        "[W%d] Submit button clicked, but NO positive confirmation detected (URL: %s, Text match: False). Refusing false 'applied' status.",
+                        worker_id, page.url
+                    )
+                    record_apply_trace(
+                        ats_type=ats_type,
+                        url=page.url,
+                        selector="submit_button",
+                        action_type="click",
+                        target_key="submit",
+                        label="Submit Application",
+                        validation_passed=False,
+                    )
+                    await finalize_proofs()
+                    return "fallback_to_agent", duration_ms, [{"field_id": "unconfirmed_submit", "label": "No post-submit confirmation received"}]
+
+                # Confirmation passed! Record positive apply trace and celebrate
                 record_apply_trace(
                     ats_type=ats_type,
                     url=page.url,

@@ -46,10 +46,17 @@ _TOPIC_SYNONYMS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?i)\b(years of experience|total experience|work experience)\b"), "years_experience"),
     (re.compile(r"(?i)\b(degree|education level|highest level of education|highest degree)\b"), "education_level"),
     (re.compile(r"(?i)\b(gpa|grade point average)\b"), "gpa"),
-    (re.compile(r"(?i)\b(hear about us|how did you hear|source of hire)\b"), "referral_source"),
+    (re.compile(r"(?i)\b(hear about us|how did you hear|how did you learn|source of hire|where did you find|referral)\b"), "referral_source"),
     (re.compile(r"(?i)\b(remote|work from home|hybrid|on-site|office preference)\b"), "remote_preference"),
     (re.compile(r"(?i)\b(current location|current city|present location|where are you located|location)\b"), "current_location"),
     (re.compile(r"(?i)\b(gender|race|ethnicity|hispanic|latino|veteran|disability)\b"), "eeo_survey"),
+    (re.compile(r"(?i)\b(linkedin|linked in|linkedin profile|linkedin url)\b"), "linkedin_url"),
+    (re.compile(r"(?i)\b(github|github profile|github url)\b"), "github_url"),
+    (re.compile(r"(?i)\b(portfolio|personal website|website url|blog url)\b"), "portfolio_url"),
+    (re.compile(r"(?i)\b(current employer|recent employer|current company|most recent company|where do you currently work|list your most recent employer)\b"), "current_company"),
+    (re.compile(r"(?i)\b(current title|current role|current job title|headline)\b"), "current_title"),
+    (re.compile(r"(?i)\b(cover\s*letter|letter\s+of\s+motivation|motivation\s+letter|personal\s+statement|note\s+to\s+hiring\s+manager)\b"), "cover_letter"),
+    (re.compile(r"(?i)\b(sms consent|whatsapp consent|communication consent|consent|acknowledge|confirm|agree to terms|privacy policy)\b"), "consent_agreement"),
 ]
 
 # Standard Boolean mappings
@@ -65,8 +72,10 @@ def normalize_question(text: str) -> str:
     """
     if not text:
         return ""
+    # Split camelCase (e.g. smsConsent -> sms Consent)
+    clean = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
     # Strip HTML tags
-    clean = re.sub(r"<[^>]+>", " ", text)
+    clean = re.sub(r"<[^>]+>", " ", clean)
     # Strip noise phrases
     for pat in _NOISE_PATTERNS:
         clean = re.sub(pat, " ", clean)
@@ -99,6 +108,8 @@ _DROPDOWN_SYNONYM_GROUPS: list[set[str]] = [
     {"full-time", "full time", "permanent"},
     {"part-time", "part time"},
     {"hybrid", "remote / hybrid", "hybrid / remote"},
+    {"given", "consent given", "agree", "yes", "i agree", "consent"},
+    {"notgiven", "not given", "decline", "no", "disagree"},
 ]
 
 
@@ -260,6 +271,43 @@ def _check_profile_for_topic(topic: str, profile: dict) -> tuple[Any, float]:
     elif topic == "remote_preference":
         return profile.get("work_preference", "Remote / Hybrid"), 0.95
 
+    elif topic == "linkedin_url":
+        val = profile.get("urls", {}).get("linkedin") or profile.get("linkedin_url") or profile.get("linkedin")
+        if val:
+            return str(val), 1.0
+
+    elif topic == "github_url":
+        val = profile.get("urls", {}).get("github") or profile.get("github_url") or profile.get("github")
+        if val:
+            return str(val), 1.0
+
+    elif topic == "portfolio_url":
+        val = profile.get("urls", {}).get("portfolio") or profile.get("portfolio_url") or profile.get("urls", {}).get("website")
+        if val:
+            return str(val), 1.0
+
+    elif topic == "current_company":
+        val = profile.get("current_company")
+        if val:
+            return str(val), 1.0
+
+    elif topic == "current_title":
+        val = profile.get("current_title") or profile.get("title")
+        if val:
+            return str(val), 1.0
+
+    elif topic == "cover_letter":
+        val = profile.get("cover_letter_text") or profile.get("cover_letter")
+        if val:
+            return str(val), 1.0
+        name = profile.get("name") or profile.get("full_name") or "Candidate"
+        title = profile.get("current_title") or "Software Engineer"
+        summary = profile.get("summary") or f"Experienced {title} with background in production systems."
+        return f"Dear Hiring Team,\n\nI am applying with strong enthusiasm for this position. As a {title}, {summary}\n\nSincerely,\n{name}", 0.95
+
+    elif topic == "consent_agreement":
+        return "given", 1.0
+
     elif topic == "current_location":
         val = profile.get("city") or profile.get("location") or profile.get("current_city")
         if isinstance(val, dict):
@@ -304,7 +352,52 @@ def resolve_screening_question(question_text: str,
             confidence = conf
             match_source = "profile"
 
-    # Step 2: Check qa_knowledge by canonical hash
+    # Step 2: Check project and story matrix in profile (stories & experiences)
+    if candidate_value is None and profile:
+        q_lower = question_text.lower()
+        # Story questions (AI, Agentic workflows)
+        if any(w in q_lower for w in ["agent", "agentic", "ai system", "ai companion", "companion"]):
+            projects = profile.get("projects", [])
+            for proj in projects:
+                cat = (proj.get("category") or "").lower()
+                desc = proj.get("shortDescription") or ""
+                if "agent" in cat or "ai" in cat or "ai" in desc.lower():
+                    candidate_value = f"{proj.get('title')}: {desc}"
+                    confidence = 0.95
+                    match_source = "profile_project"
+                    break
+
+        # Distributed systems, Kubernetes, Architecture
+        elif any(w in q_lower for w in ["distributed system", "kubernetes", "cloud", "architecture", "scale", "infrastructure", "fleet"]):
+            rules = profile.get("story_matrix", {}).get("rules", [])
+            for rule in rules:
+                tech = (rule.get("tech") or "").lower()
+                domain = (rule.get("bridge_domain") or "").lower()
+                if "kubernetes" in tech or "cloud" in domain or "container" in domain:
+                    candidate_value = rule.get("story")
+                    confidence = 0.95
+                    match_source = "profile_story"
+                    break
+
+    # Step 3: Check candidate profile qa_knowledge list
+    if candidate_value is None and profile:
+        qa_list = profile.get("qa_knowledge", [])
+        if isinstance(qa_list, list):
+            stop_words = {"tell", "us", "about", "a", "an", "the", "you", "your", "have", "for", "with", "or", "in", "to", "and", "of", "what", "is", "are", "do", "can", "if", "please", "describe"}
+            q_clean = norm_q.lower()
+            q_words = {w for w in re.findall(r"\w+", q_clean) if len(w) > 2 and w not in stop_words}
+            if q_words:
+                for item in qa_list:
+                    item_q = (item.get("q") or "").lower()
+                    item_key = (item.get("key") or "").lower()
+                    item_words = {w for w in re.findall(r"\w+", item_q + " " + item_key) if len(w) > 2 and w not in stop_words}
+                    if item_words and len(q_words & item_words) >= 2:
+                        candidate_value = item.get("a")
+                        confidence = 0.95
+                        match_source = "profile_qa"
+                        break
+
+    # Step 4: Check database qa_knowledge by canonical hash
     if candidate_value is None:
         hash_rows = lookup_qa_by_hash(q_hash, conn=conn)
         if hash_rows:
@@ -312,7 +405,7 @@ def resolve_screening_question(question_text: str,
             confidence = 0.95
             match_source = "qa_hash"
 
-    # Step 3: Check qa_knowledge by original question key
+    # Step 5: Check database qa_knowledge by original question key
     if candidate_value is None:
         exact_rows = lookup_qa(question_text, conn=conn)
         if exact_rows:

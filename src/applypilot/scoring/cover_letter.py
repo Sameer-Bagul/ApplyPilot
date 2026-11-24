@@ -9,6 +9,7 @@ import hashlib
 import logging
 import re
 import time
+from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -256,6 +257,128 @@ def _cover_one_job(job: dict, resume_text: str, profile: dict, doc_format: str =
         "title": job["title"],
         "site": job["site"],
     }
+
+
+def ensure_cover_letter_for_job(
+    job: dict,
+    profile: dict | None = None,
+    conn: Any = None,
+    doc_format: str = "pdf",
+) -> tuple[str | None, str | None]:
+    """Ensure a tailored cover letter exists for the job (both file path and text).
+
+    1. Checks if job.get('cover_letter_path') exists on disk.
+    2. If missing, searches COVER_LETTER_DIR for existing files matching URL hash.
+    3. If still missing, generates one using _cover_one_job or profile facts fallback.
+    4. Updates SQLite DB and returns (cover_letter_path, cover_letter_text).
+
+    Returns:
+        (cover_letter_path, cover_letter_text)
+    """
+    if profile is None:
+        profile = load_profile()
+
+    job_url = job.get("url", "")
+    url_hash = hashlib.md5(job_url.encode()).hexdigest()[:8] if job_url else "generic"
+
+    cl_path_str = job.get("cover_letter_path")
+    cl_text = job.get("cover_letter_text")
+
+    # 1. If path is already in job dict and exists on disk
+    if cl_path_str and Path(cl_path_str).exists():
+        if not cl_text:
+            txt_path = Path(cl_path_str).with_suffix(".txt")
+            if txt_path.exists():
+                try:
+                    cl_text = txt_path.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+        return cl_path_str, cl_text
+
+    # 2. Search COVER_LETTER_DIR for an existing matching file
+    COVER_LETTER_DIR.mkdir(parents=True, exist_ok=True)
+    for ext in (".pdf", ".docx", ".txt"):
+        matches = list(COVER_LETTER_DIR.glob(f"*{url_hash}*{ext}"))
+        valid = [m for m in matches if "_rejected" not in m.name]
+        if valid:
+            found_path = valid[0]
+            txt_match = found_path.with_suffix(".txt")
+            if txt_match.exists():
+                try:
+                    cl_text = txt_match.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+            cl_path_str = str(found_path)
+            if conn and job_url:
+                try:
+                    conn.execute("UPDATE jobs SET cover_letter_path = ? WHERE url = ?", (cl_path_str, job_url))
+                    conn.commit()
+                except Exception:
+                    pass
+            return cl_path_str, cl_text
+
+    # 3. Generate on-the-fly via _cover_one_job
+    resume_text = ""
+    if RESUME_PATH.exists():
+        try:
+            resume_text = RESUME_PATH.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    try:
+        res = _cover_one_job(job, resume_text, profile, doc_format=doc_format)
+        doc_path = res.get("pdf_path") or res.get("path")
+        txt_path = res.get("path")
+        if txt_path and Path(txt_path).exists():
+            cl_text = Path(txt_path).read_text(encoding="utf-8")
+        if doc_path and Path(doc_path).exists():
+            cl_path_str = str(doc_path)
+            if conn and job_url:
+                try:
+                    conn.execute("UPDATE jobs SET cover_letter_path = ? WHERE url = ?", (cl_path_str, job_url))
+                    conn.commit()
+                except Exception:
+                    pass
+            return cl_path_str, cl_text
+    except Exception as e:
+        log.warning("Dynamic cover letter generation failed: %s; falling back to profile facts template", e)
+
+    # 4. Deterministic fallback using candidate profile facts
+    from applypilot.scoring.tailor import _name_parts, display_company
+    first, last = _name_parts(profile)
+    full_name = f"{first} {last}".strip() or profile.get("name", "Candidate")
+    title = job.get("title") or "Software Engineer"
+    company = display_company(job) or job.get("company") or "your engineering team"
+    summary = profile.get("summary") or "Software Engineer with experience building scalable backend services and AI systems."
+    metrics = profile.get("resume_facts", {}).get("real_metrics", ["Production backend systems"])
+    metrics_str = ", ".join(metrics[:2]) if metrics else "high-availability distributed systems"
+
+    letter_content = (
+        f"Dear Hiring Team at {company},\n\n"
+        f"I am writing to express my strong interest in the {title} position. {summary}\n\n"
+        f"Throughout my work, I have focused on solving concrete engineering challenges, including {metrics_str}. "
+        f"I look forward to bringing this hands-on experience in production architectures to your team.\n\n"
+        f"Thank you for your time and consideration.\n\n"
+        f"Sincerely,\n{full_name}"
+    )
+
+    prefix = f"{first}_{last}_{url_hash}" if (first and last) else f"Candidate_{url_hash}"
+    txt_path = COVER_LETTER_DIR / f"{prefix}_CL.txt"
+    try:
+        txt_path.write_text(letter_content, encoding="utf-8")
+        cl_path_str = str(txt_path)
+        cl_text = letter_content
+        if conn and job_url:
+            try:
+                conn.execute("UPDATE jobs SET cover_letter_path = ? WHERE url = ?", (cl_path_str, job_url))
+                conn.commit()
+            except Exception:
+                pass
+        return cl_path_str, cl_text
+    except Exception as e:
+        log.error("Could not write fallback cover letter: %s", e)
+        return None, letter_content
+
 
 
 def _mark_cover_result(
