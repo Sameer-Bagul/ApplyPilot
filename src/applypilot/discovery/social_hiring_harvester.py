@@ -58,6 +58,9 @@ def parse_social_post_hit(hit: dict[str, str], company_name: str, platform: str)
             if company_name.lower() not in f"{words[0]} {words[1]}".lower():
                 author_name = f"{words[0]} {words[1]}"
 
+    if author_name:
+        author_name = re.sub(r"[,;:\'\"\(\)\[\]]+$", "", author_name).strip()
+
     # Extract emails explicitly stated in the post text
     embedded_emails = extract_emails(full_text)
 
@@ -148,8 +151,9 @@ class SocialHiringHarvester:
             evidence = p.get("evidence_snippet") or ""
 
             # Use embedded email or synthetic alias
+            clean_author_handle = re.sub(r"[^a-zA-Z0-9\s]", "", author).strip().lower().replace(" ", ".")
             synth_domain = clean_d or f"{re.sub(r'[^a-zA-Z0-9]', '', company_name).lower()}.com"
-            dest_email = emails[0] if emails else f"{author.lower().replace(' ', '.')}@{synth_domain}"
+            dest_email = emails[0] if emails else f"{clean_author_handle}@{synth_domain}"
 
             try:
                 store_recruiter_lead(
