@@ -191,8 +191,12 @@ def send_smtp_email(
     """
     host = smtp_host or os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port = smtp_port or int(os.environ.get("SMTP_PORT", 587))
-    user = smtp_user or os.environ.get("SMTP_USER") or os.environ.get("APPLYPILOT_USER_EMAIL")
-    password = smtp_pass or os.environ.get("SMTP_PASS")
+    user = (smtp_user or os.environ.get("SMTP_USER") or os.environ.get("APPLYPILOT_USER_EMAIL") or "").strip()
+    raw_pass = (smtp_pass or os.environ.get("SMTP_PASS") or "").strip()
+    if (raw_pass.startswith('"') and raw_pass.endswith('"')) or (raw_pass.startswith("'") and raw_pass.endswith("'")):
+        raw_pass = raw_pass[1:-1].strip()
+    # For Google App Passwords, normalize by removing spaces if host is gmail
+    password = raw_pass.replace(" ", "") if "gmail.com" in host.lower() else raw_pass
     sender_email = os.environ.get("SMTP_FROM_EMAIL") or os.environ.get("APPLYPILOT_USER_EMAIL") or user or "outreach@applypilot.local"
     ssl_env = os.environ.get("SMTP_USE_SSL", "").lower() in ("1", "true", "yes")
     is_ssl = use_ssl if use_ssl is not None else (ssl_env or port == 465)
