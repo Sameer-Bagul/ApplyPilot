@@ -223,7 +223,21 @@ class CompanyIntelService:
         if ai_tags:
             logger.info("   ├─ AI Focus Vectors: %s", ai_tags)
 
-        # (f) Persist to company_intel
+        # (f) Discover key personnel & LinkedIn profiles (non-login OSINT)
+        key_people: list[dict[str, Any]] = []
+        try:
+            from applypilot.discovery.linkedin_people_finder import find_company_people_sync
+            key_people = find_company_people_sync(
+                company_name=c_name,
+                domain=c_domain,
+                conn=conn,
+            )
+            if key_people:
+                logger.info("   ├─ [LinkedIn OSINT] Harvested %d leadership profiles for %s", len(key_people), c_name)
+        except Exception as e:
+            logger.debug("LinkedIn people finder error for %s: %s", c_name, e)
+
+        # (g) Persist to company_intel
         now = datetime.now(timezone.utc)
         expires = now + timedelta(days=30)
         intel_record = {
@@ -236,6 +250,7 @@ class CompanyIntelService:
             "open_roles_json": local_jobs,
             "funding_stage": funding_stage,
             "ai_focus_tags": ai_tags,
+            "key_people_json": key_people,
             "researched_at": now.isoformat(),
             "expires_at": expires.isoformat(),
         }
@@ -309,6 +324,15 @@ class CompanyIntelService:
         elif not isinstance(ai_tags, list):
             ai_tags = []
 
+        key_people = row.get("key_people_json")
+        if isinstance(key_people, str):
+            try:
+                key_people = json.loads(key_people)
+            except Exception:
+                key_people = []
+        elif not isinstance(key_people, list):
+            key_people = []
+
         return {
             "company_name": row.get("company_name", ""),
             "official_domain": row.get("official_domain", ""),
@@ -318,6 +342,7 @@ class CompanyIntelService:
             "open_roles": open_roles,
             "funding_stage": row.get("funding_stage", ""),
             "ai_focus_tags": ai_tags,
+            "key_people": key_people,
             "researched_at": row.get("researched_at", ""),
             "expires_at": row.get("expires_at", ""),
         }

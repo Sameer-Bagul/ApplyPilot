@@ -27,7 +27,16 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
+  Copy,
 } from 'lucide-react';
+
+function LinkedInIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.46 10.9v8.37H9.2V10.9H6.46M7.83 6.45a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2Z" />
+    </svg>
+  );
+}
 
 interface LeadDetailDrawerProps {
   leadId: string | null;
@@ -64,6 +73,8 @@ export function LeadDetailDrawer({
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
   const [editLinkedin, setEditLinkedin] = useState('');
+  const [editLinkedinNote, setEditLinkedinNote] = useState('');
+  const [copiedNote, setCopiedNote] = useState(false);
   const [editStatus, setEditStatus] = useState('drafted');
 
   useEffect(() => {
@@ -92,7 +103,9 @@ export function LeadDetailDrawer({
           setEditScore(l.priority_score || 0);
           setEditSubject(l.email_subject || l.email_draft_subject || '');
           setEditBody(l.email_body_text || l.email_draft_body || '');
-          setEditLinkedin(l.contact_linkedin_url || '');
+          const firstKeyPerson = json.companyIntel?.key_people?.[0];
+          setEditLinkedin(l.contact_linkedin_url || firstKeyPerson?.linkedin_url || '');
+          setEditLinkedinNote(l.linkedin_connection_note || firstKeyPerson?.connection_note || '');
           setEditStatus(l.outreach_status || 'drafted');
         }
       } catch (err) {
@@ -318,6 +331,7 @@ export function LeadDetailDrawer({
           email_subject: editSubject,
           email_body_text: editBody,
           contact_linkedin_url: editLinkedin,
+          linkedin_connection_note: editLinkedinNote,
           outreach_status: editStatus,
         }),
       });
@@ -331,6 +345,17 @@ export function LeadDetailDrawer({
       setFeedback({ type: 'error', message: 'Failed to save changes' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const copyNoteToClipboard = (text: string) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedNote(true);
+      setTimeout(() => setCopiedNote(false), 2000);
+    } catch (err) {
+      console.error('Failed copying to clipboard', err);
     }
   };
 
@@ -684,6 +709,141 @@ export function LeadDetailDrawer({
                       }`}
                     >
                       Personal Inbox {editPersonalEmail ? '(@gmail)' : ''}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dual-Attack Channel: LinkedIn Decision Maker & Connection Note */}
+              <div className="liquid-glass rounded-2xl p-5 border border-sky-200/80 shadow-2xs space-y-4 bg-gradient-to-br from-white/95 to-sky-50/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-2xs shrink-0">
+                      <LinkedInIcon className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-sky-950 flex items-center gap-1.5">
+                        Dual-Attack: LinkedIn Decision Maker
+                      </h3>
+                      <p className="text-[10px] text-sky-700">Non-login public OSINT • Tailored connection note &lt; 300 chars</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
+                    Dual Channel
+                  </span>
+                </div>
+
+                {/* Multiple Discovered People Selector (if available) */}
+                {intel?.key_people && intel.key_people.length > 0 && (
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-semibold text-zinc-600 block">
+                      Discovered Company Leadership ({intel.key_people.length}):
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {intel.key_people.map((person: any, idx: number) => {
+                        const isSelected = editLinkedin === person.linkedin_url;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              if (person.name) setEditName(person.name);
+                              if (person.role) setEditRole(person.role);
+                              if (person.persona) setEditPersona(person.persona);
+                              if (person.linkedin_url) setEditLinkedin(person.linkedin_url);
+                              if (person.connection_note) setEditLinkedinNote(person.connection_note);
+                            }}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border text-left transition flex items-center gap-2 cursor-pointer ${
+                              isSelected
+                                ? 'bg-sky-600 text-white border-sky-700 shadow-2xs'
+                                : 'bg-white/90 text-zinc-700 border-zinc-200 hover:border-sky-300 hover:bg-sky-50/60'
+                            }`}
+                          >
+                            <span className="font-semibold">{person.name}</span>
+                            <span className={`text-[10px] opacity-80 ${isSelected ? 'text-sky-100' : 'text-zinc-500'}`}>
+                              ({person.role})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* LinkedIn Profile Link Input & External Open */}
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 block mb-1">LinkedIn Profile Link</label>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        type="url"
+                        value={editLinkedin}
+                        onChange={(e) => setEditLinkedin(e.target.value)}
+                        placeholder="https://www.linkedin.com/in/username"
+                        className="w-full bg-white border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 shadow-2xs font-mono"
+                      />
+                    </div>
+                    {editLinkedin ? (
+                      <a
+                        href={editLinkedin}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-2 rounded-xl text-xs font-bold text-sky-700 bg-sky-100/80 hover:bg-sky-200/80 border border-sky-300 transition flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+                        title="Open LinkedIn Profile in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open Profile</span>
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Personalized Connection Note */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-semibold text-zinc-600">Tailored Connection Note (&lt; 300 chars)</label>
+                    <span
+                      className={`text-[11px] font-mono font-bold ${
+                        editLinkedinNote.length > 300
+                          ? 'text-rose-600'
+                          : editLinkedinNote.length >= 250
+                          ? 'text-amber-600'
+                          : 'text-emerald-700'
+                      }`}
+                    >
+                      {editLinkedinNote.length}/300 chars
+                    </span>
+                  </div>
+
+                  <textarea
+                    rows={3}
+                    value={editLinkedinNote}
+                    onChange={(e) => setEditLinkedinNote(e.target.value)}
+                    placeholder="Hi there, really impressed by what you're building..."
+                    className="w-full bg-white border border-zinc-200/90 rounded-xl p-3 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 shadow-2xs font-sans leading-relaxed"
+                  />
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-zinc-500">
+                      Copy note and paste directly into LinkedIn "Add a note" modal
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyNoteToClipboard(editLinkedinNote)}
+                      disabled={!editLinkedinNote}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 disabled:opacity-40"
+                    >
+                      {copiedNote ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-300" />
+                          <span>Copied to Clipboard!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-sky-200" />
+                          <span>Copy Note</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

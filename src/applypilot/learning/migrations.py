@@ -287,10 +287,12 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
             open_roles_json     TEXT,
             funding_stage       TEXT,
             ai_focus_tags       TEXT,
+            key_people_json     TEXT,
             researched_at       TEXT NOT NULL,
             expires_at          TEXT NOT NULL
         )
     """)
+    _add_column_if_missing(conn, "company_intel", "key_people_json", "TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_intel_domain ON company_intel(official_domain)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_intel_expires ON company_intel(expires_at)")
 

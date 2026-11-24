@@ -383,6 +383,7 @@ def init_db(db_path: Path | str | sqlite3.Connection | None = None) -> sqlite3.C
             open_roles_json     TEXT,
             funding_stage       TEXT,
             ai_focus_tags       TEXT,
+            key_people_json     TEXT,
             researched_at       TEXT NOT NULL,
             expires_at          TEXT NOT NULL
         )
@@ -2923,6 +2924,7 @@ def store_recruiter_lead(
     contact_linkedin_url: str | None = None,
     linkedin_connection_note: str | None = None,
     contact_type: str = "recruiter",
+    persona: str | None = None,
     source_platform: str | None = None,
     source_post_url: str | None = None,
     evidence_snippet: str | None = None,
@@ -2938,21 +2940,23 @@ def store_recruiter_lead(
         conn = get_connection()
     lid = lead_id or f"lead_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
+    eff_persona = persona or contact_type
     conn.execute(
         """
         INSERT INTO recruiter_leads (
             lead_id, job_id, company_name, company_domain, role_title,
             contact_name, contact_linkedin_url, linkedin_connection_note,
-            contact_email, contact_type, source_platform, source_post_url,
+            contact_email, contact_type, persona, source_platform, source_post_url,
             evidence_snippet, special_instructions_json, execution_route,
             outreach_status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(contact_email, role_title) DO UPDATE SET
             company_name = COALESCE(excluded.company_name, recruiter_leads.company_name),
             company_domain = COALESCE(excluded.company_domain, recruiter_leads.company_domain),
             contact_name = COALESCE(excluded.contact_name, recruiter_leads.contact_name),
             contact_linkedin_url = COALESCE(excluded.contact_linkedin_url, recruiter_leads.contact_linkedin_url),
             linkedin_connection_note = COALESCE(excluded.linkedin_connection_note, recruiter_leads.linkedin_connection_note),
+            persona = COALESCE(excluded.persona, recruiter_leads.persona),
             source_platform = COALESCE(excluded.source_platform, recruiter_leads.source_platform),
             source_post_url = COALESCE(excluded.source_post_url, recruiter_leads.source_post_url),
             evidence_snippet = COALESCE(excluded.evidence_snippet, recruiter_leads.evidence_snippet),
@@ -2962,7 +2966,7 @@ def store_recruiter_lead(
         (
             lid, job_id, company_name, company_domain, role_title,
             contact_name, contact_linkedin_url, linkedin_connection_note,
-            contact_email, contact_type, source_platform, source_post_url,
+            contact_email, contact_type, eff_persona, source_platform, source_post_url,
             evidence_snippet, special_instructions_json, execution_route,
             outreach_status, now,
         ),
@@ -3345,14 +3349,17 @@ def save_company_intel(intel_data: dict, conn: sqlite3.Connection | None = None)
     ai_focus_tags = intel_data.get("ai_focus_tags")
     if isinstance(ai_focus_tags, (list, set)):
         ai_focus_tags = json.dumps(list(ai_focus_tags))
+    key_people_json = intel_data.get("key_people_json")
+    if isinstance(key_people_json, (list, dict)):
+        key_people_json = json.dumps(key_people_json)
 
     conn.execute(
         """
         INSERT OR REPLACE INTO company_intel (
             domain_or_name, company_name, official_domain, wikipedia_summary,
             github_org, tech_stack_json, open_roles_json, funding_stage,
-            ai_focus_tags, researched_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ai_focus_tags, key_people_json, researched_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             key,
@@ -3364,6 +3371,7 @@ def save_company_intel(intel_data: dict, conn: sqlite3.Connection | None = None)
             open_roles_json or "[]",
             intel_data.get("funding_stage", ""),
             ai_focus_tags or "[]",
+            key_people_json or "[]",
             researched_at,
             expires_at,
         ),
