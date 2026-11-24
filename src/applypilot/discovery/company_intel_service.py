@@ -86,11 +86,15 @@ class CompanyIntelService:
                 cached = get_company_intel(c_name.lower(), conn=self.conn)
 
             if cached:
-                logger.debug("Reusing cached intel for company %s (key=%s)", c_name, cache_key)
-                return self._format_intel_dict(cached)
+                intel_dict = self._format_intel_dict(cached)
+                logger.info(
+                    "⚡ [Cache Hit] Reusing 30-day cached intel for '%s' (domain: %s) -> Stack: %s | AI Tags: %s",
+                    c_name, c_domain, intel_dict.get("tech_stack", [])[:5], intel_dict.get("ai_focus_tags", [])
+                )
+                return intel_dict
 
         # 2. Cache miss -> Perform fresh investigation
-        logger.info("Performing fresh company research for '%s' (domain=%s)", c_name, c_domain)
+        logger.info("🔎 [Online OSINT] Researching company '%s' (domain: %s)...", c_name, c_domain)
         conn = self.conn or get_connection()
 
         # (a) Check local database for existing open jobs
@@ -114,6 +118,8 @@ class CompanyIntelService:
                 }
                 for r in rows
             ]
+            if local_jobs:
+                logger.info("   ├─ Local Jobs DB: Matched %d active job openings for %s", len(local_jobs), c_name)
         except Exception as e:
             logger.debug("Local jobs lookup error for %s: %s", c_name, e)
 
@@ -124,6 +130,9 @@ class CompanyIntelService:
             wiki_res = investigate_company_wikipedia(c_name)
             if wiki_res.get("found"):
                 wiki_summary = wiki_res.get("summary", "")
+                logger.info("   ├─ Wikipedia: Found %d-char summary (%s)", len(wiki_summary), wiki_summary[:60] + "...")
+            else:
+                logger.info("   ├─ Wikipedia: No Wikipedia entry found for %s", c_name)
         except Exception as e:
             logger.debug("Wikipedia query failed for %s: %s", c_name, e)
 
@@ -143,6 +152,9 @@ class CompanyIntelService:
                     for tech in ["react", "fastapi", "docker", "kubernetes", "postgres", "redis", "pytorch", "next.js", "three.js", "playwright"]:
                         if tech in desc:
                             tech_stack.add(tech.title())
+                logger.info("   ├─ GitHub Org (%s): Found %d public repos, detected tech stack: %s", slug, len(gh_repos), list(tech_stack) if tech_stack else 'None')
+            else:
+                logger.info("   ├─ GitHub Org (%s): No public repositories found", slug)
         except Exception as e:
             logger.debug("GitHub org query failed for %s: %s", c_name, e)
 
@@ -174,6 +186,8 @@ class CompanyIntelService:
         # (e) Detect AI focus tags
         combined_text = f"{c_name} {wiki_summary} {' '.join(tech_stack)} {' '.join(j['title'] for j in local_jobs)}"
         ai_tags = _detect_ai_focus(combined_text, list(tech_stack))
+        if ai_tags:
+            logger.info("   ├─ AI Focus Vectors: %s", ai_tags)
 
         # (f) Persist to company_intel
         now = datetime.now(timezone.utc)
@@ -194,6 +208,7 @@ class CompanyIntelService:
 
         try:
             save_company_intel(intel_record, conn=conn)
+            logger.info("   └─ Stored in SQLite 'company_intel' table (30-day cache until %s)", expires.strftime("%Y-%m-%d"))
         except Exception as e:
             logger.warning("Failed saving company_intel for %s: %s", cache_key, e)
 

@@ -972,6 +972,9 @@ def run_top_pick_outreach(
             conn.close()
         return {"total_selected": 0, "drafted": 0, "sent": 0, "mode": mode, "leads": []}
 
+    if mode == "draft":
+        logger.info("🛡️ [Safety Lock] Running in DRAFT mode. Zero emails will be sent. Drafts and company intelligence will be stored in SQLite.")
+
     generator = BatchDraftGenerator(batch_size=12)
     drafts = generator.generate_drafts_for_leads(top_leads)
     draft_map = {d["lead_id"]: d for d in drafts}
@@ -998,6 +1001,8 @@ def run_top_pick_outreach(
         resume_pdf = find_resume_pdf(role_title, company)
 
         if dry_run:
+            logger.info("🔍 [Dry Run Preview] %s (%s at %s) | Persona: %s | Score: %d", to_email, role_title, company, persona.upper(), priority_score)
+            logger.info("   └─ Subject: \"%s\"", subject)
             processed_leads.append({
                 "lead_id": lid,
                 "email": to_email,
@@ -1054,6 +1059,14 @@ def run_top_pick_outreach(
             (outreach_status, lid),
         )
         conn.commit()
+
+        logger.info(
+            "📝 [Draft Stored in DB] %s (%s at %s) -> Persona: %s | Score: %d/100 | Status: %s",
+            to_email, role_title, company, persona.upper(), priority_score, outreach_status.upper()
+        )
+        logger.info("   ├─ Subject: \"%s\"", subject)
+        logger.info("   ├─ Body: \"%s...\"", body_text[:140].replace('\n', ' '))
+        logger.info("   └─ Resume PDF Attached: %s", resume_pdf or "None (default)")
 
         processed_leads.append({
             "lead_id": lid,
