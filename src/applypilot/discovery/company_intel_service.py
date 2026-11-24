@@ -237,7 +237,50 @@ class CompanyIntelService:
         except Exception as e:
             logger.debug("LinkedIn people finder error for %s: %s", c_name, e)
 
-        # (g) Persist to company_intel
+        # (g) Deep Web Searcher for Page 1 & 2 organic articles & milestones
+        observed_emails: list[str] = []
+        try:
+            from applypilot.discovery.deep_web_searcher import DeepWebSearcher
+            searcher = DeepWebSearcher()
+            deep_web_data = searcher.search_and_analyze_company(c_name, domain=c_domain)
+            observed_emails.extend(deep_web_data.get("discovered_emails", []))
+            for m in deep_web_data.get("company_milestones", []):
+                if m not in wiki_summary:
+                    wiki_summary = f"{wiki_summary} {m}".strip()
+        except Exception as e:
+            logger.debug("Deep web searcher notice for %s: %s", c_name, e)
+
+        # (h) Social Hiring Harvester for LinkedIn & X Posts
+        hiring_posts: list[dict[str, Any]] = []
+        try:
+            from applypilot.discovery.social_hiring_harvester import SocialHiringHarvester
+            social_harvester = SocialHiringHarvester(conn=conn)
+            hiring_posts = social_harvester.harvest_company_hiring_posts(c_name, domain=c_domain)
+            if hiring_posts:
+                social_harvester.persist_posts_to_leads(hiring_posts, c_name, c_domain, conn=conn)
+                for hp in hiring_posts:
+                    observed_emails.extend(hp.get("embedded_emails", []))
+                logger.info("   ├─ [Social Hiring] Harvested %d public hiring posts for %s", len(hiring_posts), c_name)
+        except Exception as e:
+            logger.debug("Social hiring harvester notice for %s: %s", c_name, e)
+
+        # (i) Deduce Corporate Email Pattern & Apply to Key Leadership
+        detected_pattern = "{first}.{last}"
+        pattern_confidence = 0.60
+        try:
+            from applypilot.discovery.email_pattern_engine import EmailPatternEngine
+            pattern_engine = EmailPatternEngine()
+            pattern_res = pattern_engine.deduce_pattern(observed_emails, sample_people=key_people, domain=c_domain)
+            detected_pattern = pattern_res.get("pattern", "{first}.{last}")
+            pattern_confidence = pattern_res.get("confidence", 0.60)
+            logger.info("   ├─ [Email Pattern] Deduced '%s' (confidence: %.2f) from %d emails", detected_pattern, pattern_confidence, len(observed_emails))
+
+            if key_people:
+                key_people = pattern_engine.apply_pattern_to_people(key_people, domain=c_domain or c_name.lower(), pattern=detected_pattern, confidence=pattern_confidence)
+        except Exception as e:
+            logger.debug("Email pattern deduction notice for %s: %s", c_name, e)
+
+        # (j) Persist to company_intel
         now = datetime.now(timezone.utc)
         expires = now + timedelta(days=30)
         intel_record = {
@@ -251,6 +294,9 @@ class CompanyIntelService:
             "funding_stage": funding_stage,
             "ai_focus_tags": ai_tags,
             "key_people_json": key_people,
+            "detected_email_pattern": detected_pattern,
+            "email_pattern_confidence": pattern_confidence,
+            "hiring_posts_json": hiring_posts,
             "researched_at": now.isoformat(),
             "expires_at": expires.isoformat(),
         }
@@ -333,6 +379,15 @@ class CompanyIntelService:
         elif not isinstance(key_people, list):
             key_people = []
 
+        hiring_posts = row.get("hiring_posts_json")
+        if isinstance(hiring_posts, str):
+            try:
+                hiring_posts = json.loads(hiring_posts)
+            except Exception:
+                hiring_posts = []
+        elif not isinstance(hiring_posts, list):
+            hiring_posts = []
+
         return {
             "company_name": row.get("company_name", ""),
             "official_domain": row.get("official_domain", ""),
@@ -343,6 +398,9 @@ class CompanyIntelService:
             "funding_stage": row.get("funding_stage", ""),
             "ai_focus_tags": ai_tags,
             "key_people": key_people,
+            "detected_email_pattern": row.get("detected_email_pattern"),
+            "email_pattern_confidence": float(row.get("email_pattern_confidence") or 0.0),
+            "hiring_posts": hiring_posts,
             "researched_at": row.get("researched_at", ""),
             "expires_at": row.get("expires_at", ""),
         }

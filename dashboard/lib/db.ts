@@ -847,16 +847,19 @@ export function getLeadDetail(lead_id: string) {
         let open_roles: any[] = [];
         let ai_focus_tags: string[] = [];
         let key_people: any[] = [];
+        let hiring_posts: any[] = [];
         try { tech_stack = JSON.parse(intelRow.tech_stack_json || '[]'); } catch {}
         try { open_roles = JSON.parse(intelRow.open_roles_json || '[]'); } catch {}
         try { ai_focus_tags = JSON.parse(intelRow.ai_focus_tags || '[]'); } catch {}
         try { key_people = JSON.parse(intelRow.key_people_json || '[]'); } catch {}
+        try { hiring_posts = JSON.parse(intelRow.hiring_posts_json || '[]'); } catch {}
         companyIntel = {
           ...intelRow,
           tech_stack,
           open_roles,
           ai_focus_tags,
           key_people,
+          hiring_posts,
         };
       }
     } catch {}

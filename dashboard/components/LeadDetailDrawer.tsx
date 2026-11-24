@@ -28,6 +28,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  MessageSquare,
 } from 'lucide-react';
 
 function LinkedInIcon({ className }: { className?: string }) {
@@ -75,6 +76,7 @@ export function LeadDetailDrawer({
   const [editLinkedin, setEditLinkedin] = useState('');
   const [editLinkedinNote, setEditLinkedinNote] = useState('');
   const [copiedNote, setCopiedNote] = useState(false);
+  const [insertedQuote, setInsertedQuote] = useState(false);
   const [editStatus, setEditStatus] = useState('drafted');
 
   useEffect(() => {
@@ -656,6 +658,16 @@ export function LeadDetailDrawer({
                       placeholder="jane@company.com"
                       className="w-full bg-white/80 border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-mono"
                     />
+                    {intel?.detected_email_pattern && (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg font-mono">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        <span className="font-semibold">Pattern Confirmed:</span>
+                        <span>{intel.detected_email_pattern}</span>
+                        {intel.email_pattern_confidence ? (
+                          <span className="text-emerald-600 font-bold">({Math.round(intel.email_pattern_confidence * 100)}% conf)</span>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -848,6 +860,68 @@ export function LeadDetailDrawer({
                   </div>
                 </div>
               </div>
+
+              {/* Active Social Hiring Announcements (LinkedIn / X Posts) */}
+              {intel?.hiring_posts && intel.hiring_posts.length > 0 && (
+                <div className="liquid-glass rounded-2xl p-4.5 border border-amber-200/80 shadow-2xs space-y-3 bg-gradient-to-br from-amber-50/50 to-orange-50/30 text-zinc-900">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                      Public Hiring Post &amp; Quote Hook
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                      Smoking Gun Signal
+                    </span>
+                  </div>
+
+                  {intel.hiring_posts.slice(0, 2).map((post: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-white/90 rounded-xl border border-amber-200/60 shadow-2xs space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-zinc-800 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500" />
+                          {post.author_name || 'Hiring Lead'}
+                          <span className="text-[10px] text-zinc-500 font-normal">
+                            ({post.platform === 'linkedin_post' ? 'LinkedIn' : 'X'})
+                          </span>
+                        </span>
+                        {post.post_url && (
+                          <a
+                            href={post.post_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-amber-700 hover:text-amber-900 flex items-center gap-1 font-semibold"
+                          >
+                            <span>View Post</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-zinc-600 leading-relaxed italic bg-amber-50/60 p-2 rounded-lg border border-amber-100">
+                        "{post.post_quote}"
+                      </p>
+
+                      <div className="flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const quoteRef = `\n\nP.S. Saw your post mentioning: "${post.post_quote.slice(0, 100)}...". As an engineer passionate about this problem, I'd love to contribute directly.`;
+                            if (!editBody.includes(post.post_quote.slice(0, 40))) {
+                              setEditBody(editBody + quoteRef);
+                              setInsertedQuote(true);
+                              setTimeout(() => setInsertedQuote(false), 2500);
+                            }
+                          }}
+                          className="text-[11px] font-bold text-amber-800 bg-amber-100/80 hover:bg-amber-200/80 px-2.5 py-1 rounded-lg border border-amber-300 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-600" />
+                          <span>{insertedQuote ? 'Inserted into Draft!' : 'Insert Post Hook into Email'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Email Content Editor */}
               <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">

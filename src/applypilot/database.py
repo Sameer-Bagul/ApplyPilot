@@ -384,6 +384,9 @@ def init_db(db_path: Path | str | sqlite3.Connection | None = None) -> sqlite3.C
             funding_stage       TEXT,
             ai_focus_tags       TEXT,
             key_people_json     TEXT,
+            detected_email_pattern TEXT,
+            email_pattern_confidence REAL,
+            hiring_posts_json   TEXT,
             researched_at       TEXT NOT NULL,
             expires_at          TEXT NOT NULL
         )
@@ -3352,14 +3355,18 @@ def save_company_intel(intel_data: dict, conn: sqlite3.Connection | None = None)
     key_people_json = intel_data.get("key_people_json")
     if isinstance(key_people_json, (list, dict)):
         key_people_json = json.dumps(key_people_json)
+    hiring_posts_json = intel_data.get("hiring_posts_json")
+    if isinstance(hiring_posts_json, (list, dict)):
+        hiring_posts_json = json.dumps(hiring_posts_json)
 
     conn.execute(
         """
         INSERT OR REPLACE INTO company_intel (
             domain_or_name, company_name, official_domain, wikipedia_summary,
             github_org, tech_stack_json, open_roles_json, funding_stage,
-            ai_focus_tags, key_people_json, researched_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ai_focus_tags, key_people_json, detected_email_pattern,
+            email_pattern_confidence, hiring_posts_json, researched_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             key,
@@ -3372,6 +3379,9 @@ def save_company_intel(intel_data: dict, conn: sqlite3.Connection | None = None)
             intel_data.get("funding_stage", ""),
             ai_focus_tags or "[]",
             key_people_json or "[]",
+            intel_data.get("detected_email_pattern"),
+            float(intel_data.get("email_pattern_confidence") or 0.0),
+            hiring_posts_json or "[]",
             researched_at,
             expires_at,
         ),
