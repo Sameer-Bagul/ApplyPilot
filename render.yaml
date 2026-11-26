@@ -1,41 +1,37 @@
 services:
+  # Option A: Full Docker Container (Python Engine + Next.js UI + Background Workers + Playwright)
   - type: web
-    name: applypilot-dashboard
-    runtime: node
+    name: applypilot-app
+    runtime: docker
     plan: starter
-    rootDir: dashboard
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    region: oregon
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     disk:
       name: applypilot-data
-      mountPath: /var/data
+      mountPath: /home/applypilot/data
       sizeGB: 5
     envVars:
+      - key: PORT
+        value: 10000
       - key: NODE_ENV
         value: production
+      - key: START_MARATHON
+        value: "false" # Set to true to run 24/7 autonomous job discovery & applying
       - key: NEXTAUTH_SECRET
         generateValue: true
       - key: NEXTAUTH_URL
         fromService:
           type: web
-          name: applypilot-dashboard
+          name: applypilot-app
           property: host
       - key: ALLOWED_EMAILS
         value: sameerbagul2004@gmail.com
       - key: ADMIN_PASSCODE
         sync: false
       - key: APPLYPILOT_DB_PATH
-        value: /var/data/applypilot.db
-      - key: TURSO_DATABASE_URL
+        value: /home/applypilot/data/applypilot.db
+      - key: GEMINI_API_KEY
         sync: false
-      - key: TURSO_AUTH_TOKEN
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
+      - key: RESEND_API_KEY
         sync: false

@@ -1682,7 +1682,7 @@ def _find_dashboard_dir() -> Optional[Path]:
 @app.command()
 def dashboard(
     serve: bool = typer.Option(False, "--serve", "-s", help="Serve legacy dashboard over HTTP."),
-    port: int = typer.Option(3000, "--port", "-p", help="HTTP port when serving."),
+    port: int = typer.Option(int(os.environ.get("PORT", 3000)), "--port", "-p", help="HTTP port when serving."),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host address to bind when serving."),
     next_ui: bool = typer.Option(True, "--next/--legacy", help="Launch the Next.js iOS liquid-glass dashboard (default: Next.js)."),
 ) -> None:

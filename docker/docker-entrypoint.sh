@@ -29,15 +29,17 @@ shopt -u nullglob
 # Ensure database tables and config directory exist
 applypilot status >/dev/null 2>&1 || true
 
+TARGET_PORT="${PORT:-3000}"
+
 # If START_UI or START_DASHBOARD is enabled, launch Next.js in background
 if [ "${START_UI:-false}" = "true" ] || [ "${START_DASHBOARD:-false}" = "true" ]; then
-    echo "[ApplyPilot] Starting Next.js UI Dashboard in background on http://0.0.0.0:3000..."
+    echo "[ApplyPilot] Starting Next.js UI Dashboard in background on http://0.0.0.0:${TARGET_PORT}..."
     (
         cd "$APP_DIR/dashboard"
         if [ -d ".next" ]; then
-            exec npx next start -H 0.0.0.0 -p 3000
+            exec npx next start -H 0.0.0.0 -p "${TARGET_PORT}"
         else
-            exec npx next dev -H 0.0.0.0 -p 3000
+            exec npx next dev -H 0.0.0.0 -p "${TARGET_PORT}"
         fi
     ) &
 fi
@@ -60,12 +62,12 @@ case "$1" in
             echo "[ApplyPilot] Starting background apply worker daemon..."
             applypilot apply --workers "${WORKERS:-2}" &
         fi
-        echo "[ApplyPilot] Starting Next.js Dashboard & REST APIs on http://0.0.0.0:3000..."
-        exec applypilot dashboard --host 0.0.0.0 --port 3000
+        echo "[ApplyPilot] Starting Next.js Dashboard & REST APIs on http://0.0.0.0:${TARGET_PORT}..."
+        exec applypilot dashboard --host 0.0.0.0 --port "${TARGET_PORT}"
         ;;
     dashboard)
         shift
-        exec applypilot dashboard --host 0.0.0.0 --port 3000 "$@"
+        exec applypilot dashboard --host 0.0.0.0 --port "${TARGET_PORT}" "$@"
         ;;
     init|run|apply|status|track|learn|mcp|qa|creds|run-daily|discover-all|harvest-vc-boards|import-fundraising-founders|import-startupmap-one|loop-companies|harvest-all-directories|marathon|match-jobs|harvest-emails|outreach|outreach-top-picks)
         exec applypilot "$@"
