@@ -38,6 +38,29 @@ CLOSED_OR_MISSING_PATTERNS = [
 
 _COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in CLOSED_OR_MISSING_PATTERNS]
 
+# Common phrases indicating verified successful application submission
+SUCCESS_SUBMISSION_PATTERNS = [
+    r"\bthank\s+you\s+(?:for\s+)?(?:your\s+)?application\b",
+    r"\bthank\s+you\s+for\s+applying\b",
+    r"\bapplication\s+(?:has\s+been\s+|was\s+)?(?:successfully\s+)?(?:submitted|received)\b",
+    r"\byour\s+application\s+(?:has\s+been\s+|was\s+)?(?:received|submitted)\b",
+    r"\bwe(?:'ve|\s+have)\s+received\s+your\s+(?:application|submission)\b",
+    r"\bwe\s+received\s+your\s+application\b",
+    r"\bsubmission\s+(?:successful|received|complete)\b",
+    r"\bthanks\s+for\s+applying\b",
+    r"\byou(?:'ve|\s+have)\s+successfully\s+applied\b",
+    r"\byour\s+application\s+was\s+sent\b",
+    r"\bapplication\s+complete\b",
+    r"\bapplication\s+confirmation\b",
+    r"\byour\s+application\s+is\s+on\s+its\s+way\b",
+    r"\bwe\s+will\s+review\s+your\s+application\b",
+    r"\bwe\s+look\s+forward\s+to\s+reviewing\s+your\s+application\b",
+    r"\bapplication\s+was\s+received\b",
+    r"\bapplication\s+submitted\s+successfully\b",
+]
+
+_COMPILED_SUCCESS_PATTERNS = [re.compile(p, re.IGNORECASE) for p in SUCCESS_SUBMISSION_PATTERNS]
+
 
 def get_tesseract_binary() -> str | None:
     """Find the path to the Tesseract binary."""
@@ -156,4 +179,118 @@ def detect_closed_or_missing_job_from_ocr(ocr_text: str) -> tuple[bool, str]:
             return True, f"OCR visual detection: '{matched_phrase}'"
 
     return False, ""
+
+
+def detect_submission_success_from_ocr(ocr_text: str) -> tuple[bool, str]:
+    """Inspect OCR text for visual signals of successful form submission.
+
+    Args:
+        ocr_text: Raw string extracted from viewport screenshot.
+
+    Returns:
+        (is_success, matched_phrase) tuple.
+    """
+    if not ocr_text:
+        return False, ""
+
+    clean_text = " ".join(ocr_text.split())
+    for pattern in _COMPILED_SUCCESS_PATTERNS:
+        match = pattern.search(clean_text)
+        if match:
+            matched_phrase = match.group(0)
+            return True, f"OCR confirmation detection: '{matched_phrase}'"
+
+    return False, ""
+
+
+async def verify_submission_image_with_ai(image_path: str | Path, timeout_sec: float = 12.0) -> tuple[bool, str]:
+    """Inspect screenshot using Gemini Vision / OpenRouter fallback if Tesseract is inconclusive.
+
+    Args:
+        image_path: Path to PNG screenshot.
+        timeout_sec: Timeout for LLM inspection call.
+
+    Returns:
+        (is_confirmed, proof_detail)
+    """
+    import base64
+    import os
+    import httpx
+
+    img_p = Path(image_path)
+    if not img_p.exists():
+        return False, "Screenshot file not found"
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+    if not gemini_key and not openrouter_key:
+        return False, "No Gemini/OpenRouter API key configured for visual inspection"
+
+    try:
+        data = img_p.read_bytes()
+        b64_img = base64.b64encode(data).decode("utf-8")
+        prompt_text = (
+            "Analyze this webpage screenshot carefully. Did a job application submit successfully? "
+            "Look for 'Thank you for applying', 'Application submitted', 'Application received', or similar confirmation messages. "
+            "Respond in JSON format: {\"confirmed\": true|false, \"reason\": \"<brief quote or reason>\"}"
+        )
+
+        async with httpx.AsyncClient(timeout=timeout_sec) as client:
+            if gemini_key:
+                # Direct Gemini 1.5/2.0 Flash REST endpoint
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+                payload = {
+                    "contents": [{
+                        "parts": [
+                            {"text": prompt_text},
+                            {
+                                "inline_data": {
+                                    "mime_type": "image/png",
+                                    "data": b64_img,
+                                }
+                            }
+                        ]
+                    }],
+                    "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
+                }
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    import json
+                    rj = resp.json()
+                    cands = rj.get("candidates", [])
+                    if cands:
+                        raw_txt = cands[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        parsed = json.loads(raw_txt)
+                        if parsed.get("confirmed"):
+                            return True, f"Gemini Vision proof: {parsed.get('reason')}"
+            elif openrouter_key:
+                # OpenRouter multimodal endpoint
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {openrouter_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": "google/gemini-2.0-flash-001",
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_img}"}}
+                        ]
+                    }],
+                    "temperature": 0.0,
+                    "response_format": {"type": "json_object"}
+                }
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    import json
+                    rj = resp.json()
+                    raw_txt = rj["choices"][0]["message"]["content"]
+                    parsed = json.loads(raw_txt)
+                    if parsed.get("confirmed"):
+                        return True, f"OpenRouter Vision proof: {parsed.get('reason')}"
+    except Exception as e:
+        logger.debug("Visual AI verification error: %s", e)
+
+    return False, ""
+
 

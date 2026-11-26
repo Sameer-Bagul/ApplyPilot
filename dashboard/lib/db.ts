@@ -94,8 +94,23 @@ export function getDb(): DatabaseSync {
   const dbPath = process.env.APPLYPILOT_DB_PATH || path.join(os.homedir(), '.applypilot', 'applypilot.db');
   
   try {
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
     // Open in read-write mode to support interactive CRUD operations
     _db = new DatabaseSync(dbPath);
+    try {
+      _db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
+        CREATE INDEX IF NOT EXISTS idx_leads_company_name ON recruiter_leads(company_name);
+        CREATE INDEX IF NOT EXISTS idx_watchlist_tier ON career_watchlist(priority_tier);
+        CREATE INDEX IF NOT EXISTS idx_watchlist_vip ON career_watchlist(is_vip);
+        CREATE INDEX IF NOT EXISTS idx_watchlist_name ON career_watchlist(company_name);
+        CREATE INDEX IF NOT EXISTS idx_watchlist_area ON career_watchlist(area);
+        CREATE INDEX IF NOT EXISTS idx_watchlist_stage ON career_watchlist(stage);
+      `);
+    } catch {}
     return _db;
   } catch (err) {
     throw new Error(`ApplyPilot database could not be opened at ${dbPath}: ${err}`);
@@ -128,7 +143,7 @@ export function getDashboardStats(): StatsData {
   const totalCompanies = (db.prepare('SELECT COUNT(*) as c FROM career_watchlist').get() as any)?.c || 0;
   const totalLeads = (db.prepare('SELECT COUNT(*) as c FROM recruiter_leads').get() as any)?.c || 0;
   const vipCompanies = (db.prepare('SELECT COUNT(*) as c FROM career_watchlist WHERE is_vip = 1').get() as any)?.c || 0;
-  const appliedCount = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE state = 'applied' OR apply_status = 'applied' OR proof_video_path IS NOT NULL").get() as any)?.c || 0;
+  const appliedCount = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE (state = 'applied' OR apply_status = 'applied') AND state != 'ready_to_apply'").get() as any)?.c || 0;
 
   const dualAttack = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'DUAL_ATTACK'").get() as any)?.c || 0;
   const portalOnly = (db.prepare("SELECT COUNT(*) as c FROM jobs WHERE execution_route = 'PORTAL_ONLY'").get() as any)?.c || 0;
@@ -198,6 +213,9 @@ export function getJobs(params: {
   minScore?: number;
   ats?: string;
   location?: string;
+  workplace?: string;
+  category?: string;
+  sort?: string;
   page?: number;
   limit?: number;
 }) {
@@ -209,7 +227,7 @@ export function getJobs(params: {
   let query = `
     SELECT url, application_url, title, company, location, site, execution_route, fit_score, 
            discovered_at, applied_at, state, description, salary, score_reasoning,
-           proof_video_path, proof_screenshot_path, proof_log_path, apply_status
+           proof_video_path, proof_screenshot_path, proof_log_path, apply_status, metadata_json
     FROM jobs 
     WHERE 1=1
   `;
@@ -241,6 +259,23 @@ export function getJobs(params: {
     queryParams.push(`%${params.location}%`);
   }
 
+  if (params.workplace && params.workplace !== 'ALL') {
+    const wp = params.workplace.toUpperCase();
+    if (wp === 'REMOTE') {
+      query += ` AND (metadata_json LIKE '%"workplace_type": "Remote"%' OR location LIKE '%Remote%' OR location LIKE '%Worldwide%' OR location LIKE '%Anywhere%')`;
+    } else if (wp === 'HYBRID') {
+      query += ` AND (metadata_json LIKE '%"workplace_type": "Hybrid"%' OR location LIKE '%Hybrid%')`;
+    } else if (wp === 'ONSITE') {
+      query += ` AND (metadata_json LIKE '%"workplace_type": "Onsite"%' OR (location NOT LIKE '%Remote%' AND location NOT LIKE '%Anywhere%'))`;
+    }
+  }
+
+  if (params.category && params.category !== 'ALL') {
+    const cat = params.category.toUpperCase();
+    query += ` AND (metadata_json LIKE ? OR title LIKE ?)`;
+    queryParams.push(`%"role_category": "${cat}"%`, `%${cat.replace('_', ' ')}%`);
+  }
+
   if (params.ats && params.ats !== 'ALL') {
     if (params.ats === 'workday') {
       query += ` AND site LIKE '%workday%'`;
@@ -270,10 +305,34 @@ export function getJobs(params: {
   const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
 
-  query += ` ORDER BY discovered_at DESC NULLS LAST LIMIT ? OFFSET ?`;
+  // Sorting / Ranking
+  const sortMode = params.sort || 'ranked';
+  if (sortMode === 'ranked' || sortMode === 'score') {
+    query += ` ORDER BY fit_score DESC NULLS LAST, discovered_at DESC NULLS LAST LIMIT ? OFFSET ?`;
+  } else if (sortMode === 'newest') {
+    query += ` ORDER BY discovered_at DESC NULLS LAST LIMIT ? OFFSET ?`;
+  } else if (sortMode === 'company') {
+    query += ` ORDER BY company ASC, fit_score DESC NULLS LAST LIMIT ? OFFSET ?`;
+  } else {
+    query += ` ORDER BY fit_score DESC NULLS LAST, discovered_at DESC NULLS LAST LIMIT ? OFFSET ?`;
+  }
   queryParams.push(limit, offset);
 
-  const jobs = db.prepare(query).all(...queryParams);
+  const rawJobs = db.prepare(query).all(...queryParams) as any[];
+
+  // Parse metadata_json safely for client UX
+  const jobs = rawJobs.map((j) => {
+    let parsedMetadata = null;
+    if (j.metadata_json) {
+      try {
+        parsedMetadata = JSON.parse(j.metadata_json);
+      } catch {}
+    }
+    return {
+      ...j,
+      metadata: parsedMetadata,
+    };
+  });
 
   return {
     jobs,
@@ -301,7 +360,7 @@ export function getAppliedJobs(params: {
            discovered_at, applied_at, state, description, salary, score_reasoning,
            proof_video_path, proof_screenshot_path, proof_log_path, apply_status, apply_duration_ms
     FROM jobs
-    WHERE (state = 'applied' OR apply_status = 'applied' OR proof_video_path IS NOT NULL OR proof_screenshot_path IS NOT NULL)
+    WHERE (state = 'applied' OR apply_status = 'applied') AND state != 'ready_to_apply'
   `;
   const queryParams: any[] = [];
 
@@ -450,14 +509,71 @@ export function deleteJob(url: string) {
   return db.prepare('DELETE FROM jobs WHERE url = ?').run(url);
 }
 
-export function getCompanies(params: {
+export function derivePuneCluster(area?: string | null, location?: string | null): string {
+  const combined = `${area || ''} ${location || ''}`.toLowerCase();
+  if (combined.includes('hinjawadi') || combined.includes('rgip')) return 'Hinjawadi';
+  if (combined.includes('magarpatta') || combined.includes('hadapsar')) return 'Magarpatta';
+  if (combined.includes('baner') || combined.includes('balewadi') || combined.includes('aundh')) return 'Baner';
+  if (combined.includes('kharadi') || combined.includes('eon') || combined.includes('wtc')) return 'Kharadi';
+  if (combined.includes('yerawada') || combined.includes('commerzone')) return 'Yerawada';
+  if (combined.includes('viman') || combined.includes('kalyani')) return 'Viman Nagar';
+  if (combined.includes('talawade') || combined.includes('pimpri') || combined.includes('chinchwad')) return 'PCMC';
+  if (combined.includes('pune')) return 'Pune (Other)';
+  if (/bengaluru|bangalore|hsr|koramangala|indiranagar|whitefield|manyata/.test(combined)) return 'Bengaluru';
+  if (combined.includes('remote') || combined.includes('distributed')) return 'Remote';
+  if (/us|usa|united states|san francisco|new york|seattle|california|london|uk/.test(combined)) return 'US / Global';
+  return 'Global Tech';
+}
+
+function parseTechStack(techRadarJson?: string | null, intelStackJson?: string | null, intelTagsJson?: string | null): string[] {
+  const set = new Set<string>();
+  if (techRadarJson) {
+    try {
+      const parsed = JSON.parse(techRadarJson);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((t) => typeof t === 'string' && set.add(t));
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.languages)) parsed.languages.forEach((t: any) => typeof t === 'string' && set.add(t));
+        if (Array.isArray(parsed.frameworks)) parsed.frameworks.forEach((t: any) => typeof t === 'string' && set.add(t));
+        if (Array.isArray(parsed.tools)) parsed.tools.forEach((t: any) => typeof t === 'string' && set.add(t));
+      }
+    } catch {}
+  }
+  if (intelStackJson) {
+    try {
+      const parsed = JSON.parse(intelStackJson);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((t) => typeof t === 'string' && set.add(t));
+      }
+    } catch {}
+  }
+  if (intelTagsJson) {
+    try {
+      const parsed = JSON.parse(intelTagsJson);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((t) => typeof t === 'string' && set.add(t));
+      }
+    } catch {}
+  }
+  return Array.from(set).slice(0, 6);
+}
+
+export interface GetCompaniesParams {
   search?: string;
+  tier?: string; // 'all' | 'vip' | 'p1' | 'p2' | 'p3' | 'gtm_excluded'
+  cluster?: string; // 'all' | 'pune' | 'magarpatta' | 'baner' | 'hinjawadi' | 'kharadi' | 'yerawada' | 'viman' | 'bangalore' | 'remote' | 'us'
   sector?: string;
   stage?: string;
   vipOnly?: boolean;
+  hasContacts?: boolean | string;
+  hasJobs?: boolean | string;
+  ats?: string;
+  sort?: string; // 'priority' | 'jobs_count' | 'leads_count' | 'name' | 'created_at'
   page?: number;
   limit?: number;
-}) {
+}
+
+export function getCompanies(params: GetCompaniesParams) {
   const db = getDb();
 
   // Sync any newly discovered companies from jobs into the companies catalog
@@ -472,64 +588,282 @@ export function getCompanies(params: {
   } catch {}
 
   const page = Math.max(1, params.page || 1);
-  const limit = Math.min(100, Math.max(1, params.limit || 20));
+  const limit = Math.min(100, Math.max(1, params.limit || 25));
   const offset = (page - 1) * limit;
 
-  let query = `
-    SELECT cw.company_id, cw.company_name, cw.official_domain, cw.careers_page_url, 
-           cw.ats_provider, cw.priority_tier, cw.is_vip, cw.stage, cw.sector, cw.area, 
-           cw.location, cw.team_size, cw.total_funding, cw.founders_json, 
-           cw.hr_contacts_json,
-           COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.company = cw.company_name), cw.open_roles_count, 0) as open_roles_count,
-           COALESCE((SELECT COUNT(*) FROM recruiter_leads rl WHERE rl.company_name = cw.company_name), 0) as leads_count,
-           cw.last_checked_at
-    FROM career_watchlist cw
-    WHERE 1=1
-  `;
+  let where = 'WHERE 1=1';
   const queryParams: any[] = [];
 
-  if (params.search) {
-    query += ` AND (cw.company_name LIKE ? OR cw.official_domain LIKE ? OR cw.area LIKE ? OR cw.sector LIKE ?)`;
-    const s = `%${params.search}%`;
-    queryParams.push(s, s, s, s);
+  // Search filter (company name, domain, area, sector, location)
+  if (params.search && params.search.trim()) {
+    where += ` AND (cw.company_name LIKE ? OR cw.official_domain LIKE ? OR cw.area LIKE ? OR cw.sector LIKE ? OR cw.location LIKE ?)`;
+    const s = `%${params.search.trim()}%`;
+    queryParams.push(s, s, s, s, s);
   }
 
-  if (params.vipOnly) {
-    query += ` AND cw.is_vip = 1`;
+  // Tier filter: all, vip (Tier 1), p1, p2, p3, gtm_excluded
+  if (params.tier === 'vip' || params.tier === 'p1' || params.vipOnly) {
+    where += ` AND (cw.is_vip = 1 OR cw.priority_tier = 1) AND (cw.stage IS NULL OR cw.stage != 'gtm_excluded')`;
+  } else if (params.tier === 'p2') {
+    where += ` AND cw.priority_tier = 2 AND (cw.is_vip = 0 OR cw.is_vip IS NULL) AND (cw.stage IS NULL OR cw.stage != 'gtm_excluded')`;
+  } else if (params.tier === 'p3') {
+    where += ` AND cw.priority_tier = 3 AND (cw.stage IS NULL OR cw.stage != 'gtm_excluded')`;
+  } else if (params.tier === 'gtm_excluded') {
+    where += ` AND cw.stage = 'gtm_excluded'`;
   }
 
+  // Cluster filter (Pune corridor or general location)
+  if (params.cluster && params.cluster !== 'all') {
+    const cl = params.cluster.toLowerCase();
+    if (cl === 'pune' || cl === 'all_pune') {
+      where += ` AND ((cw.area LIKE '%pune%' OR cw.area LIKE '%hinjawadi%' OR cw.area LIKE '%baner%' OR cw.area LIKE '%magarpatta%' OR cw.area LIKE '%kharadi%' OR cw.area LIKE '%yerawada%' OR cw.area LIKE '%viman%' OR cw.area LIKE '%talawade%' OR cw.area LIKE '%hadapsar%' OR cw.area LIKE '%aundh%' OR cw.area LIKE '%balewadi%') OR cw.location LIKE '%pune%')`;
+    } else if (cl === 'magarpatta') {
+      where += ` AND (cw.area LIKE '%magarpatta%' OR cw.area LIKE '%hadapsar%' OR cw.location LIKE '%magarpatta%')`;
+    } else if (cl === 'baner') {
+      where += ` AND (cw.area LIKE '%baner%' OR cw.area LIKE '%balewadi%' OR cw.area LIKE '%aundh%' OR cw.location LIKE '%baner%')`;
+    } else if (cl === 'hinjawadi') {
+      where += ` AND (cw.area LIKE '%hinjawadi%' OR cw.area LIKE '%rgip%' OR cw.location LIKE '%hinjawadi%')`;
+    } else if (cl === 'kharadi') {
+      where += ` AND (cw.area LIKE '%kharadi%' OR cw.area LIKE '%eon%' OR cw.area LIKE '%wtc%' OR cw.location LIKE '%kharadi%')`;
+    } else if (cl === 'yerawada') {
+      where += ` AND (cw.area LIKE '%yerawada%' OR cw.area LIKE '%commerzone%' OR cw.location LIKE '%yerawada%')`;
+    } else if (cl === 'viman') {
+      where += ` AND (cw.area LIKE '%viman%' OR cw.area LIKE '%kalyani%' OR cw.location LIKE '%viman%')`;
+    } else if (cl === 'bangalore' || cl === 'bengaluru') {
+      where += ` AND (cw.area LIKE '%bangalore%' OR cw.area LIKE '%bengaluru%' OR cw.area LIKE '%hsr%' OR cw.area LIKE '%koramangala%' OR cw.area LIKE '%indiranagar%' OR cw.area LIKE '%whitefield%' OR cw.location LIKE '%bangalore%' OR cw.location LIKE '%bengaluru%')`;
+    } else if (cl === 'remote') {
+      where += ` AND (cw.location LIKE '%remote%' OR cw.location LIKE '%distributed%' OR cw.area LIKE '%remote%')`;
+    } else if (cl === 'us' || cl === 'global') {
+      where += ` AND (cw.location LIKE '%us%' OR cw.location LIKE '%usa%' OR cw.location LIKE '%united states%' OR cw.location LIKE '%san francisco%' OR cw.location LIKE '%new york%' OR cw.location LIKE '%seattle%' OR cw.location LIKE '%california%')`;
+    }
+  }
+
+  // Sector filter
   if (params.sector && params.sector !== 'ALL') {
-    query += ` AND cw.sector LIKE ?`;
+    where += ` AND cw.sector LIKE ?`;
     queryParams.push(`%${params.sector}%`);
   }
 
+  // Stage filter
   if (params.stage && params.stage !== 'ALL') {
-    query += ` AND cw.stage LIKE ?`;
+    where += ` AND cw.stage LIKE ?`;
     queryParams.push(`%${params.stage}%`);
   }
 
-  const countQuery = `SELECT COUNT(*) as c FROM (${query})`;
+  // Has Contacts filter
+  if (params.hasContacts === true || params.hasContacts === 'true') {
+    where += ` AND (EXISTS (SELECT 1 FROM recruiter_leads rl WHERE rl.company_name = cw.company_name) OR (cw.hr_contacts_json IS NOT NULL AND cw.hr_contacts_json != '[]'))`;
+  } else if (params.hasContacts === false || params.hasContacts === 'false') {
+    where += ` AND (NOT EXISTS (SELECT 1 FROM recruiter_leads rl WHERE rl.company_name = cw.company_name) AND (cw.hr_contacts_json IS NULL OR cw.hr_contacts_json = '[]'))`;
+  }
+
+  // Has Jobs filter
+  if (params.hasJobs === true || params.hasJobs === 'true') {
+    where += ` AND (cw.open_roles_count > 0 OR EXISTS (SELECT 1 FROM jobs j WHERE j.company = cw.company_name))`;
+  } else if (params.hasJobs === false || params.hasJobs === 'false') {
+    where += ` AND (COALESCE(cw.open_roles_count, 0) = 0 AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.company = cw.company_name))`;
+  }
+
+  // ATS Provider filter
+  if (params.ats && params.ats !== 'ALL' && params.ats !== 'all') {
+    const a = params.ats.toLowerCase();
+    if (a === 'greenhouse') {
+      where += ` AND (cw.ats_provider LIKE '%greenhouse%' OR cw.careers_page_url LIKE '%greenhouse%')`;
+    } else if (a === 'lever') {
+      where += ` AND (cw.ats_provider LIKE '%lever%' OR cw.careers_page_url LIKE '%lever%')`;
+    } else if (a === 'ashby') {
+      where += ` AND (cw.ats_provider LIKE '%ashby%' OR cw.careers_page_url LIKE '%ashby%')`;
+    } else if (a === 'workday') {
+      where += ` AND (cw.ats_provider LIKE '%workday%' OR cw.careers_page_url LIKE '%workday%')`;
+    } else if (a === 'custom') {
+      where += ` AND (cw.ats_provider = 'custom' OR (cw.ats_provider NOT IN ('greenhouse', 'lever', 'ashby', 'workday', 'ashbyhq', 'myworkdayjobs') AND cw.ats_provider IS NOT NULL))`;
+    } else {
+      where += ` AND (cw.ats_provider LIKE ? OR cw.careers_page_url LIKE ?)`;
+      queryParams.push(`%${a}%`, `%${a}%`);
+    }
+  }
+
+  // Count total matching records
+  const countQuery = `SELECT COUNT(*) as c FROM career_watchlist cw ${where}`;
   const total = (db.prepare(countQuery).get(...queryParams) as any)?.c || 0;
 
-  query += ` ORDER BY open_roles_count DESC, cw.is_vip DESC, leads_count DESC, cw.company_name ASC LIMIT ? OFFSET ?`;
+  // Sorting
+  let orderBy = 'ORDER BY cw.is_vip DESC, cw.priority_tier ASC, jobs_count DESC, leads_count DESC, cw.company_name ASC';
+  if (params.sort === 'jobs_count') {
+    orderBy = 'ORDER BY jobs_count DESC, cw.is_vip DESC, cw.company_name ASC';
+  } else if (params.sort === 'leads_count') {
+    orderBy = 'ORDER BY leads_count DESC, cw.is_vip DESC, cw.company_name ASC';
+  } else if (params.sort === 'name') {
+    orderBy = 'ORDER BY cw.company_name ASC';
+  } else if (params.sort === 'created_at') {
+    orderBy = 'ORDER BY cw.last_checked_at DESC NULLS LAST, cw.company_name ASC';
+  }
+
+  const query = `
+    SELECT cw.company_id, cw.company_name, cw.official_domain, cw.careers_page_url, 
+           cw.ats_provider, cw.priority_tier, cw.is_vip, cw.stage, cw.sector, cw.area, 
+           cw.location, cw.team_size, cw.total_funding, cw.founders_json, 
+           cw.hr_contacts_json, cw.tech_radar_json, cw.referral_available,
+           cw.referrer_name, cw.referrer_linkedin, cw.wikipedia_summary,
+           COALESCE((SELECT COUNT(*) FROM jobs j WHERE j.company = cw.company_name), cw.open_roles_count, 0) as jobs_count,
+           (SELECT COUNT(*) FROM recruiter_leads rl WHERE rl.company_name = cw.company_name) as leads_count,
+           cw.last_checked_at
+    FROM career_watchlist cw
+    ${where}
+    ${orderBy}
+    LIMIT ? OFFSET ?
+  `;
   queryParams.push(limit, offset);
 
-  const rawCompanies = db.prepare(query).all(...queryParams);
+  const rawCompanies = db.prepare(query).all(...queryParams) as any[];
+
+  // Batch fetch associated recruiter leads and tech intel for returned companies
+  const companyNames = rawCompanies.map((c) => c.company_name).filter(Boolean);
+  const officialDomains = rawCompanies.map((c) => c.official_domain).filter(Boolean);
+
+  const leadsByCompany: Record<string, any[]> = {};
+  if (companyNames.length > 0) {
+    try {
+      const placeholders = companyNames.map(() => '?').join(',');
+      const leadRows = db.prepare(`
+        SELECT company_name, contact_name, role_title, contact_email, personal_email,
+               contact_linkedin_url, persona, contact_type, priority_score, outreach_status
+        FROM recruiter_leads
+        WHERE company_name IN (${placeholders})
+        ORDER BY priority_score DESC, contact_email IS NOT NULL DESC
+      `).all(...companyNames) as any[];
+
+      for (const row of leadRows) {
+        if (!leadsByCompany[row.company_name]) {
+          leadsByCompany[row.company_name] = [];
+        }
+        if (leadsByCompany[row.company_name].length < 4) {
+          leadsByCompany[row.company_name].push({
+            name: row.contact_name || 'Hiring Lead',
+            title: row.role_title || 'Recruiting Team',
+            email: row.contact_email || row.personal_email || null,
+            linkedin: row.contact_linkedin_url || null,
+            persona: row.persona || row.contact_type || 'Recruiter',
+            score: row.priority_score || 0,
+            status: row.outreach_status || 'discovered',
+          });
+        }
+      }
+    } catch {}
+  }
+
+  const intelByCompany: Record<string, any> = {};
+  if (officialDomains.length > 0 || companyNames.length > 0) {
+    try {
+      const dPlaceholders = officialDomains.map(() => '?').join(',');
+      const nPlaceholders = companyNames.map(() => '?').join(',');
+      const conditions: string[] = [];
+      const intelParams: any[] = [];
+
+      if (officialDomains.length > 0) {
+        conditions.push(`official_domain IN (${dPlaceholders})`);
+        intelParams.push(...officialDomains);
+      }
+      if (companyNames.length > 0) {
+        conditions.push(`company_name IN (${nPlaceholders})`);
+        intelParams.push(...companyNames);
+      }
+
+      if (conditions.length > 0) {
+        const intelRows = db.prepare(`
+          SELECT company_name, official_domain, tech_stack_json, ai_focus_tags,
+                 detected_email_pattern, email_pattern_confidence, wikipedia_summary
+          FROM company_intel
+          WHERE ${conditions.join(' OR ')}
+        `).all(...intelParams) as any[];
+
+        for (const r of intelRows) {
+          if (r.company_name) intelByCompany[r.company_name] = r;
+          if (r.official_domain) intelByCompany[r.official_domain] = r;
+        }
+      }
+    } catch {}
+  }
 
   const companies = rawCompanies.map((c: any) => {
     let founders = [];
-    let emails = [];
+    let hrEmails = [];
     try {
       if (c.founders_json) founders = JSON.parse(c.founders_json);
     } catch {}
     try {
-      if (c.hr_contacts_json) emails = JSON.parse(c.hr_contacts_json);
+      if (c.hr_contacts_json) hrEmails = JSON.parse(c.hr_contacts_json);
     } catch {}
+
+    const intel = intelByCompany[c.company_name] || intelByCompany[c.official_domain];
+    const tech_stack = parseTechStack(c.tech_radar_json, intel?.tech_stack_json, intel?.ai_focus_tags);
+    const pune_cluster = derivePuneCluster(c.area, c.location);
+
+    // Build persons preview (prioritizing recruiter_leads, falling back to parsed founders & HR emails)
+    let persons = leadsByCompany[c.company_name] || [];
+    if (persons.length === 0) {
+      const fallbackPersons: any[] = [];
+      if (Array.isArray(founders)) {
+        for (const f of founders) {
+          if (f && typeof f === 'object') {
+            if (f.name && f.name !== 'null') {
+              fallbackPersons.push({
+                name: f.name,
+                title: f.title || 'Founder / Leadership',
+                email: f.email || null,
+                linkedin: f.linkedin || (Array.isArray(f.linkedin_urls) ? f.linkedin_urls[0] : null),
+                persona: 'Founder',
+                score: 85,
+              });
+            } else if (f.names) {
+              const split = String(f.names).split(',').map((s) => s.trim()).filter(Boolean);
+              split.forEach((nm, idx) => {
+                fallbackPersons.push({
+                  name: nm,
+                  title: 'Founder / Leadership',
+                  email: null,
+                  linkedin: Array.isArray(f.founder_links) ? f.founder_links[idx] : null,
+                  persona: 'Founder',
+                  score: 85,
+                });
+              });
+            }
+          }
+        }
+      }
+      if (Array.isArray(hrEmails)) {
+        for (const email of hrEmails) {
+          if (typeof email === 'string' && email.includes('@')) {
+            const prefix = email.split('@')[0].replace(/[._]/g, ' ');
+            const formatted = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+            fallbackPersons.push({
+              name: formatted || 'HR Lead',
+              title: 'Talent Acquisition',
+              email: email,
+              linkedin: null,
+              persona: 'Recruiter',
+              score: 75,
+            });
+          }
+        }
+      }
+      persons = fallbackPersons.slice(0, 4);
+    }
 
     return {
       ...c,
+      open_roles_count: c.jobs_count,
+      pune_cluster,
+      tech_stack,
+      persons,
       founders,
-      emails,
+      emails: hrEmails,
+      detected_email_pattern: intel?.detected_email_pattern || null,
+      email_pattern_confidence: intel?.email_pattern_confidence || null,
+      wikipedia_summary: c.wikipedia_summary || intel?.wikipedia_summary || null,
+      referral_available: Boolean(c.referral_available),
+      referrer_name: c.referrer_name || null,
+      referrer_linkedin: c.referrer_linkedin || null,
     };
   });
 
@@ -579,6 +913,21 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
     if (company.tech_radar_json) techRadar = JSON.parse(company.tech_radar_json);
   } catch {}
 
+  // Fetch company intel if available
+  let intel: any = null;
+  try {
+    intel = db.prepare(`
+      SELECT wikipedia_summary, detected_email_pattern, email_pattern_confidence,
+             tech_stack_json, ai_focus_tags, hiring_posts_json, key_people_json
+      FROM company_intel
+      WHERE domain_or_name = ? OR official_domain = ? OR company_name = ?
+      LIMIT 1
+    `).get(company.official_domain || '', company.official_domain || '', company.company_name);
+  } catch {}
+
+  const pune_cluster = derivePuneCluster(company.area, company.location);
+  const tech_stack = parseTechStack(company.tech_radar_json, intel?.tech_stack_json, intel?.ai_focus_tags);
+
   // Fetch all leads for this company
   const leads = db
     .prepare(
@@ -586,11 +935,12 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
               contact_name, contact_email, personal_email, personal_email_source, preferred_channel,
               contact_type, contact_linkedin_url,
               linkedin_connection_note, source_platform, evidence_snippet,
-              execution_route, outreach_status, created_at,
-              email_draft_subject, email_draft_body, approved_at, approved_by
+              execution_route, outreach_status, created_at, persona, priority_score,
+              email_draft_subject, email_draft_body, approved_at, approved_by,
+              mx_provider, is_deliverable
        FROM recruiter_leads
        WHERE company_name = ?
-       ORDER BY contact_type ASC, created_at DESC`
+       ORDER BY priority_score DESC, contact_type ASC, created_at DESC`
     )
     .all(company.company_name);
 
@@ -609,10 +959,18 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
   return {
     company: {
       ...company,
+      pune_cluster,
+      tech_stack,
       founders,
       emails,
       topProjects,
       techRadar,
+      detected_email_pattern: intel?.detected_email_pattern || null,
+      email_pattern_confidence: intel?.email_pattern_confidence || null,
+      wikipedia_summary: company.wikipedia_summary || intel?.wikipedia_summary || null,
+      referral_available: Boolean(company.referral_available),
+      referrer_name: company.referrer_name || null,
+      referrer_linkedin: company.referrer_linkedin || null,
     },
     leads,
     jobs,
@@ -621,6 +979,8 @@ export function getCompanyDetail(params: { id?: string; name?: string }) {
       totalJobs: jobs.length,
       verifiedEmails: leads.map((l: any) => l.contact_email).filter(Boolean),
       hasDualAttack: leads.length > 0 && (jobs.length > 0 || Boolean(company.careers_page_url)),
+      puneCluster: pune_cluster,
+      detectedEmailPattern: intel?.detected_email_pattern || null,
     },
   };
 }

@@ -9,6 +9,7 @@ resume.pdf
 !.env.example
 config/my-experience.txt
 config/sample_resume.pdf
+data-we-can-use/my linkedin data/
 
 # Runtime artifacts & databases
 *.db
@@ -45,6 +46,7 @@ dashboard/node_modules/
 
 # Python venv & testing
 .venv/
+venv/
 .pytest_cache/
 .coverage
 htmlcov/

@@ -140,3 +140,4 @@ def format_portfolio_pitch(company_tech_stack: list[str] | None, max_projects: i
     matched = match_portfolio_projects(company_tech_stack, max_projects=max_projects)
     bullets = "\n".join(f"- {p.pitch_bullet}" for p in matched)
     return bullets
+

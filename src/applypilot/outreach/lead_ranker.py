@@ -15,7 +15,7 @@ import sqlite3
 from typing import Any
 
 from applypilot import config
-from applypilot.database import get_connection, get_recruiter_leads
+from applypilot.database import get_company_intel, get_connection, get_recruiter_leads
 from applypilot.discovery.company_intel_service import CompanyIntelService
 
 logger = logging.getLogger("applypilot.lead_ranker")
@@ -228,9 +228,40 @@ class LeadRanker:
         if not candidate_skills:
             candidate_skills = ["Python", "React", "FastAPI", "TypeScript", "LangGraph", "Docker", "LLM", "Playwright"]
 
-        # 3. Pre-fetch company intel for unique companies in the batch (fast OSINT, no live crawl yet)
+        # 3. Fast prioritization of candidate leads:
+        # Avoid researching hundreds of uncached companies sequentially.
+        # Prioritize leads with cached intel, DUAL_ATTACK, deliverable status, or high priority_score.
+        def _heuristic_rank(l: dict[str, Any]) -> int:
+            val = int(l.get("priority_score") or 0)
+            if l.get("execution_route") == "DUAL_ATTACK":
+                val += 15
+            if l.get("is_deliverable"):
+                val += 10
+            c_name = (l.get("company_name") or "").lower()
+            dom = (l.get("company_domain") or "").lower()
+            if dom and "." in dom:
+                val += 5
+            # Cached in DB? Instant bonus
+            if get_company_intel(dom, conn=conn) or (c_name and get_company_intel(c_name, conn=conn)):
+                val += 30
+            return val
+
+        sorted_candidates = sorted(queued, key=_heuristic_rank, reverse=True)
+        # Cap evaluation pool to top candidate companies (e.g. at most max(limit * 3, 20) unique companies)
+        selected_candidates: list[dict[str, Any]] = []
+        seen_companies: set[str] = set()
+        max_unique = max(limit * 3, 20)
+        for lead in sorted_candidates:
+            c_key = ((lead.get("company_domain") or lead.get("company_name") or "")).strip().lower()
+            if c_key not in seen_companies:
+                if len(seen_companies) >= max_unique:
+                    continue
+                seen_companies.add(c_key)
+            selected_candidates.append(lead)
+
+        # Pre-fetch company intel for the selected candidate pool (fast OSINT, no live crawl yet)
         company_map = intel_service.enrich_batch_for_leads(
-            queued,
+            selected_candidates,
             force_refresh=force_research,
             live_scrape=False,
         )
@@ -238,7 +269,7 @@ class LeadRanker:
         # 4. Score each lead and update DB
         ranked_leads: list[tuple[int, str, dict[str, Any], dict[str, Any]]] = []
 
-        for lead in queued:
+        for lead in selected_candidates:
             c_name = lead.get("company_name") or ""
             domain = lead.get("company_domain") or ""
             key = (domain or c_name).strip().lower()

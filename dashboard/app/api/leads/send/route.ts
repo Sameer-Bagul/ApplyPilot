@@ -2,11 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { getPythonBin, getProjectRoot, getLeadDetail, updateLead } from '@/lib/db';
+import { requireApiAuth } from '@/lib/auth';
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Session Guard (Defense-in-depth)
+    const authCheck = await requireApiAuth();
+    if (!authCheck.authorized) {
+      return NextResponse.json(
+        { success: false, error: authCheck.error || 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // 2. Rate Limit (Max 15 send dispatches per minute per client)
+    const clientIp = getClientIp(request);
+    const rateCheck = checkRateLimit(`email_send_${clientIp}`, { maxRequests: 15, intervalMs: 60000 });
+    if (!rateCheck.success) {
+      return NextResponse.json(
+        { success: false, error: 'Too many dispatch requests. Please wait a minute before retrying.' },
+        { status: 429, headers: { 'Retry-After': Math.ceil(rateCheck.resetMs / 1000).toString() } }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const leadIds: string[] = Array.isArray(body.lead_ids)
       ? body.lead_ids

@@ -56,31 +56,46 @@ queries:
 
 # Locations to search
 locations:
-  - location: "San Francisco, CA"
-    remote: false
   - location: "Remote"
     remote: true
+  - location: "Bangalore, India"
+    remote: false
+  - location: "Pune, India"
+    remote: false
+  - location: "San Francisco, CA"
+    remote: false
 
 # Location filtering -- accept/reject patterns for job location text
 location:
   accept_patterns:
+    - "Remote"
+    - "Anywhere"
+    - "Worldwide"
+    - "Work from home"
+    - "India"
+    - "Bangalore"
+    - "Bengaluru"
+    - "Pune"
+    - "Mumbai"
+    - "Delhi"
+    - "Gurgaon"
+    - "Noida"
+    - "Hyderabad"
     - "San Francisco"
     - "Bay Area"
     - "SF"
     - "California"
     - "CA"
-    - "Remote"
-    - "Anywhere"
     - "United States"
     - "US"
     - "USA"
+    - "Canada"
+    - "UK"
+    - "Europe"
+    - "Germany"
   reject_patterns:
-    - "New York only"
-    - "Seattle only"
     - "onsite only"
-    - "London, UK"
-    - "India"
-    - "Philippines"
+    - "must relocate onsite"
 
 # Country for Indeed/LinkedIn/Google Jobs searches
 country: "USA"
@@ -90,8 +105,8 @@ boards:
   - indeed
   - linkedin
   - glassdoor
-  - zip_recruiter
   - google
+  - naukri
 
 # Search defaults
 defaults:

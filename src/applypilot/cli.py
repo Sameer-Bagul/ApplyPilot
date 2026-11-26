@@ -254,6 +254,47 @@ def import_blr_map(
         console.print("[dim](Dry run mode: no changes committed to database)[/dim]")
 
 
+@app.command("import-ats-seeds")
+def import_ats_seeds(
+    poll_now: bool = typer.Option(False, "--poll-now", help="Immediately poll ATS feeds for matching jobs."),
+    limit: int = typer.Option(500, "--limit", "-l", help="Max company seeds to import."),
+    filter_roles: Optional[str] = typer.Option(None, "--filter-roles", help="Comma-separated role keywords when polling jobs."),
+) -> None:
+    """Ingest Levergreen & curated ATS company seeds into career_watchlist."""
+    _bootstrap()
+    from applypilot.discovery.levergreen_importer import import_ats_seeds_to_watchlist
+    console.print("[bold blue]Importing ATS seeds from Levergreen and curated tech databases...[/bold blue]")
+    rf = [r.strip() for r in filter_roles.split(",")] if filter_roles else None
+    res = import_ats_seeds_to_watchlist(
+        include_curated=True,
+        include_remote=True,
+        poll_now=poll_now,
+        limit=limit,
+        role_filter=rf,
+    )
+    console.print(f"[bold green]Import complete![/bold green]")
+    console.print(f"  • Companies imported to watchlist: {res.get('companies_imported', 0)}")
+    console.print(f"  • Total evaluated: {res.get('companies_total_evaluated', 0)}")
+    if poll_now:
+        console.print(f"  • Live jobs discovered: {res.get('jobs_discovered', 0)}")
+
+
+@app.command("harvest-emails-deep")
+def harvest_emails_deep(
+    limit: int = typer.Option(25, "--limit", "-l", help="Number of watchlist companies to inspect."),
+    vip_only: bool = typer.Option(False, "--vip-only", help="Only inspect VIP/Tier-1 companies."),
+) -> None:
+    """Deep-crawl company subpages (/about, /team, /contact) for leadership & recruiter emails."""
+    _bootstrap()
+    from applypilot.enrichment.crawl4ai_extractor import harvest_watchlist_emails_deep
+    console.print(f"[bold blue]Deep email harvesting (limit={limit}, vip_only={vip_only})...[/bold blue]")
+    res = harvest_watchlist_emails_deep(limit=limit, vip_only=vip_only)
+    console.print(f"[bold green]Harvest complete![/bold green]")
+    console.print(f"  • Companies inspected: {res.get('companies_inspected', 0)}")
+    console.print(f"  • New verified leads stored: {res.get('new_leads_stored', 0)}")
+
+
+
 @app.command("harvest-cdx")
 def harvest_cdx(
     sources: Optional[list[str]] = typer.Option(
@@ -274,11 +315,12 @@ def harvest_cdx(
     src_set = set(sources) if sources else {"open_apply_jobs", "commoncrawl", "crtsh"}
     total_found = 0
     if "open_apply_jobs" in src_set:
-        hf_slugs = bootstrap_from_open_apply_jobs(limit_per_ats=limit)
-        console.print(f"  • open-apply-jobs Hugging Face: {sum(len(v) for v in hf_slugs.values())} portals")
+        hf_jobs = bootstrap_from_open_apply_jobs(limit=limit)
+        count = len(hf_jobs)
+        console.print(f"  • open-apply-jobs Hugging Face: {count} portals")
         if sync_db:
-            sync_slugs_to_watchlist(hf_slugs)
-            total_found += sum(len(v) for v in hf_slugs.values())
+            synced = sync_slugs_to_watchlist(hf_jobs)
+            total_found += synced
     if "crtsh" in src_set:
         subdomains = harvest_crtsh_career_subdomains(limit=limit)
         console.print(f"  • crt.sh Career Subdomains: {len(subdomains)} subdomains")
@@ -518,6 +560,107 @@ def harvest_all_directories(
     console.print(f"  • Total Recruiter/Founder Leads Created: {summary['total_leads_created']}")
     console.print(f"  • Total Verified Domains: {summary['total_domains_verified']}")
 
+
+@app.command("ingest-local-data")
+def ingest_local_data(
+    commit: bool = typer.Option(False, "--commit", help="Commit changes permanently to applypilot.db"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run in preview mode without committing (default)"),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir", help="Path to data-we-can-use folder"),
+) -> None:
+    """Ingest, normalize, deduplicate, and sync Tavilo, Job Hunt, and LinkedIn intelligence into ApplyPilot."""
+    _bootstrap()
+    import sys
+    import importlib
+    scripts_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    gtm_module = importlib.import_module("ingest_gtm_and_jobhunt_data")
+    run_pipeline = gtm_module.run_pipeline
+    DEFAULT_DATA_DIR = gtm_module.DEFAULT_DATA_DIR
+    from applypilot.config import DB_PATH
+
+    is_commit = commit and not dry_run
+    target_data_dir = data_dir or DEFAULT_DATA_DIR
+
+    console.print(f"[bold blue]Launching ApplyPilot Local Data Ingestion ({'LIVE COMMIT' if is_commit else 'DRY RUN'})...[/bold blue]")
+    results = run_pipeline(
+        db_path=DB_PATH,
+        data_dir=target_data_dir,
+        commit=is_commit,
+    )
+
+    wl = results["career_watchlist"]
+    ld = results["recruiter_leads"]
+    jb = results["jobs"]
+    qa = results["screening_qa"]
+    cn = results["connections_hook"]
+
+    console.print("\n[bold green]Ingestion Summary:[/bold green]")
+    console.print(f"  • Career Watchlist: {wl['total_records']} companies (+{wl['net_new']} net-new)")
+    console.print(f"  • Recruiter Leads: {ld['total_leads_prepared']} prepared ({ld['personal_emails']} personal, {ld['corporate_emails']} corporate, {ld['linkedin_only']} LinkedIn-only)")
+    console.print(f"  • Jobs & History: {jb['total_jobs_prepared']} jobs ({jb['curated_roles']} curated, {jb['submitted_applications']} submitted past applications, {jb['saved_roles']} saved)")
+    console.print(f"  • Screening Q&A & FTS: {qa['total_qa_items_processed']} items processed ({qa['saved_questions']} screening + {qa['app_pairs_extracted']} application QA pairs)")
+    console.print(f"  • LinkedIn Connections: {cn['status']} ({cn['matched_companies']} matched)\n")
+    if not is_commit:
+        console.print("[dim]Dry run complete. Use --commit to permanently write to database.[/dim]")
+
+
+@app.command("sweep-watchlist-ats")
+def sweep_watchlist_ats(
+    tier: int = typer.Option(1, "--tier", "-t", help="Priority tier to probe (1, 2, or 3)."),
+    vip_only: bool = typer.Option(False, "--vip-only", help="Only probe VIP-flagged companies."),
+    limit: int = typer.Option(100, "--limit", "-l", help="Maximum companies to probe."),
+) -> None:
+    """Probes newly ingested watchlist companies against Greenhouse, Lever, Ashby, and Workday APIs."""
+    _bootstrap()
+    from applypilot.discovery.company_deep_looper import loop_all_watchlist_companies
+
+    console.print(f"[bold blue]Probing ATS portals for Watchlist companies (Tier {tier}, limit={limit})...[/bold blue]")
+    summary = loop_all_watchlist_companies(
+        priority_tier=tier,
+        vip_only=vip_only,
+        limit=limit,
+        target_emails=0,
+        enrich_emails=False,
+        poll_jobs=True,
+    )
+    console.print("[bold green]ATS Sweep Completed![/bold green]")
+    console.print(f"  • Companies Probed: {summary['companies_processed']}")
+    console.print(f"  • Brand New Jobs Found: {summary['total_new_jobs_found']}")
+    console.print(f"  • Companies with Open Roles: {summary['companies_with_new_jobs']}")
+
+
+@app.command("sweep-watchlist-osint")
+def sweep_watchlist_osint(
+    tier: int = typer.Option(1, "--tier", "-t", help="Priority tier to investigate (1, 2, or 3)."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum companies to investigate."),
+) -> None:
+    """Populates company_intel with Wikipedia summaries, GitHub tech radar, and verified mailboxes."""
+    _bootstrap()
+    from applypilot.database import get_connection
+    from applypilot.discovery.company_osint import investigate_and_store_company
+
+    conn = get_connection()
+    companies = conn.execute(
+        "SELECT company_id, company_name, official_domain FROM career_watchlist "
+        "WHERE priority_tier <= ? AND (wikipedia_summary IS NULL OR tech_radar_json IS NULL) "
+        "ORDER BY priority_tier ASC, is_vip DESC LIMIT ?",
+        (tier, limit),
+    ).fetchall()
+
+    console.print(f"[bold blue]Conducting OSINT Tech Radar Sweep for {len(companies)} Watchlist companies...[/bold blue]")
+    count = 0
+    for row in companies:
+        cname, cdom = row[1], row[2]
+        console.print(f"  • Investigating [cyan]{cname}[/cyan] ({cdom or 'no domain'})...")
+        try:
+            intel = investigate_and_store_company(cname, conn=conn)
+            if intel:
+                count += 1
+        except Exception as e:
+            console.print(f"    [yellow]OSINT check skipped for {cname}: {e}[/yellow]")
+
+    console.print(f"[bold green]OSINT Sweep Complete: {count} companies enriched in company_intel![/bold green]")
 
 
 @app.command("outreach")
@@ -887,6 +1030,8 @@ def apply(
     reset_category: Optional[str] = typer.Option(None, "--reset-category", help="Reset all jobs in a category for retry (e.g., blocked_technical)."),
     sessions: bool = typer.Option(False, "--sessions", help="List saved ATS sessions."),
     clear_session: Optional[str] = typer.Option(None, "--clear-session", help="Clear a saved ATS session (e.g., workday)."),
+    mode: Optional[str] = typer.Option(None, "--mode", help="Execution mode: assist (fill & wait for captcha/submit) | auto_verify (auto-submit with multi-layer verification)."),
+    revert: Optional[str] = typer.Option(None, "--revert", help="Revert an applied job back to ready_to_apply state (provide URL)."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
     _bootstrap()
@@ -895,6 +1040,14 @@ def apply(
     from applypilot.database import get_connection
 
     # --- Utility modes (no Chrome/Claude needed) ---
+
+    if revert:
+        from applypilot.database import revert_job
+        if revert_job(revert):
+            console.print(f"[bold green]✓ Reverted job state to 'ready_to_apply': {revert}[/bold green]")
+        else:
+            console.print(f"[red]Failed to revert job: {revert}[/red]")
+        return
 
     if mark_applied:
         from applypilot.apply.launcher import mark_job
@@ -981,6 +1134,7 @@ def apply(
             headless=headless,
             dry_run=dry_run,
             auto_submit=auto_submit,
+            mode=mode,
             conn=conn,
         )
 
@@ -988,6 +1142,11 @@ def apply(
             console.print(f"[bold green]✓ Application submitted successfully in {duration_ms}ms![/bold green]")
             conn.execute("UPDATE jobs SET state = 'applied', applied_at = CURRENT_TIMESTAMP, needs_human_reason = NULL WHERE url = ?", (url,))
             conn.execute("UPDATE hitl_tickets SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP WHERE job_url = ? AND status IN ('pending', 'sent')", (url,))
+            conn.commit()
+            return
+        elif tier_status == "submission_unconfirmed":
+            console.print(f"[bold red]⚠ Submission unconfirmed: Multi-layer proof verification failed. Refused false 'applied' state.[/bold red]")
+            conn.execute("UPDATE jobs SET state = 'submission_unconfirmed', needs_human_reason = 'unconfirmed_submission' WHERE url = ?", (url,))
             conn.commit()
             return
         elif tier_status == "parked_awaiting_email":
@@ -1066,6 +1225,7 @@ def apply(
                 headless=headless,
                 dry_run=dry_run,
                 auto_submit=auto_submit,
+                mode=mode,
                 conn=conn,
             )
 
@@ -1073,6 +1233,10 @@ def apply(
                 success_count += 1
                 console.print(f"  [bold green]✓ Applied successfully in {duration_ms}ms![/bold green]\n")
                 conn.execute("UPDATE jobs SET state = 'applied', applied_at = CURRENT_TIMESTAMP WHERE url = ?", (job_dict["url"],))
+                conn.commit()
+            elif tier_status == "submission_unconfirmed":
+                console.print(f"  [bold red]⚠ Submission unconfirmed: Multi-layer verification failed. Flagged for review.[/bold red]\n")
+                conn.execute("UPDATE jobs SET state = 'submission_unconfirmed', needs_human_reason = 'unconfirmed_submission' WHERE url = ?", (job_dict["url"],))
                 conn.commit()
             elif tier_status == "parked_awaiting_email":
                 console.print(f"  [bold yellow]⚠ Parked: {len(remaining)} question(s) awaiting HITL review.[/bold yellow]\n")
@@ -2516,6 +2680,130 @@ def hitl_resolve(
         conn.execute("UPDATE jobs SET needs_human_reason = NULL, state = 'ready' WHERE url = ?", (ticket["job_url"],))
     commit_with_retry(conn)
     console.print(f"[green]✓ Ticket #{ticket_id} marked as {new_status}.[/green]")
+
+
+@app.command("extract-metadata")
+def extract_metadata_cmd(
+    limit: int = typer.Option(100, "--limit", "-l", help="Number of jobs to extract metadata for (-1 for all)."),
+    unextracted_only: bool = typer.Option(True, "--unextracted-only/--all", help="Only process jobs missing metadata_json."),
+) -> None:
+    """Extract structured metadata (workplace, experience, role category, tech stack, salary) from job postings."""
+    _bootstrap()
+    from applypilot.database import get_connection, commit_with_retry
+    from applypilot.enrichment.metadata_extractor import extract_all_metadata
+    import json
+    import sqlite3
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+
+    query = "SELECT * FROM jobs WHERE (description IS NOT NULL OR full_description IS NOT NULL)"
+    if unextracted_only:
+        query += " AND metadata_json IS NULL"
+    if limit > 0:
+        query += f" LIMIT {limit}"
+
+    rows = conn.execute(query).fetchall()
+    console.print(f"[bold blue]Extracting metadata for {len(rows)} jobs...[/bold blue]")
+
+    extracted_count = 0
+    for r in rows:
+        job_dict = dict(r)
+        meta = extract_all_metadata(job_dict)
+        meta_str = json.dumps(meta)
+        conn.execute("UPDATE jobs SET metadata_json = ? WHERE url = ?", (meta_str, job_dict["url"]))
+        extracted_count += 1
+
+    commit_with_retry(conn)
+    console.print(f"[bold green]✓ Extracted structured metadata for {extracted_count} jobs![/bold green]")
+
+
+@app.command("score-backlog")
+def score_backlog_cmd(
+    limit: int = typer.Option(200, "--limit", "-l", help="Number of jobs to evaluate (-1 for all)."),
+    min_score: int = typer.Option(70, "--min-score", "-m", help="Minimum match score threshold (0-100)."),
+    archive_non_tech: bool = typer.Option(True, "--archive-non-tech/--keep-non-tech", help="Auto-archive non-engineering roles."),
+    unscored_only: bool = typer.Option(True, "--unscored-only/--rescore-all", help="Only score jobs currently unscored."),
+) -> None:
+    """Score job backlog using zero-token multi-dimensional resume-to-JD matching."""
+    _bootstrap()
+    from applypilot.database import get_connection, update_job_metadata_and_score, commit_with_retry
+    from applypilot.scoring.resume_matcher import evaluate_job_match
+    import json
+    import sqlite3
+    from rich.table import Table
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+
+    query = "SELECT * FROM jobs WHERE 1=1"
+    if unscored_only:
+        query += " AND (fit_score IS NULL OR state = 'discovered')"
+    query += " ORDER BY CASE WHEN full_description IS NOT NULL THEN 0 ELSE 1 END, discovered_at DESC"
+    if limit > 0:
+        query += f" LIMIT {limit}"
+
+    rows = conn.execute(query).fetchall()
+    console.print(f"[bold blue]Evaluating {len(rows)} jobs against your candidate profile (2.5 yrs exp, AI/Fullstack)...[/bold blue]\n")
+
+    table = Table(title="Top Matched Opportunities", show_header=True, header_style="bold magenta")
+    table.add_column("Score", style="bold", width=12)
+    table.add_column("Role & Company", width=36)
+    table.add_column("Workplace", width=12)
+    table.add_column("Exp Req", width=14)
+    table.add_column("Matched Skills", width=30)
+
+    scored_count = 0
+    strong_matches = 0
+    archived_count = 0
+
+    for r in rows:
+        job_dict = dict(r)
+        result = evaluate_job_match(job_dict)
+
+        meta = result["metadata"]
+        meta_str = json.dumps(meta)
+        match_pct = result["match_percentage"]
+        fit_score = result["fit_score"]
+        reasoning = result["reasoning"]
+
+        target_state = "scored"
+        if meta.get("is_non_tech"):
+            if archive_non_tech:
+                target_state = "archived"
+                archived_count += 1
+            else:
+                target_state = "low_score"
+        elif match_pct < 40:
+            target_state = "low_score"
+
+        update_job_metadata_and_score(
+            conn=conn,
+            url=job_dict["url"],
+            metadata_json=meta_str,
+            fit_score=fit_score,
+            score_reasoning=reasoning,
+            state=target_state,
+        )
+        scored_count += 1
+
+        if match_pct >= min_score and not meta.get("is_non_tech"):
+            strong_matches += 1
+            table.add_row(
+                result["badge"],
+                f"{job_dict.get('title', '')[:22]} @ {job_dict.get('company', '')[:10]}",
+                meta.get("workplace_type", "Onsite"),
+                meta.get("experience", {}).get("raw_text", "N/A"),
+                ", ".join(result["matched_skills"][:4]) or "General",
+            )
+
+    console.print(table)
+    console.print(f"\n[bold green]✓ Scoring complete![/bold green]")
+    console.print(f"  • Total jobs evaluated: {scored_count}")
+    console.print(f"  • Strong matches (≥{min_score}%): [bold cyan]{strong_matches}[/bold cyan]")
+    if archived_count:
+        console.print(f"  • Non-engineering jobs archived: [dim]{archived_count}[/dim]")
+
 
 
 if __name__ == "__main__":

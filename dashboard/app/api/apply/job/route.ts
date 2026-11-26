@@ -1,11 +1,32 @@
 import { NextResponse } from 'next/server';
 import { spawn } from 'node:child_process';
 import { getDb, getApplypilotBin } from '@/lib/db';
+import { requireApiAuth } from '@/lib/auth';
+import { checkRateLimit, getClientIp } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    // 1. Session Guard (Defense-in-depth)
+    const authCheck = await requireApiAuth();
+    if (!authCheck.authorized) {
+      return NextResponse.json(
+        { success: false, error: authCheck.error || 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // 2. Rate Limit (Max 10 apply runs per minute per client)
+    const clientIp = getClientIp(request);
+    const rateCheck = checkRateLimit(`apply_${clientIp}`, { maxRequests: 10, intervalMs: 60000 });
+    if (!rateCheck.success) {
+      return NextResponse.json(
+        { success: false, error: 'Too many apply requests. Please wait a minute before retrying.' },
+        { status: 429, headers: { 'Retry-After': Math.ceil(rateCheck.resetMs / 1000).toString() } }
+      );
+    }
+
     const body = await request.json();
     const targetUrl = body.job_url || body.jobUrl;
     const isHeadless = body.headless === true || (body.mode === 'headless' && body.headless !== false);
@@ -34,6 +55,9 @@ export async function POST(request: Request) {
       args.push('--auto-submit');
     } else if (body.autoSubmit === false || body.auto_submit === false) {
       args.push('--review');
+    }
+    if (body.mode) {
+      args.push('--mode', body.mode);
     }
 
     // Run in background or spawn process

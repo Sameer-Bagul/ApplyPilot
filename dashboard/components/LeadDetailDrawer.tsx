@@ -412,29 +412,26 @@ export function LeadDetailDrawer({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-6 border-b border-zinc-200/70 bg-white/80 flex items-start justify-between gap-4 relative">
-          <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent pointer-events-none" />
-
+        <div className="p-6 border-b border-zinc-200/80 bg-white flex items-start justify-between gap-4 relative">
           <div className="space-y-2 flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${scoreBadgeColor} flex items-center gap-1`}>
-                <Flame className="w-3 h-3 text-amber-500" />
+              <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold border ${scoreBadgeColor} flex items-center gap-1`}>
                 Score: {editScore}/100
               </span>
 
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider border ${personaColor}`}>
-                {editPersona === 'founder' ? '🚀 Founder Angle' : editPersona === 'hr' ? '💼 Recruiter Angle' : '⚡ Engineer Angle'}
+              <span className={`px-2.5 py-0.5 rounded-md text-xs font-medium border ${personaColor}`}>
+                {editPersona === 'founder' ? 'Founder Outreach' : editPersona === 'hr' ? 'Talent Team' : 'Engineering Lead'}
               </span>
 
               <span
-                className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium border ${
                   editStatus === 'approved'
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                     : editStatus === 'sent'
-                    ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                    ? 'bg-blue-50 text-blue-800 border-blue-200'
                     : editStatus === 'rejected'
                     ? 'bg-rose-50 text-rose-800 border-rose-200'
-                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-zinc-100 text-zinc-700 border-zinc-200'
                 }`}
               >
                 Status: {editStatus}
@@ -442,14 +439,14 @@ export function LeadDetailDrawer({
             </div>
 
             <h2 className="text-xl font-bold tracking-tight text-zinc-900 flex items-center gap-2 truncate">
-              <User className="w-5 h-5 text-cyan-600 shrink-0" />
-              <span>{editName || 'Hiring Lead'}</span>
+              <User className="w-5 h-5 text-zinc-500 shrink-0" />
+              <span>{editName || 'Hiring Contact'}</span>
             </h2>
 
-            <div className="flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+            <div className="flex items-center gap-2.5 text-xs text-zinc-500 flex-wrap">
               <span
                 onClick={() => lead?.company_name && onOpenCompany && onOpenCompany(lead.company_name)}
-                className="text-cyan-700 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
+                className="text-zinc-900 hover:underline cursor-pointer flex items-center gap-1 font-semibold"
               >
                 <Building2 className="w-3.5 h-3.5" />
                 {lead?.company_name}
@@ -476,7 +473,7 @@ export function LeadDetailDrawer({
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={onClose}
-              className="liquid-pill rounded-full p-2 text-zinc-600 hover:text-zinc-950 transition shadow-2xs cursor-pointer"
+              className="saas-card rounded-lg p-2 text-zinc-500 hover:text-zinc-900 transition cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -748,18 +745,18 @@ export function LeadDetailDrawer({
                 </div>
               </div>
 
-              {/* Matched Job Requisition Card */}
+              {/* Matched Job Opening Card */}
               {lead?.matched_job_title && (
-                <div className="liquid-glass rounded-2xl p-4 border border-blue-200/90 bg-gradient-to-r from-blue-50/70 to-indigo-50/40 text-blue-950 flex items-center justify-between text-xs shadow-2xs">
+                <div className="saas-card rounded-xl p-3.5 border border-zinc-200 text-zinc-900 flex items-center justify-between text-xs shadow-2xs">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-100 text-zinc-700 flex items-center justify-center shrink-0">
                       <Briefcase className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
-                        Live Matched Job Requisition
+                      <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
+                        Matched Job Opening
                       </div>
-                      <div className="font-bold text-zinc-900 truncate">
+                      <div className="font-semibold text-zinc-900 truncate">
                         {lead.matched_job_title}
                       </div>
                     </div>
@@ -769,53 +766,53 @@ export function LeadDetailDrawer({
                       href={lead.matched_job_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer shrink-0"
+                      className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer shrink-0"
                     >
                       <span>View Requisition</span>
-                      <ExternalLink className="w-3 h-3" />
+                      <ExternalLink className="w-3 h-3 text-zinc-300" />
                     </a>
                   )}
                 </div>
               )}
 
-              {/* Coordinated Dual-Attack Partner Banner */}
+              {/* Paired Outreach Sequence Banner */}
               {lead?.dual_attack_pair_id && (
-                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50/50 border border-purple-200/80 text-purple-950 flex items-center justify-between text-xs shadow-2xs">
+                <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 flex items-center justify-between text-xs shadow-2xs">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-200 text-zinc-800 flex items-center justify-center shrink-0">
                       <Layers className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="font-bold text-purple-900">Coordinated Dual-Attack Activated</div>
-                      <div className="text-[11px] text-purple-700">
+                      <div className="font-semibold text-zinc-900">Paired Outreach Sequence</div>
+                      <div className="text-[11px] text-zinc-500">
                         {editPersona === 'founder'
                           ? 'Founder email pitches architecture and cross-references your application on the careers portal.'
-                          : 'HR draft formally cites the exact job posting and candidate availability.'}
+                          : 'Talent team draft formally cites the exact job posting and candidate availability.'}
                       </div>
                     </div>
                   </div>
-                  <span className="font-mono text-[10px] font-bold bg-purple-100 text-purple-800 px-2.5 py-1 rounded-lg border border-purple-200 shrink-0">
+                  <span className="font-mono text-[10px] font-semibold bg-white text-zinc-700 px-2 py-0.5 rounded border border-zinc-200 shrink-0">
                     #{lead.dual_attack_pair_id}
                   </span>
                 </div>
               )}
 
-              {/* Dual-Attack Channel: LinkedIn Decision Maker & Connection Note */}
-              <div className="liquid-glass rounded-2xl p-5 border border-sky-200/80 shadow-2xs space-y-4 bg-gradient-to-br from-white/95 to-sky-50/40">
+              {/* LinkedIn Connection Note */}
+              <div className="saas-card rounded-xl p-4 border border-zinc-200 space-y-3.5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center shadow-2xs shrink-0">
-                      <LinkedInIcon className="w-4 h-4" />
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md bg-[#0A66C2] text-white flex items-center justify-center shrink-0">
+                      <LinkedInIcon className="w-3.5 h-3.5" />
                     </span>
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-sky-950 flex items-center gap-1.5">
-                        Dual-Attack: LinkedIn Decision Maker
+                      <h3 className="text-xs font-semibold text-zinc-900">
+                        LinkedIn Profile &amp; Connection Note
                       </h3>
-                      <p className="text-[10px] text-sky-700">Non-login public OSINT • Tailored connection note &lt; 300 chars</p>
+                      <p className="text-[11px] text-zinc-500">Tailored note for connection request (&lt; 300 characters)</p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300">
-                    Dual Channel
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-100 text-zinc-700 border border-zinc-200">
+                    Direct Contact
                   </span>
                 </div>
 
@@ -943,8 +940,8 @@ export function LeadDetailDrawer({
                       <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
                       Public Hiring Post &amp; Quote Hook
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                      Smoking Gun Signal
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                      Active Hiring Signal
                     </span>
                   </div>
 
@@ -997,90 +994,90 @@ export function LeadDetailDrawer({
                 </div>
               )}
 
-              {/* Email Content Editor & 3-Day Follow-Up Sequencer */}
-              <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-4">
-                <div className="flex items-center justify-between border-b border-zinc-200/70 pb-3">
-                  <div className="flex items-center gap-2">
+              {/* Email Content Editor & 3-Day Follow-Up */}
+              <div className="saas-card rounded-xl p-4.5 border border-zinc-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                  <div className="flex items-center gap-1.5 bg-zinc-100 p-1 rounded-lg">
                     <button
                       type="button"
                       onClick={() => setActiveDraftTab('initial')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
                         activeDraftTab === 'initial'
-                          ? 'bg-cyan-600 text-white shadow-2xs'
-                          : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900'
+                          ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
+                          : 'text-zinc-600 hover:text-zinc-900'
                       }`}
                     >
                       <Mail className="w-3.5 h-3.5" />
-                      <span>Initial Outreach Pitch</span>
+                      <span>Initial Pitch</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setActiveDraftTab('followup')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
                         activeDraftTab === 'followup'
-                          ? 'bg-amber-600 text-white shadow-2xs'
-                          : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900'
+                          ? 'bg-white text-zinc-900 shadow-2xs font-semibold'
+                          : 'text-zinc-600 hover:text-zinc-900'
                       }`}
                     >
                       <Clock className="w-3.5 h-3.5" />
-                      <span>3-Day Follow-Up Sequence</span>
+                      <span>3-Day Follow-Up</span>
                     </button>
                   </div>
-                  <span className="text-[10px] text-zinc-400 font-mono">Tailored for {editPersona}</span>
+                  <span className="text-[11px] text-zinc-400 font-medium">Tailored for {editPersona}</span>
                 </div>
 
                 {activeDraftTab === 'initial' ? (
                   <>
                     <div>
-                      <label className="text-xs font-semibold text-zinc-600 block mb-1">Subject Line</label>
+                      <label className="text-xs font-medium text-zinc-700 block mb-1">Subject Line</label>
                       <input
                         type="text"
                         value={editSubject}
                         onChange={(e) => setEditSubject(e.target.value)}
                         placeholder="Application: Software Engineer — Sameer Bagul"
-                        className="w-full bg-white border border-zinc-200/90 rounded-xl px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-semibold"
+                        className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-medium"
                       />
                     </div>
 
                     <div>
-                      <label className="text-xs font-semibold text-zinc-600 block mb-1">Email Body (Plaintext / HTML)</label>
+                      <label className="text-xs font-medium text-zinc-700 block mb-1">Email Body</label>
                       <textarea
                         rows={10}
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
                         placeholder="Hi there, I noticed your recent work at..."
-                        className="w-full bg-white border border-zinc-200/90 rounded-xl p-3 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-cyan-200 focus:border-cyan-400 shadow-2xs font-sans leading-relaxed"
+                        className="w-full bg-white border border-zinc-200 rounded-lg p-3 text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-sans leading-relaxed"
                       />
                     </div>
 
                     {/* Resume Attachment Card */}
-                    <div className="p-3.5 rounded-xl bg-gradient-to-r from-zinc-50 to-emerald-50/40 border border-zinc-200/80 flex items-center justify-between gap-3">
+                    <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-zinc-200 text-zinc-700 flex items-center justify-center shrink-0">
                           <FileText className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs font-bold text-zinc-800 truncate">
+                          <div className="text-xs font-semibold text-zinc-800 truncate">
                             {resume?.filename || 'Sameer_Bagul_Resume.pdf'}
                           </div>
-                          <div className="text-[10px] text-zinc-500 truncate font-mono">
+                          <div className="text-[10px] text-zinc-400 truncate font-mono">
                             {resume?.path || '~/.applypilot/resume.pdf'}
                           </div>
                         </div>
                       </div>
 
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        Attached &amp; Ready
+                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        Attached
                       </span>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-900 text-xs flex items-center justify-between">
+                    <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-700 text-xs flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>Pre-scheduled polite 3-day follow-up bump to eliminate ghosting.</span>
+                        <Clock className="w-4 h-4 text-zinc-500 shrink-0" />
+                        <span>Pre-drafted 3-day follow-up message to keep conversations active.</span>
                       </div>
                       <button
                         type="button"
@@ -1089,15 +1086,15 @@ export function LeadDetailDrawer({
                           setCopiedFollowup(true);
                           setTimeout(() => setCopiedFollowup(false), 2000);
                         }}
-                        className="text-[11px] font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg border border-amber-300 transition flex items-center gap-1 cursor-pointer"
+                        className="text-xs font-medium text-zinc-800 bg-white hover:bg-zinc-100 px-2.5 py-1 rounded-md border border-zinc-200 transition flex items-center gap-1 cursor-pointer"
                       >
                         {copiedFollowup ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedFollowup ? 'Copied Bump!' : 'Copy Follow-up'}</span>
+                        <span>{copiedFollowup ? 'Copied' : 'Copy Follow-up'}</span>
                       </button>
                     </div>
 
                     <div>
-                      <label className="text-xs font-semibold text-zinc-600 block mb-1">Follow-up Subject Line</label>
+                      <label className="text-xs font-medium text-zinc-700 block mb-1">Follow-up Subject Line</label>
                       <input
                         type="text"
                         value={editFollowupSubject}
@@ -1125,12 +1122,12 @@ export function LeadDetailDrawer({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-5 border-t border-zinc-200/70 bg-white/90 flex flex-wrap items-center justify-between gap-3">
+        <div className="p-5 border-t border-zinc-200 bg-white flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button
               onClick={handleDelete}
               type="button"
-              className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-2 rounded-lg text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete</span>
@@ -1140,7 +1137,7 @@ export function LeadDetailDrawer({
               <button
                 onClick={handleReject}
                 disabled={actionLoading}
-                className="px-3 py-2 rounded-xl text-xs font-semibold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 border border-zinc-300 transition cursor-pointer"
+                className="px-3 py-2 rounded-lg text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 border border-zinc-300 transition cursor-pointer"
               >
                 Reject
               </button>
@@ -1152,7 +1149,7 @@ export function LeadDetailDrawer({
               onClick={handleSave}
               disabled={saving}
               type="button"
-              className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              className="saas-card px-3.5 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer hover:bg-zinc-50"
             >
               <Save className="w-3.5 h-3.5 text-zinc-600" />
               <span>{saving ? 'Saving...' : 'Save Draft'}</span>
@@ -1162,11 +1159,11 @@ export function LeadDetailDrawer({
               onClick={handleSaveAsDraft}
               disabled={savingDraft}
               type="button"
-              className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              title="Create/Update draft directly in your real Gmail Drafts folder"
+              className="px-3.5 py-2 rounded-lg text-xs font-medium text-zinc-800 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 flex items-center gap-1.5 cursor-pointer"
+              title="Create/Update draft in your Gmail Drafts folder"
             >
-              <FileText className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{savingDraft ? 'Syncing...' : 'Save as Gmail Draft'}</span>
+              <FileText className="w-3.5 h-3.5 text-zinc-600" />
+              <span>{savingDraft ? 'Syncing...' : 'Save to Gmail'}</span>
             </button>
 
             {editStatus !== 'sent' ? (
@@ -1174,13 +1171,13 @@ export function LeadDetailDrawer({
                 onClick={handleSendEmail}
                 disabled={sendingEmail}
                 type="button"
-                className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 flex items-center gap-2 cursor-pointer shadow-md hover:scale-[1.02] transition"
+                className="px-4 py-2 rounded-lg text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 flex items-center gap-2 cursor-pointer transition disabled:opacity-50"
               >
-                <Send className={`w-3.5 h-3.5 text-cyan-300 ${sendingEmail ? 'animate-bounce' : ''}`} />
-                <span>{sendingEmail ? 'Sending...' : 'Send Email Now'}</span>
+                <Send className="w-3.5 h-3.5 text-zinc-300" />
+                <span>{sendingEmail ? 'Sending...' : 'Send Email'}</span>
               </button>
             ) : (
-              <span className="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
+              <span className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 Email Sent
               </span>

@@ -19,8 +19,9 @@ export function AutoApplyButton({
   size = 'sm',
 }: AutoApplyButtonProps) {
   const isAlreadyApplied = initialState === 'applied';
-  const [status, setStatus] = useState<'idle' | 'applying' | 'applied' | 'ticket' | 'error'>(
-    isAlreadyApplied ? 'applied' : 'idle'
+  const isUnconfirmed = initialState === 'submission_unconfirmed';
+  const [status, setStatus] = useState<'idle' | 'applying' | 'applied' | 'ticket' | 'error' | 'unconfirmed'>(
+    isAlreadyApplied ? 'applied' : (isUnconfirmed ? 'unconfirmed' : 'idle')
   );
   const [ticketId, setTicketId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -45,9 +46,9 @@ export function AutoApplyButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jobUrl,
-          mode: 'headed',
+          mode: 'assist',
           headless: false,
-          auto_submit: true,
+          auto_submit: false,
         }),
       });
 
@@ -108,6 +109,20 @@ export function AutoApplyButton({
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
         <span>Applied</span>
       </span>
+    );
+  }
+
+  if (status === 'unconfirmed') {
+    return (
+      <button
+        type="button"
+        onClick={handleAutoApply}
+        className={`${padClass} rounded-xl font-bold bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0`}
+        title="Submission unconfirmed by proof verification. Click to launch Assist Mode to resolve."
+      >
+        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+        <span>Unconfirmed</span>
+      </button>
     );
   }
 

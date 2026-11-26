@@ -39,6 +39,7 @@ dependencies = [
     "ddgs>=9.16.1",
     "pyarrow>=26.0.0",
     "libsql-experimental>=0.0.55",
+    "dnspython>=2.6.0",
 ]
 
 [project.optional-dependencies]

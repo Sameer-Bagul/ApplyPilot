@@ -48,10 +48,12 @@ def _build_fallback_chain(primary_model: str, quality: bool = False) -> list[Mod
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     gemini_url = "https://generativelanguage.googleapis.com/v1beta/openai"
     openai_url = "https://api.openai.com/v1"
     anthropic_url = "https://api.anthropic.com"
     deepseek_url = "https://api.deepseek.com/v1"
+    openrouter_url = "https://openrouter.ai/api/v1"
 
     # Gemini chains — use verified model IDs only
     if quality:
@@ -66,6 +68,12 @@ def _build_fallback_chain(primary_model: str, quality: bool = False) -> list[Mod
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
         ]
+
+    # OpenRouter models
+    if quality:
+        openrouter_models = ["google/gemini-2.0-flash-001", "meta-llama/llama-3.3-70b-instruct"]
+    else:
+        openrouter_models = ["google/gemini-2.0-flash-001", "meta-llama/llama-3.2-3b-instruct:free"]
 
     # OpenAI fallbacks (cost-efficient)
     if quality:
@@ -117,11 +125,16 @@ def _build_fallback_chain(primary_model: str, quality: bool = False) -> list[Mod
         for m in anthropic_models:
             chain.append(ModelEntry(m, "anthropic", anthropic_url, anthropic_key))
 
+    # OpenRouter fallbacks (OpenAI-compatible)
+    if openrouter_key:
+        for m in openrouter_models:
+            chain.append(ModelEntry(m, "openrouter", openrouter_url, openrouter_key))
+
     # If nothing was added (no keys), raise
     if not chain:
         raise RuntimeError(
             "No LLM provider configured. "
-            "Set GEMINI_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, or ANTHROPIC_API_KEY."
+            "Set GEMINI_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, or ANTHROPIC_API_KEY."
         )
 
     return chain
@@ -135,6 +148,7 @@ def _detect_provider(quality: bool = False) -> tuple[str, str, str]:
     """Return (base_url, model, api_key) for the primary provider."""
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
 
     model_override = os.environ.get("LLM_MODEL", "")
@@ -151,6 +165,12 @@ def _detect_provider(quality: bool = False) -> tuple[str, str, str]:
             chosen_model or "gemini-2.5-flash",
             gemini_key,
         )
+    if openrouter_key and not local_url and not openai_key:
+        return (
+            "https://openrouter.ai/api/v1",
+            chosen_model or "google/gemini-2.0-flash-001",
+            openrouter_key,
+        )
     if openai_key and not local_url:
         return (
             "https://api.openai.com/v1",
@@ -165,7 +185,7 @@ def _detect_provider(quality: bool = False) -> tuple[str, str, str]:
         )
     raise RuntimeError(
         "No LLM provider configured. "
-        "Set GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL."
+        "Set GEMINI_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, or LLM_URL."
     )
 
 

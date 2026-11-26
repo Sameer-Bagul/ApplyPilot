@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: applypilot-dashboard
+    runtime: node
+    plan: starter
+    rootDir: dashboard
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: applypilot-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: NEXTAUTH_URL
+        fromService:
+          type: web
+          name: applypilot-dashboard
+          property: host
+      - key: ALLOWED_EMAILS
+        value: sameerbagul2004@gmail.com
+      - key: ADMIN_PASSCODE
+        sync: false
+      - key: APPLYPILOT_DB_PATH
+        value: /var/data/applypilot.db
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

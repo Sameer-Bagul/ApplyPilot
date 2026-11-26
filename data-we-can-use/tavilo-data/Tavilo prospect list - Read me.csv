@@ -1,0 +1,26 @@
+Tavilo competitor-user research v3 - workbook built 2026-10-07
+
+TABS
+"1. Prospects - start here: 501 companies with strong evidence they use a competitor, ranked. Work top to bottom. Use the Owner / Outreach status / Notes columns at the right to track outreach."
+"   Tier A (200): named decision maker with a direct route, 11-2,500 staff, and complaints about their current tool or priority score 50+."
+   Tier B (247): named decision maker with a direct route.
+"   Tier C (54): only a company phone, email or LinkedIn. Find the decision maker first."
+"   Left out: No contact found yet (80); Uses a clock-in app for hourly/field staff (25); Too large (over 2,500 staff) (19). They are still in the Strong evidence tab."
+2. Unhappy customers: 107 company + tool pairs where a company complained about a tool or switched away from it. 'Unhappy with (tool)' names the tool that caused it.
+"   Hubstaff 26, Harvest 22, Time Doctor 10, Unnamed previous tool 7, ActivTrak 6, ProHance 5, Jibble 4, Toggl Track 3, DeskTime 3, Clockify 3 (targetable rows)."
+"3. Strong evidence - all: all 625 CURRENT or PROBABLE companies, including those left out of the prospect list and why."
+"4. Needs validation: 946 POSSIBLE companies (weak or ambiguous evidence, mostly technographic). Do not cold-pitch as users."
+5. Former customers: 45 rows where a company stopped using a tool.
+"6. Do not target: 623 companies ruled out (vendor, false match, defunct, no evidence). Reason in Notes."
+7. Competitor summary / Competitor pricing / Channel summary / Source audit: reference tables.
+8. Master (all rows): all 2290 company + tool rows with every field.
+
+DEFINITIONS
+CURRENT = strong recent evidence they use the tool. PROBABLE = strong but not fully confirmed. POSSIBLE = weak/ambiguous. FORMER = a source says they stopped. DO_NOT_TARGET = ruled out.
+Confidence (0-100) = how sure we are they use the tool. Priority score (0-100) = how good a Tavilo prospect they are.
+"Seats, costs and savings are ESTIMATES from list prices. When no seat count was stated, seats = headcount."
+
+CONTACT RULES
+"Every name, LinkedIn, phone and email was copied from a public page (see Contact source). Nothing was guessed: no email was built from a name pattern and no LinkedIn URL was constructed. Blank = not found."
+"Anonymous reviewers were never identified. 'Who said it = Employees' means the complaint came from staff reviews, not management: use it as a privacy/morale angle, never quote or name the reviewer."
+Contacts can go stale. Check the person is still in the role before reaching out.

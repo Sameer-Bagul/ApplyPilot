@@ -265,6 +265,9 @@ def run_migrations(db_path: Path | str | sqlite3.Connection | None = None) -> sq
     _add_column_if_missing(conn, "career_watchlist", "top_projects_json", "TEXT")
     _add_column_if_missing(conn, "career_watchlist", "tech_radar_json", "TEXT")
     _add_column_if_missing(conn, "career_watchlist", "investigated_at", "TIMESTAMP")
+    _add_column_if_missing(conn, "career_watchlist", "referral_available", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "career_watchlist", "referrer_name", "TEXT")
+    _add_column_if_missing(conn, "career_watchlist", "referrer_linkedin", "TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_priority ON career_watchlist(priority_tier, is_vip)")
 
     # Extend recruiter_leads for top-pick workflow & persona pitch

@@ -27,6 +27,7 @@ import {
   ZoomOut,
   Maximize2,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import { RouteBadge } from './ui/RouteBadge';
 
@@ -44,6 +45,7 @@ export function AppliedView({ onSelectJob }: AppliedViewProps) {
   // Audit log state
   const [logData, setLogData] = useState<any | null>(null);
   const [loadingLog, setLoadingLog] = useState(false);
+  const [reverting, setReverting] = useState(false);
 
   // Copy status
   const [copiedVideo, setCopiedVideo] = useState(false);
@@ -108,6 +110,31 @@ export function AppliedView({ onSelectJob }: AppliedViewProps) {
 
     fetchLog();
   }, [selectedJob?.url]);
+
+  const handleRevert = async (jobUrl: string) => {
+    if (!jobUrl) return;
+    if (!confirm('Mark this job as Not Applied? This will restore it to Ready to Apply for re-submission.')) return;
+    setReverting(true);
+    try {
+      const res = await fetch('/api/jobs/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobUrl }),
+      });
+      const resJson = await res.json();
+      if (resJson.success) {
+        setJobs((prev) => prev.filter((j) => j.url !== jobUrl));
+        setSelectedJob((prev: any) => (prev?.url === jobUrl ? null : prev));
+        await fetchAppliedJobs();
+      } else {
+        alert(resJson.error || 'Failed to revert job.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error reverting job.');
+    } finally {
+      setReverting(false);
+    }
+  };
 
   const getScoreBadgeClass = (score: number | null) => {
     if (score == null) return 'text-zinc-600 bg-zinc-100 border-zinc-200';
@@ -320,6 +347,16 @@ export function AppliedView({ onSelectJob }: AppliedViewProps) {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={reverting}
+                      onClick={() => handleRevert(selectedJob.url)}
+                      className="liquid-pill px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                      title="Mark as Not Applied: restores state to Ready to Apply if review of proof shows incomplete submission"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${reverting ? 'animate-spin' : ''}`} />
+                      <span>{reverting ? 'Reverting...' : 'Mark as Not Applied'}</span>
+                    </button>
                     {onSelectJob && (
                       <button
                         onClick={() => onSelectJob(selectedJob.url)}

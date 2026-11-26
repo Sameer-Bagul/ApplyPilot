@@ -1,20 +1,15 @@
 # ApplyPilot End-to-End Docker Guide
 
-This guide walks you through running ApplyPilot end-to-end inside Docker.
+This guide walks you through running ApplyPilot end-to-end inside Docker or natively.
 
 ---
 
-## 1. Quick Prerequisites (Arch Linux)
+## 1. Quick Prerequisites (Arch Linux / Linux)
 
-If Docker is not yet installed on your Arch Linux machine, run the setup script:
+Docker 24+ and Docker Compose v2 are required.
 
 ```bash
-chmod +x docker/setup-arch.sh
-./docker/setup-arch.sh
-```
-
-Or manually:
-```bash
+# Arch Linux
 sudo pacman -S --needed docker docker-compose
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
@@ -31,15 +26,17 @@ Copy the sample environment file:
 cp .env.example .env
 ```
 
-Edit `.env` with your preferred settings:
-- `APPLYPILOT_USER_EMAIL`: Your email address for HITL questions (`Q1: A`).
-- `ANTHROPIC_API_KEY`: (Optional) Fallback LLM key for non-standard forms.
+Key environment variables:
+- `DASHBOARD_PORT`: Port on host machine (default: `3000`. If port 3000 is occupied, set `DASHBOARD_PORT=3001`).
+- `APPLYPILOT_USER_EMAIL`: Your primary contact email.
+- `ANTHROPIC_API_KEY`: (Optional) AI fallback for custom form parsing.
+- `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`: (Optional) For remote database synchronization.
 
 ---
 
 ## 3. Building the Docker Image
 
-Build the container image with pre-installed Playwright Chromium:
+The Dockerfile builds a unified container containing Python 3.12, Node.js 22 LTS, Playwright Chromium, Tesseract OCR, and the pre-compiled Next.js Dashboard:
 
 ```bash
 docker compose build
@@ -47,87 +44,82 @@ docker compose build
 
 ---
 
-## 4. End-to-End Workflow
+## 4. How to Run the App (Two Methods)
 
-### Step 1: Run First-Time Setup Wizard (Interactive)
+### Method A: The Unified Autonomous Stack (Recommended for Docker)
+
+Runs the Next.js UI dashboard, REST APIs, and background Continuous Marathon Looper together:
+
 ```bash
-docker compose run --rm applypilot init
+# Start in background
+docker compose up -d
+
+# Or with a custom port if 3000 is occupied:
+DASHBOARD_PORT=3001 docker compose up -d
 ```
 
-### Step 2: Discover, Enrich & Score Jobs
-Runs the discovery scrapers (JobSpy, Greenhouse, Lever, Ashby, Workday) and generates tailored resumes:
-```bash
-docker compose run --rm applypilot run
-```
+- **Open Dashboard**: [http://localhost:3000](http://localhost:3000) (or `http://localhost:3001`)
+- **View Live Logs**:
+  ```bash
+  docker compose logs -f app
+  ```
+- **Stop**:
+  ```bash
+  docker compose down
+  ```
 
-### Step 3: Check Pipeline Status
-```bash
-docker compose run --rm applypilot status
-```
+---
 
-### Step 4: Run Dry-Run Auto-Apply (0 Token Verification)
+### Method B: Running Outreach & CLI Commands via Docker
+
+You can run any ApplyPilot CLI command through the containerized `cli` service:
+
 ```bash
-docker compose run --rm applypilot apply --dry-run
+# Check status and pipeline counts
+docker compose run --rm cli status
+
+# Run Coordinated Dual-Attack Outreach for Top Picks (Draft mode - 0 emails sent)
+docker compose run --rm cli outreach-top-picks --limit 5 --mode draft
+
+# Targeted Outreach for a specific company
+docker compose run --rm cli outreach-top-picks --company Composio --mode draft
+
+# Discover and harvest emails from company domains
+docker compose run --rm cli harvest-emails --limit 10
+
+# Run one-off marathon run
+docker compose run --rm cli marathon --once
 ```
 
 ---
 
-## 5. Running Continuous Autonomous Services in the Background
+### Method C: Running Natively on Host (Arch Linux & Hyprland)
 
-You can run the entire autonomous pipeline with background daemons:
+If running natively directly on your machine (ideal for visual headed browser automation on Hyprland Workspace 11):
 
-```bash
-# Start all background services (worker pool, HITL tracker, web dashboard)
-docker compose up -d worker tracker dashboard
-```
+1. **Start the Next.js Dashboard**:
+   ```bash
+   cd dashboard && npm run dev -- -p 3001
+   # OR:
+   applypilot dashboard --port 3001
+   ```
+   Open: [http://localhost:3001](http://localhost:3001)
 
-Services running in background:
-- **`worker`**: Autonomous parallel apply worker pool (Playwright headless Chromium).
-- **`tracker`**: Continuous Gmail poller checking for HITL replies every 60 seconds (`Q1: A`).
-- **`dashboard`**: Live HTML Dashboard served at [http://localhost:8080/dashboard.html](http://localhost:8080/dashboard.html).
+2. **Run Targeted Headed Outreach on Hyprland Workspace 11**:
+   ```bash
+   .venv/bin/python -m applypilot outreach-top-picks --company Composio --headed --mode draft
+   ```
 
-### Viewing Service Logs
-```bash
-# Follow logs across all services
-docker compose logs -f
-
-# Follow logs for the worker only
-docker compose logs -f worker
-
-# Follow logs for the email HITL tracker only
-docker compose logs -f tracker
-```
-
-### Stopping Services
-```bash
-docker compose down
-```
+3. **Run Continuous Autonomous Looper**:
+   ```bash
+   applypilot marathon --continuous
+   ```
 
 ---
 
-## 6. Self-Learning Feedback Loop (`applypilot learn`)
+## 5. Data Persistence & Sync
 
-Compile successful DOM selectors from application telemetry traces into the Tier 0 cache:
-
-```bash
-docker compose run --rm applypilot learn
-```
-
----
-
-## 7. Connecting MCP (FastMCP Server)
-
-To expose ApplyPilot's 6 MCP tools to an external AI agent or client (e.g. Claude Desktop, Cursor, Antigravity):
-
-```bash
-docker compose run --rm -i applypilot mcp
-```
-
----
-
-## 8. Data Persistence
-
-The Docker configuration uses named Docker volumes to protect all user data across rebuilds and restarts:
-- `applypilot_home_data`: Persists the SQLite database (`applypilot.db`), logs, ATS session vault cookies, and tailored documents.
-- `applypilot_gmail_creds`: Persists OAuth credentials (`~/.gmail-mcp/credentials.json`).
-- Host directory mount (`./`): Automatically picks up your CV (`resume.pdf`), `profile.json`, and `search.yaml`.
+The container shares data with your host system:
+- `${HOME}/.applypilot`: Database (`applypilot.db`), logs, company intelligence, and generated email drafts are persisted directly on the host machine.
+- `applypilot_gmail_creds`: Named volume for Gmail API OAuth tokens.
+- `./src` & `./dashboard`: Mounted in development for immediate hot-reload.

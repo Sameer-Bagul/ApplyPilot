@@ -532,3 +532,110 @@ def test_submit_without_positive_confirmation_refuses_applied(test_db, monkeypat
 
     asyncio.run(_run())
 
+
+def test_auto_verify_mode_unconfirmed_sets_submission_unconfirmed_in_db(test_db, monkeypatch, tmp_path):
+    """When mode='auto_verify' is explicit and confirmation fails, returns 'submission_unconfirmed'."""
+    async def _run():
+        job_url = "https://boards.greenhouse.io/acme/jobs/999"
+        test_db.execute(
+            "INSERT INTO jobs (url, title, company, fit_score, state) VALUES (?, ?, ?, ?, 'ready')",
+            (job_url, "Fullstack Engineer", "Acme", 8),
+        )
+        test_db.commit()
+
+        monkeypatch.setattr("applypilot.config.PROOFS_SCREENSHOTS_DIR", tmp_path / "screenshots")
+        monkeypatch.setattr("applypilot.config.PROOFS_VIDEOS_DIR", tmp_path / "videos")
+
+        mock_page = MagicMock()
+        mock_page.url = job_url
+        mock_page._enforce_strict_confirmation = True
+        mock_page.goto = AsyncMock()
+        mock_page.wait_for_timeout = AsyncMock()
+        mock_page.is_closed = MagicMock(return_value=False)
+        mock_page.close = AsyncMock()
+        mock_page.screenshot = AsyncMock()
+
+        mock_context = MagicMock()
+        mock_context.pages = [mock_page]
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.cookies = AsyncMock(return_value=[])
+        mock_context.close = AsyncMock()
+
+        mock_browser = MagicMock()
+        mock_browser.contexts = [mock_context]
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock()
+
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__.return_value = mock_playwright
+        mock_cm.__aexit__.return_value = None
+
+        mock_pw_mod = MagicMock()
+        mock_pw_async = MagicMock()
+        mock_pw_mod.async_api = mock_pw_async
+        mock_pw_async.async_playwright = lambda: mock_cm
+        monkeypatch.setitem(sys.modules, "playwright", mock_pw_mod)
+        monkeypatch.setitem(sys.modules, "playwright.async_api", mock_pw_async)
+
+        monkeypatch.setattr(
+            "applypilot.apply.playwright_engine.fill_standard_fields_playwright",
+            AsyncMock(return_value={"filled": {"profile.email": "test@example.com"}, "unresolved": [], "duration_ms": 150}),
+        )
+
+        mock_submit = MagicMock()
+        mock_submit.is_visible = AsyncMock(return_value=True)
+        mock_submit.scroll_into_view_if_needed = AsyncMock()
+        mock_submit.click = AsyncMock()
+
+        def mock_locator_router(sel):
+            if "submit" in sel:
+                return MagicMock(first=mock_submit)
+            m = MagicMock()
+            m.first = MagicMock(is_visible=AsyncMock(return_value=False))
+            return m
+
+        mock_page.locator = MagicMock(side_effect=mock_locator_router)
+        mock_page.evaluate = AsyncMock(return_value="Some error occurred or form still open.")
+
+        with patch("applypilot.apply.playwright_engine.detect_challenge", new=AsyncMock(return_value=None)):
+            status, duration, qs = await _async_run_playwright_tier_engine(
+                job={"url": job_url, "title": "Fullstack Engineer", "company": "Acme"},
+                port=0,
+                headless=True,
+                auto_submit=True,
+                mode="auto_verify",
+                conn=test_db,
+            )
+
+            assert status == "submission_unconfirmed"
+            row = test_db.execute("SELECT state, needs_human_reason FROM jobs WHERE url = ?", (job_url,)).fetchone()
+            assert row[0] == "submission_unconfirmed"
+            assert row[1] == "unconfirmed_submission"
+
+    asyncio.run(_run())
+
+
+def test_revert_job_functionality(test_db):
+    """Test 1-Click revert restores job from 'applied' to 'ready_to_apply'."""
+    from applypilot.database import revert_job
+
+    job_url = "https://boards.greenhouse.io/acme/jobs/revert-me"
+    test_db.execute(
+        "INSERT INTO jobs (url, title, company, fit_score, state, apply_status, applied_at) VALUES (?, ?, ?, ?, 'applied', 'applied', '2026-11-25T12:00:00')",
+        (job_url, "Systems Engineer", "Acme", 9),
+    )
+    test_db.commit()
+
+    ok = revert_job(job_url, conn=test_db)
+    assert ok is True
+
+    row = test_db.execute("SELECT state, apply_status, applied_at, needs_human_reason FROM jobs WHERE url = ?", (job_url,)).fetchone()
+    assert row[0] == "ready_to_apply"
+    assert row[1] == "ready"
+    assert row[2] is None
+    assert row[3] == "reverted_by_user_proof_inspected"
+
+

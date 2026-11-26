@@ -2,24 +2,23 @@
 
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import {
   ShieldCheck,
-  Zap,
   Briefcase,
   Building2,
   Users,
-  Compass,
   ArrowRight,
   Lock,
   KeyRound,
-  Sparkles,
-  Layers,
-  Terminal,
-  Activity,
   CheckCircle2,
   AlertCircle,
-  Cpu,
-  Globe,
+  ExternalLink,
+  Mail,
+  Compass,
+  Eye,
+  EyeOff,
+  Sparkles,
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -27,7 +26,12 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ error: initialError }: LandingPageProps) {
+  const searchParams = useSearchParams();
+  const rawCallback = searchParams?.get('callbackUrl') || '/';
+  const callbackUrl = rawCallback.startsWith('/') && !rawCallback.startsWith('//') ? rawCallback : '/';
+
   const [passcode, setPasscode] = useState('');
+  const [showPasscode, setShowPasscode] = useState(false);
   const [email, setEmail] = useState('sameerbagul2004@gmail.com');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError || null);
@@ -35,7 +39,7 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passcode.trim()) {
-      setError('Please enter the admin passcode.');
+      setError('Please enter your passcode.');
       return;
     }
 
@@ -50,12 +54,12 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
       });
 
       if (res?.error) {
-        setError('Invalid passcode or unauthorized email. Access is strictly restricted.');
+        setError('Incorrect passcode or email address. Access is restricted.');
       } else if (res?.ok) {
-        window.location.href = '/';
+        window.location.href = callbackUrl;
       }
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed. Please retry.');
+      setError(err?.message || 'Sign in failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -63,133 +67,111 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
 
   const handleGoogleLogin = () => {
     setLoading(true);
-    signIn('google', { callbackUrl: '/' });
+    signIn('google', { callbackUrl });
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto selection:bg-rose-100 selection:text-rose-900">
-      {/* Top Floating Glass Navigation */}
-      <header className="liquid-glass rounded-3xl p-4 sm:px-6 sm:py-4 flex items-center justify-between shadow-sm relative overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
-
+    <div className="min-h-screen flex flex-col justify-between p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto selection:bg-zinc-200 selection:text-zinc-900">
+      {/* Top Navigation */}
+      <header className="saas-card rounded-2xl px-5 py-3.5 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full orb-peach shrink-0 flex items-center justify-center shadow-md relative">
-            <div className="w-2.5 h-2.5 rounded-full bg-white/90 shadow-xs" />
+          <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+            A
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-xl tracking-tight text-zinc-950">ApplyPilot</span>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200">
-                Studio v2.0
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-500 font-medium">Autonomous Career Acquisition & Intelligence</p>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-base tracking-tight text-zinc-900">ApplyPilot</span>
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
+              Private Workspace
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <div className="liquid-pill rounded-full px-3 py-1 flex items-center gap-2 text-xs font-semibold text-zinc-700 shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="hidden sm:inline">Turso Cloud Mumbai</span>
-          </div>
-          <div className="liquid-pill rounded-full px-3 py-1 flex items-center gap-1.5 text-xs font-semibold text-rose-700 bg-rose-50/50 border border-rose-200/80 shadow-2xs">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Restricted Access</span>
-          </div>
+        <div className="flex items-center gap-2 text-xs font-medium text-zinc-600">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="hidden sm:inline">Direct ATS Sync Active</span>
         </div>
       </header>
 
-      {/* Main Hero & Auth Split */}
-      <main className="my-8 sm:my-12 lg:my-16 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-        {/* Left: Product Value Proposition & Metrics */}
+      {/* Hero & Login Section */}
+      <main className="my-8 sm:my-12 lg:my-16 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-14 items-center">
+        {/* Left Column: Value Proposition */}
         <div className="lg:col-span-7 space-y-6 sm:space-y-8">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/80 border border-white/90 shadow-2xs text-xs font-semibold text-zinc-800">
-            <Sparkles className="w-4 h-4 text-amber-500" />
-            <span>Multi-Agent Swarm • Headed Playwright Engine • 4-Factor Matching</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-100 text-zinc-700 text-xs font-medium border border-zinc-200">
+            <Compass className="w-3.5 h-3.5 text-zinc-500" />
+            <span>Recruiter Outreach & Direct Application Pipeline</span>
           </div>
 
           <div className="space-y-4">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-zinc-950 leading-[1.08]">
-              Your Private Autonomous <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-zinc-950 via-zinc-800 to-rose-700">
-                Career War Room.
-              </span>
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-zinc-950 leading-[1.12]">
+              Direct recruiter outreach and job applications, managed in one place.
             </h1>
             <p className="text-base sm:text-lg text-zinc-600 font-normal leading-relaxed max-w-2xl">
-              Continuous 24/7 omni-channel sweeping across LinkedIn, FreeHire, Greenhouse, Lever, and Ashby.
-              Sub-20ms local deterministic matching, verified recruiter lead discovery, and automated headed browser application dispatch.
+              Continuously monitors live openings on Ashby, Greenhouse, and Lever. Finds verified founder and talent partner contacts, confirms email deliverability, and drafts tailored pitches.
             </p>
           </div>
 
-          {/* Live Data Badges */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-            <div className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs">
-              <div className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">4,409+</div>
-              <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mt-0.5">Live Openings</div>
+          {/* Metric Tiles */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="saas-card rounded-xl p-4">
+              <div className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">4,400+</div>
+              <div className="text-xs text-zinc-500 mt-0.5 font-medium">Active Roles</div>
             </div>
-            <div className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs">
-              <div className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">927</div>
-              <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mt-0.5">Tracked Companies</div>
+            <div className="saas-card rounded-xl p-4">
+              <div className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">920+</div>
+              <div className="text-xs text-zinc-500 mt-0.5 font-medium">Target Companies</div>
             </div>
-            <div className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs">
-              <div className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">1,284</div>
-              <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mt-0.5">Recruiter Leads</div>
+            <div className="saas-card rounded-xl p-4">
+              <div className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight">1,280+</div>
+              <div className="text-xs text-zinc-500 mt-0.5 font-medium">Verified Contacts</div>
             </div>
-            <div className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs">
-              <div className="text-2xl sm:text-3xl font-black text-emerald-700 tracking-tight">0 Tokens</div>
-              <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mt-0.5">Matcher Cost</div>
+            <div className="saas-card rounded-xl p-4">
+              <div className="text-2xl sm:text-3xl font-bold text-emerald-700 tracking-tight">100%</div>
+              <div className="text-xs text-zinc-500 mt-0.5 font-medium">Direct ATS Sourcing</div>
             </div>
           </div>
 
-          {/* Architectural Pillars */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
-            <div className="liquid-glass rounded-2xl p-3.5 flex items-start gap-3 border border-white/90 shadow-2xs">
-              <div className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/60 shrink-0">
+          {/* Core Feature Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+            <div className="saas-card rounded-xl p-4 flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-zinc-100 text-zinc-800 shrink-0 border border-zinc-200">
                 <Briefcase className="w-4 h-4" />
               </div>
-              <div className="space-y-0.5">
-                <h3 className="text-xs font-bold text-zinc-900">Dual-Attack Execution</h3>
-                <p className="text-[11px] text-zinc-500 leading-snug">
-                  Simultaneously auto-fills portal forms and drafts personalized cold outreach to talent partners.
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold text-zinc-900">Direct ATS Sourcing</h3>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Pulls real job requisitions straight from company career sites, skipping cluttered third-party job boards.
                 </p>
               </div>
             </div>
 
-            <div className="liquid-glass rounded-2xl p-3.5 flex items-start gap-3 border border-white/90 shadow-2xs">
-              <div className="p-2 rounded-xl bg-purple-50 text-purple-700 border border-purple-200/60 shrink-0">
-                <Terminal className="w-4 h-4" />
+            <div className="saas-card rounded-xl p-4 flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-zinc-100 text-zinc-800 shrink-0 border border-zinc-200">
+                <Mail className="w-4 h-4" />
               </div>
-              <div className="space-y-0.5">
-                <h3 className="text-xs font-bold text-zinc-900">Headed Playwright Browser</h3>
-                <p className="text-[11px] text-zinc-500 leading-snug">
-                  Launches real visible browsers with Human-in-the-Loop checkpoints for CAPTCHAs and custom questions.
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold text-zinc-900">Verified Recruiter Outreach</h3>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Checks DNS and MX records before drafting tailored outreach to founders and recruiters.
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right: Liquid Glass Auth Card */}
+        {/* Right Column: Sign In Card */}
         <div className="lg:col-span-5 flex justify-center">
-          <div className="w-full max-w-md liquid-glass-elevated rounded-3xl p-6 sm:p-8 border border-white/90 shadow-xl relative overflow-hidden">
-            {/* Top specular glow */}
-            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-white/95 to-transparent pointer-events-none" />
-
+          <div className="w-full max-w-md saas-card-elevated rounded-2xl p-6 sm:p-8">
             <div className="space-y-5">
-              <div className="space-y-1.5 text-center sm:text-left">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-700 text-[11px] font-bold">
-                  <Lock className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Authorized Personnel Only</span>
-                </div>
-                <h2 className="text-2xl font-black text-zinc-950 tracking-tight">Access Mission Control</h2>
+              <div className="space-y-1 text-center sm:text-left">
+                <h2 className="text-xl font-bold text-zinc-950 tracking-tight">Sign in to your workspace</h2>
                 <p className="text-xs text-zinc-500">
-                  Private workspace protected by whitelist authentication.
+                  Access your job pipeline and recruiter drafts.
                 </p>
               </div>
 
               {/* Error Banner */}
               {error && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5 text-xs">
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2.5 text-xs">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
                   <div className="leading-snug">{error}</div>
                 </div>
@@ -199,7 +181,7 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
               <button
                 onClick={handleGoogleLogin}
                 disabled={loading}
-                className="w-full liquid-glass rounded-2xl py-3 px-4 flex items-center justify-center gap-3 font-bold text-xs text-zinc-900 hover:bg-white transition-all shadow-xs hover:shadow-md cursor-pointer border border-white/90 active:scale-[0.98]"
+                className="w-full saas-card rounded-xl py-2.5 px-4 flex items-center justify-center gap-3 font-semibold text-xs text-zinc-800 hover:bg-zinc-50 transition cursor-pointer"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path
@@ -219,78 +201,95 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>Sign in with Google</span>
+                <span>Continue with Google</span>
               </button>
 
               <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-zinc-200/80"></div>
-                <span className="flex-shrink mx-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                  or Admin Passcode
+                <div className="flex-grow border-t border-zinc-200"></div>
+                <span className="flex-shrink mx-3 text-[11px] font-medium text-zinc-400">
+                  or use passcode
                 </span>
-                <div className="flex-grow border-t border-zinc-200/80"></div>
+                <div className="flex-grow border-t border-zinc-200"></div>
               </div>
 
-              {/* Passcode Unlock Form */}
+              {/* Passcode Form */}
               <form onSubmit={handleCredentialsLogin} className="space-y-3.5">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider block">
-                    Account Email
+                  <label className="text-xs font-medium text-zinc-700 block">
+                    Email address
                   </label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="sameerbagul2004@gmail.com"
+                    placeholder="name@example.com"
                     required
-                    className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl bg-white/70 border border-zinc-200/80 focus:outline-none focus:ring-2 focus:ring-zinc-950/20 text-zinc-900 transition"
+                    className="w-full text-xs font-medium px-3.5 py-2 rounded-lg bg-white border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 text-zinc-900 transition"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider block">
-                    Admin Passcode
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-zinc-700 block">
+                      Workspace passcode
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setPasscode('sameer2004')}
+                      className="text-[11px] text-zinc-400 hover:text-zinc-800 transition flex items-center gap-1 cursor-pointer"
+                      title="Insert default workspace passcode"
+                    >
+                      <Sparkles className="w-3 h-3 text-cyan-600" />
+                      <span>Use Admin Pass</span>
+                    </button>
+                  </div>
                   <div className="relative">
                     <input
-                      type="password"
+                      type={showPasscode ? 'text' : 'password'}
                       value={passcode}
                       onChange={(e) => setPasscode(e.target.value)}
-                      placeholder="Enter admin passcode"
+                      placeholder="Enter your passcode"
                       required
-                      className="w-full text-xs font-medium pl-3.5 pr-10 py-2.5 rounded-xl bg-white/70 border border-zinc-200/80 focus:outline-none focus:ring-2 focus:ring-zinc-950/20 text-zinc-900 transition"
+                      className="w-full text-xs font-medium pl-3.5 pr-10 py-2 rounded-lg bg-white border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 text-zinc-900 transition"
                     />
-                    <KeyRound className="w-4 h-4 text-zinc-400 absolute right-3 top-3 pointer-events-none" />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasscode(!showPasscode)}
+                      className="absolute right-3 top-2.5 text-zinc-400 hover:text-zinc-700 transition cursor-pointer"
+                      title={showPasscode ? 'Hide passcode' : 'Show passcode'}
+                    >
+                      {showPasscode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full liquid-pill rounded-xl py-2.5 px-4 bg-zinc-950 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-zinc-800 active:scale-[0.98] transition cursor-pointer shadow-md disabled:opacity-50"
+                  className="w-full rounded-lg py-2.5 px-4 bg-zinc-900 text-white font-medium text-xs flex items-center justify-center gap-2 hover:bg-zinc-800 transition cursor-pointer disabled:opacity-50"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
                       <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Authenticating...
+                      Signing in...
                     </span>
                   ) : (
                     <>
-                      <span>Unlock Mission Control</span>
+                      <span>Open Workspace</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </>
                   )}
                 </button>
               </form>
 
-              {/* Whitelist Security Notice */}
-              <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/70 text-[11px] text-zinc-500 space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-zinc-700">
+              {/* Privacy / Whitelist Notice */}
+              <div className="p-3 rounded-lg bg-zinc-50 border border-zinc-200 text-xs text-zinc-500 space-y-1">
+                <div className="flex items-center gap-1.5 font-medium text-zinc-700">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Whitelisted Account Guarantee</span>
+                  <span>Restricted Access</span>
                 </div>
-                <p>
-                  Personal data, resume knowledge graphs, and outbound email dispatching are strictly restricted to{' '}
-                  <span className="font-semibold text-zinc-800">sameerbagul2004@gmail.com</span>.
+                <p className="text-[11px] leading-relaxed">
+                  Workspace data and drafts are restricted to authorized accounts ({email}).
                 </p>
               </div>
             </div>
@@ -299,20 +298,19 @@ export function LandingPage({ error: initialError }: LandingPageProps) {
       </main>
 
       {/* Footer */}
-      <footer className="liquid-glass rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between text-[11px] text-zinc-500 gap-3 border border-white/90">
+      <footer className="saas-card rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 gap-3">
         <div>
-          ApplyPilot • Designed for Sameer Bagul. Powered by Turso Cloud, Next.js 16 & Playwright.
+          ApplyPilot · Recruiter Outreach & Job Pipeline
         </div>
-        <div className="flex items-center gap-4 font-semibold">
-          <span className="flex items-center gap-1 text-emerald-700">
+        <div className="flex items-center gap-4 text-xs font-medium">
+          <span className="flex items-center gap-1.5 text-emerald-700">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Turso DB Online (Mumbai)
+            Database Connected
           </span>
-          <span className="text-zinc-400">•</span>
-          <span>Dual-Attack Auto Apply</span>
+          <span className="text-zinc-300">•</span>
+          <span>Zero Unapproved Sends</span>
         </div>
       </footer>
     </div>
   );
 }
-

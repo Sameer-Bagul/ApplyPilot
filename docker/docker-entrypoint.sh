@@ -67,7 +67,7 @@ case "$1" in
         shift
         exec applypilot dashboard --host 0.0.0.0 --port 3000 "$@"
         ;;
-    init|run|apply|status|track|learn|mcp|qa|creds|run-daily|discover-all|harvest-vc-boards|import-fundraising-founders|import-startupmap-one|loop-companies|harvest-all-directories|marathon|match-jobs|harvest-emails|outreach)
+    init|run|apply|status|track|learn|mcp|qa|creds|run-daily|discover-all|harvest-vc-boards|import-fundraising-founders|import-startupmap-one|loop-companies|harvest-all-directories|marathon|match-jobs|harvest-emails|outreach|outreach-top-picks)
         exec applypilot "$@"
         ;;
     -*)

@@ -77,15 +77,14 @@ const BackgroundContext = createContext<BackgroundContextType>({
 });
 
 export function BackgroundProvider({ children }: { children: React.ReactNode }) {
-  const [currentTheme, setCurrentThemeState] = useState<BackgroundTheme>('dot_matrix_pearl');
+  const [currentTheme, setCurrentThemeState] = useState<BackgroundTheme>('dot_matrix_clean');
   const [dotDensity, setDotDensityState] = useState<DotDensity>('standard');
-  const [showSpheres, setShowSpheresState] = useState<boolean>(true);
+  const [showSpheres, setShowSpheresState] = useState<boolean>(false);
   const [dotGrid, setDotGridState] = useState<boolean>(true);
 
   useEffect(() => {
     try {
       const savedTheme = localStorage.getItem('applypilot_bg_theme') as BackgroundTheme;
-      // Reset if legacy busy theme was stored or match valid theme
       if (
         savedTheme &&
         BACKGROUND_OPTIONS.some((o) => o.id === savedTheme) &&
@@ -94,8 +93,8 @@ export function BackgroundProvider({ children }: { children: React.ReactNode }) 
       ) {
         setCurrentThemeState(savedTheme);
       } else {
-        setCurrentThemeState('dot_matrix_pearl');
-        localStorage.setItem('applypilot_bg_theme', 'dot_matrix_pearl');
+        setCurrentThemeState('dot_matrix_clean');
+        localStorage.setItem('applypilot_bg_theme', 'dot_matrix_clean');
       }
 
       const savedDensity = localStorage.getItem('applypilot_dot_density') as DotDensity;

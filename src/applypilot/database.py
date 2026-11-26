@@ -490,6 +490,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "score_attempts": "INTEGER DEFAULT 0",
     "score_next_retry_at": "TEXT",
     "execution_route": "TEXT",
+    "metadata_json": "TEXT",
 }
 
 
@@ -722,6 +723,7 @@ VALID_STATES: frozenset[str] = frozenset({
     "ready_to_apply", "applying", "applied",
     "apply_failed", "needs_human", "manual_only",
     "parked_awaiting_email", "queued_resume",
+    "submission_unconfirmed",
     "responded", "interview", "offer",
     "rejected", "ghosted", "archived",
 })
@@ -739,13 +741,14 @@ VALID_TRANSITIONS: dict[str, frozenset[str]] = {
     "cover_writing":  frozenset({"ready_to_apply", "cover_failed"}),
     "cover_failed":   frozenset({"cover_writing", "ready_to_apply", "archived"}),
     "ready_to_apply": frozenset({"applying", "manual_only", "archived", "parked_awaiting_email"}),
-    "applying":       frozenset({"applied", "apply_failed", "needs_human", "ready_to_apply", "parked_awaiting_email"}),
+    "applying":       frozenset({"applied", "apply_failed", "needs_human", "ready_to_apply", "parked_awaiting_email", "submission_unconfirmed"}),
     "apply_failed":   frozenset({"applying", "manual_only", "archived"}),
     "needs_human":    frozenset({"applying", "applied", "manual_only", "archived", "parked_awaiting_email"}),
+    "submission_unconfirmed": frozenset({"applied", "ready_to_apply", "needs_human", "archived", "applying"}),
     "parked_awaiting_email": frozenset({"queued_resume", "apply_failed", "archived"}),
     "queued_resume":  frozenset({"applying", "ready_to_apply", "archived"}),
     "manual_only":    frozenset({"applied", "archived"}),
-    "applied":        frozenset({"responded", "ghosted", "rejected", "archived"}),
+    "applied":        frozenset({"responded", "ghosted", "rejected", "archived", "ready_to_apply", "needs_human", "submission_unconfirmed"}),
     "responded":      frozenset({"interview", "rejected", "ghosted"}),
     "interview":      frozenset({"offer", "rejected", "ghosted"}),
     "offer":          frozenset({"archived"}),  # accept or decline → archived
@@ -929,6 +932,34 @@ def backfill_states(conn: sqlite3.Connection | None = None) -> dict[str, int]:
         commit_with_retry(conn)
 
     return counts
+
+
+def update_job_metadata_and_score(
+    conn: sqlite3.Connection,
+    url: str,
+    metadata_json: str,
+    fit_score: int,
+    score_reasoning: str,
+    state: str = "scored",
+) -> None:
+    """Persist extracted metadata and resume-to-JD match score."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        UPDATE jobs
+        SET metadata_json = ?,
+            fit_score = ?,
+            score_reasoning = ?,
+            scored_at = ?,
+            state = ?,
+            score_error = NULL
+        WHERE url = ?
+        """,
+        (metadata_json, fit_score, score_reasoning, now, state, url),
+    )
+    commit_with_retry(conn)
+
 
 
 # ---------------------------------------------------------------------------
@@ -2362,6 +2393,16 @@ def store_qa(question: str, answer: str, source: str = "agent",
              ats_slug, job_url, now),
         )
         commit_with_retry(conn)
+        # Synchronize with FTS5 virtual table qa_fts if present
+        try:
+            conn.execute(
+                "INSERT INTO qa_fts (question_key, canonical_question, question_text, answer_text) VALUES (?, ?, ?, ?)",
+                (key, canonical_question or key, question, answer),
+            )
+            commit_with_retry(conn)
+        except Exception:
+            pass
+
         row = conn.execute(
             "SELECT id FROM qa_knowledge WHERE question_key = ? AND answer_text = ?",
             (key, answer),
@@ -2369,6 +2410,31 @@ def store_qa(question: str, answer: str, source: str = "agent",
         return row[0] if row else None
     except Exception:
         return None
+
+
+def revert_job(job_url_or_id: str | int, conn: sqlite3.Connection | None = None) -> bool:
+    """Revert an applied job back to ready_to_apply state, clearing applied_at."""
+    if conn is None:
+        conn = get_connection()
+    try:
+        target = str(job_url_or_id)
+        if target.isdigit():
+            conn.execute(
+                "UPDATE jobs SET state = 'ready_to_apply', apply_status = 'ready', applied_at = NULL, "
+                "needs_human_reason = 'reverted_by_user_proof_inspected' WHERE rowid = ? OR url = ?",
+                (int(target), target),
+            )
+        else:
+            conn.execute(
+                "UPDATE jobs SET state = 'ready_to_apply', apply_status = 'ready', applied_at = NULL, "
+                "needs_human_reason = 'reverted_by_user_proof_inspected' WHERE url = ?",
+                (target,),
+            )
+        commit_with_retry(conn)
+        return True
+    except Exception as e:
+        _log.warning("Failed to revert job %s: %s", job_url_or_id, e)
+        return False
 
 
 def lookup_qa(question: str,
@@ -3058,6 +3124,9 @@ def upsert_career_watchlist(
     founders_json: str | None = None,
     hr_contacts_json: str | None = None,
     open_roles_count: int = 0,
+    referral_available: int = 0,
+    referrer_name: str | None = None,
+    referrer_linkedin: str | None = None,
     company_id: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> str:
@@ -3077,7 +3146,7 @@ def upsert_career_watchlist(
             """,
             (company_name.strip(), (official_domain or "").strip()),
         ).fetchone()
-        if existing:
+        if existing and existing[0]:
             cid = existing[0]
         else:
             cid = f"comp_{uuid.uuid4().hex[:10]}"
@@ -3091,8 +3160,9 @@ def upsert_career_watchlist(
             company_id, company_name, slug, priority_tier, is_vip,
             stage, sector, area, location, team_size, total_funding,
             official_domain, careers_page_url, ats_provider, ats_board_token,
-            founders_json, hr_contacts_json, open_roles_count, last_checked_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            founders_json, hr_contacts_json, open_roles_count,
+            referral_available, referrer_name, referrer_linkedin, last_checked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(company_id) DO UPDATE SET
             company_name = excluded.company_name,
             slug = COALESCE(excluded.slug, career_watchlist.slug),
@@ -3111,13 +3181,17 @@ def upsert_career_watchlist(
             founders_json = COALESCE(excluded.founders_json, career_watchlist.founders_json),
             hr_contacts_json = COALESCE(excluded.hr_contacts_json, career_watchlist.hr_contacts_json),
             open_roles_count = excluded.open_roles_count,
+            referral_available = CASE WHEN excluded.referral_available = 1 THEN 1 ELSE career_watchlist.referral_available END,
+            referrer_name = COALESCE(excluded.referrer_name, career_watchlist.referrer_name),
+            referrer_linkedin = COALESCE(excluded.referrer_linkedin, career_watchlist.referrer_linkedin),
             last_checked_at = excluded.last_checked_at
         """,
         (
             cid, company_name, slug, priority_tier, is_vip,
             stage, sector, area, location, team_size, total_funding,
             official_domain, careers_page_url, ats_provider, ats_board_token,
-            founders_json, hr_contacts_json, open_roles_count, now,
+            founders_json, hr_contacts_json, open_roles_count,
+            referral_available, referrer_name, referrer_linkedin, now,
         ),
     )
     commit_with_retry(conn)

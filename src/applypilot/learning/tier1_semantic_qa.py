@@ -428,3 +428,127 @@ def resolve_screening_question(question_text: str,
         return str(candidate_value), confidence, match_source
 
     return None, 0.0, "unresolved"
+
+
+def resolve_screening_question_ai(
+    question_text: str,
+    field_type: str = "text",
+    options: list[str] | None = None,
+    profile: dict | None = None,
+    job: dict | None = None,
+    ats_type: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[str | None, float, str]:
+    """Resolve an unanswered screening question using Gemini / OpenRouter LLM API.
+
+    Automatically stores the generated answer in qa_knowledge and qa_fts for continuous
+    self-learning and zero-token reuse on subsequent applications.
+
+    Returns:
+        (resolved_value, confidence, source)
+    """
+    if not question_text:
+        return None, 0.0, "unresolved"
+
+    from applypilot.database import store_qa
+    import os
+
+    has_key = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"))
+    if not has_key:
+        logger.debug("No LLM API keys configured for hybrid Q&A fallback.")
+        return None, 0.0, "unresolved"
+
+    prof = profile or {}
+    personal = prof.get("personal", {})
+    name = personal.get("full_name") or prof.get("first_name", "") + " " + prof.get("last_name", "")
+    current_title = prof.get("experience", {}).get("current_job_title") or prof.get("current_title", "Software Engineer")
+    skills = prof.get("skills_boundary", {}) or prof.get("skills", [])
+    work_auth = prof.get("work_authorization", {})
+    years_exp = prof.get("experience", {}).get("years_of_experience_total") or prof.get("years_of_experience", "5+")
+    location = prof.get("personal", {}).get("city") or prof.get("location", "Bangalore, India")
+
+    profile_context = (
+        f"Applicant Name: {name}\n"
+        f"Current Role / Title: {current_title}\n"
+        f"Years of Experience: {years_exp}\n"
+        f"Primary Location: {location}\n"
+        f"Work Authorization: {work_auth}\n"
+        f"Skills / Background: {skills}\n"
+    )
+    if prof.get("cover_letter_text"):
+        profile_context += f"Candidate Summary / Cover Note: {prof.get('cover_letter_text')[:400]}\n"
+
+    job_context = ""
+    if job:
+        job_context = f"Applying to Company: {job.get('company', '')}, Role: {job.get('title', '')}\n"
+
+    system_prompt = (
+        "You are an expert AI application assistant answering a single job application screening question on behalf of the candidate. "
+        "Your response must be truthful based on the candidate's profile, highly professional, and direct. "
+        "Do NOT include conversational filler, greetings, or explanations. Return ONLY the answer value."
+    )
+
+    user_prompt = (
+        f"{job_context}"
+        f"Candidate Profile:\n{profile_context}\n"
+        f"Question: \"{question_text}\"\n"
+        f"Field Type: {field_type}\n"
+    )
+    if options:
+        user_prompt += f"Available Options (choose the single best option): {options}\n"
+    else:
+        user_prompt += "Format: concise, direct answer (for textarea: 1-3 crisp sentences; for text/number/boolean: exact value only).\n"
+
+    try:
+        from applypilot.llm import LLMClient, _detect_provider
+        base_url, model, api_key = _detect_provider(quality=False)
+        client = LLMClient(base_url=base_url, model=model, api_key=api_key, quality=False)
+        raw_ans = client.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
+            max_tokens=350,
+        ).strip()
+
+        # Clean enclosing quotes or markdown backticks
+        clean_ans = raw_ans.strip('`"\'').strip()
+
+        # If options are present, canonicalize via RapidFuzz
+        if options:
+            matched = match_dropdown_option(clean_ans, options)
+            if matched:
+                clean_ans = matched
+            elif options:
+                # Fallback to closest option
+                for opt in options:
+                    if opt.lower() in clean_ans.lower():
+                        clean_ans = opt
+                        break
+
+        if clean_ans:
+            source_tag = "gemini_flash" if "gemini" in model.lower() else ("openrouter" if "openrouter" in base_url else "ai_llm")
+            # Continuous self-learning: store in knowledge base for future zero-token reuse
+            try:
+                import json as _json
+                store_qa(
+                    question=question_text,
+                    answer=clean_ans,
+                    source=source_tag,
+                    field_type=field_type,
+                    options_json=_json.dumps(options) if options else None,
+                    ats_slug=ats_type,
+                    conn=conn,
+                )
+                logger.info("Hybrid AI Q&A resolved '%s' -> '%s' (saved to qa_knowledge)", question_text[:50], clean_ans[:50])
+            except Exception as e:
+                logger.debug("Failed saving AI resolved Q&A: %s", e)
+
+            return clean_ans, 0.92, source_tag
+
+    except Exception as e:
+        logger.warning("Hybrid AI Q&A error for '%s': %s", question_text, e)
+
+    return None, 0.0, "unresolved"
+

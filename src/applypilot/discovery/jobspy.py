@@ -18,7 +18,8 @@ from jobspy import scrape_jobs
 # Without one, the tls-client Go binary receives a nil JA3 string and panics
 # (SIGABRT), killing the process. A named profile avoids the crash.
 try:
-    import tls_client
+    import importlib
+    tls_client = importlib.import_module("tls_client")
 
     _orig_tls_init = tls_client.Session.__init__
 
@@ -385,10 +386,13 @@ def search_jobs(
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
     if sites is None:
-        # zip_recruiter removed 2026-06-10: Cloudflare-blocked, 403
-        # "forbidden aa" on 100% of requests; python-jobspy 1.1.82 is
-        # the latest release and has no fix. Re-add if a fix ships.
-        sites = ["indeed", "linkedin"]
+        sites = [
+            "indeed",
+            "linkedin",
+            "google",
+            "naukri",
+            "glassdoor",
+        ]
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
@@ -462,10 +466,13 @@ def _full_crawl(
 ) -> dict:
     """Run all search queries from search config across all locations."""
     if sites is None:
-        # zip_recruiter removed 2026-06-10: Cloudflare-blocked, 403
-        # "forbidden aa" on 100% of requests; python-jobspy 1.1.82 is
-        # the latest release and has no fix. Re-add if a fix ships.
-        sites = ["indeed", "linkedin"]
+        sites = search_cfg.get("sites") or search_cfg.get("boards") or [
+            "indeed",
+            "linkedin",
+            "google",
+            "naukri",
+            "glassdoor",
+        ]
 
     # Build search combinations from config
     queries = search_cfg.get("queries", [])
@@ -559,7 +566,7 @@ def run_discovery(cfg: dict | None = None, sites_override: list[str] | None = No
         return {"new": 0, "existing": 0, "errors": 0, "db_total": 0, "queries": 0}
 
     proxy = cfg.get("proxy")
-    sites = sites_override or cfg.get("sites")
+    sites = sites_override or cfg.get("sites") or cfg.get("boards")
     results_per_site = cfg.get("defaults", {}).get("results_per_site", 100)
     hours_old = cfg.get("defaults", {}).get("hours_old", 72)
     tiers = cfg.get("tiers")

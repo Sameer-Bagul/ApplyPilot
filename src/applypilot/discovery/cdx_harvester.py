@@ -192,14 +192,17 @@ def bootstrap_from_open_apply_jobs(
     offset: int = 0,
     target_keywords: list[str] | None = None,
     timeout: float = 12.0,
+    limit_per_ats: int | None = None,
+    **kwargs: Any,
 ) -> list[dict[str, Any]]:
     """Stream verified jobs and company slugs from open-apply-jobs (Hugging Face Datasets Server).
 
     Zero local parquet file download needed; pulls rows directly via serverless REST API.
     """
+    effective_limit = limit_per_ats if limit_per_ats is not None else limit
     url = (
         f"https://datasets-server.huggingface.co/rows?"
-        f"dataset=edwarddgao/open-apply-jobs&config=default&split=train&offset={offset}&limit={limit}"
+        f"dataset=edwarddgao/open-apply-jobs&config=default&split=train&offset={offset}&limit={effective_limit}"
     )
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "application/json"})
 

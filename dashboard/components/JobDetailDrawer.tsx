@@ -33,6 +33,11 @@ import {
   Maximize2,
   ZoomIn,
   ZoomOut,
+  RotateCcw,
+  Target,
+  Globe,
+  Award,
+  Zap,
 } from 'lucide-react';
 import { RouteBadge } from './ui/RouteBadge';
 
@@ -63,8 +68,9 @@ export function JobDetailDrawer({
   const [zoomLevel, setZoomLevel] = useState(1);
   
   // Application runner state (Phase 2)
-  const [applyingMode, setApplyingMode] = useState<'headless' | 'headed' | null>(null);
+  const [applyingMode, setApplyingMode] = useState<'assist' | 'auto_verify' | 'headed' | 'headless' | null>(null);
   const [applyResult, setApplyResult] = useState<{ status: string; message: string; ticket_id?: number } | null>(null);
+  const [reverting, setReverting] = useState(false);
   
   // Editable form fields
   const [editState, setEditState] = useState('');
@@ -74,24 +80,27 @@ export function JobDetailDrawer({
   const [editLocation, setEditLocation] = useState('');
   const [editReasoning, setEditReasoning] = useState('');
 
-  const handleApply = async (mode: 'headless' | 'headed') => {
+  const handleApply = async (mode: 'assist' | 'auto_verify' | 'headed' | 'headless') => {
     if (!jobUrl) return;
     setApplyingMode(mode);
     setApplyResult(null);
     try {
+      const isAssist = mode === 'assist' || mode === 'headed';
+      const executionMode = mode === 'assist' ? 'assist' : (mode === 'auto_verify' ? 'auto_verify' : undefined);
       const res = await fetch('/api/apply/job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jobUrl,
-          headless: mode === 'headless',
-          auto_submit: true,
+          headless: !isAssist,
+          mode: executionMode,
+          auto_submit: !isAssist,
         }),
       });
       const resJson = await res.json();
       if (resJson.success) {
         const statusVal = resJson.status || resJson.data?.status || 'applied';
-        const messageVal = resJson.message || resJson.data?.message || (statusVal === 'applied' ? 'Application submitted successfully!' : 'Application requires human review.');
+        const messageVal = resJson.message || resJson.data?.message || (statusVal === 'applied' ? 'Application submitted successfully!' : 'Application requires human review or verification.');
         const ticketIdVal = resJson.ticket_id || resJson.data?.ticket_id;
         setApplyResult({
           status: statusVal,
@@ -112,6 +121,39 @@ export function JobDetailDrawer({
       });
     } finally {
       setApplyingMode(null);
+    }
+  };
+
+  const handleRevert = async () => {
+    if (!jobUrl) return;
+    if (!confirm('Mark this job as Not Applied? This will restore it to Ready to Apply for re-submission.')) return;
+    setReverting(true);
+    try {
+      const res = await fetch('/api/jobs/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobUrl }),
+      });
+      const resJson = await res.json();
+      if (resJson.success) {
+        setData((prev: any) => prev ? ({
+          ...prev,
+          job: {
+            ...prev.job,
+            state: 'ready_to_apply',
+            apply_status: 'ready_to_apply',
+            needs_human_reason: 'reverted_by_user_proof_inspected',
+          },
+        }) : prev);
+        setEditState('ready_to_apply');
+        if (onJobUpdated) onJobUpdated();
+      } else {
+        alert(resJson.error || 'Failed to revert job.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error reverting job.');
+    } finally {
+      setReverting(false);
     }
   };
 
@@ -166,6 +208,24 @@ export function JobDetailDrawer({
   const job = data?.job;
   const company = data?.company;
   const leads = data?.leads || [];
+
+  const metadata = React.useMemo(() => {
+    if (!job?.metadata_json) return null;
+    try {
+      return typeof job.metadata_json === 'string' ? JSON.parse(job.metadata_json) : job.metadata_json;
+    } catch {
+      return null;
+    }
+  }, [job?.metadata_json]);
+
+  const resumeMatch = metadata?.resume_match;
+  const matchPct = resumeMatch?.match_percentage ?? (job?.fit_score != null ? Math.round(job.fit_score * 10) : null);
+  const matchedSkills: string[] = resumeMatch?.matched_skills || metadata?.tech_stack || [];
+  const missingSkills: string[] = resumeMatch?.missing_skills || [];
+  const workplaceType: string = metadata?.workplace_type || (job?.location?.toLowerCase().includes('remote') ? 'Remote' : (job?.location?.toLowerCase().includes('hybrid') ? 'Hybrid' : 'Onsite'));
+  const roleCategory: string = metadata?.role_category || 'SOFTWARE_ENGINEERING';
+  const minExp = metadata?.min_experience_years;
+  const maxExp = metadata?.max_experience_years;
 
   const handleSave = async () => {
     setSaving(true);
@@ -251,9 +311,27 @@ export function JobDetailDrawer({
                 </span>
               )}
               {job?.state && (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-700 border border-zinc-200">
-                  {job.state}
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                  job.state === 'submission_unconfirmed'
+                    ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                    : job.state === 'applied'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
+                    : 'bg-zinc-100 text-zinc-700 border-zinc-200'
+                }`}>
+                  {job.state === 'submission_unconfirmed' ? '⚠️ Unconfirmed Submission' : job.state}
                 </span>
+              )}
+              {(job?.state === 'applied' || job?.apply_status === 'applied' || job?.state === 'submission_unconfirmed') && (
+                <button
+                  type="button"
+                  disabled={reverting}
+                  onClick={handleRevert}
+                  className="px-2.5 py-0.5 rounded-full text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                  title="Mark as Not Applied: restores state to Ready to Apply if review of proof shows incomplete submission"
+                >
+                  <RotateCcw className={`w-3 h-3 ${reverting ? 'animate-spin' : ''}`} />
+                  <span>{reverting ? 'Reverting...' : 'Mark as Not Applied'}</span>
+                </button>
               )}
             </div>
             <h2 className="text-xl font-bold tracking-tight text-zinc-900 truncate">
@@ -297,6 +375,45 @@ export function JobDetailDrawer({
             </button>
           </div>
         </div>
+
+        {/* Resume Match Intelligence Banner */}
+        {matchPct != null && (
+          <div className="mx-6 mt-4 p-4 rounded-2xl border border-emerald-200/80 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-cyan-500/10 flex items-center justify-between gap-4 shadow-2xs">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex flex-col items-center justify-center font-bold shrink-0 shadow-sm">
+                <span className="text-base leading-none">{matchPct}%</span>
+                <span className="text-[9px] uppercase tracking-wider font-semibold opacity-90">Match</span>
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-xs font-bold text-zinc-900 flex items-center gap-1.5 flex-wrap">
+                  <span>Candidate: Sameer Bagul (2.5y AI / Fullstack)</span>
+                  {resumeMatch?.experience_match && (
+                    <span className="text-[10px] px-2 py-0.2 rounded-full font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      {resumeMatch.experience_match === 'MATCH' ? '✓ Ideal Experience Fit (2.5y)' : resumeMatch.experience_match}
+                    </span>
+                  )}
+                  {workplaceType && (
+                    <span className="text-[10px] px-2 py-0.2 rounded-full font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200">
+                      {workplaceType === 'Remote' ? '🌐 Remote' : workplaceType}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-zinc-600 line-clamp-1">
+                  {resumeMatch?.reasoning || `Algorithmic fit score ${job?.fit_score}/10 based on role relevance, tech stack, and experience.`}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setActiveTab('scoring')}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/90 text-emerald-900 border border-emerald-200 hover:bg-white hover:border-emerald-300 transition shadow-2xs flex items-center gap-1 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Score Breakdown</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tab Navigation Pill Bar */}
         <div className="flex items-center gap-1 px-6 py-2.5 border-b border-zinc-200/60 bg-zinc-50/70 text-xs">
@@ -387,6 +504,53 @@ export function JobDetailDrawer({
                     </div>
                   </div>
 
+                  {/* Job Specification Chips */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="px-3 py-1 rounded-xl bg-purple-50 text-purple-800 border border-purple-200/80 font-semibold flex items-center gap-1.5 shadow-2xs">
+                      <Briefcase className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Role: {roleCategory.replace('_', ' ')}</span>
+                    </span>
+                    <span className="px-3 py-1 rounded-xl bg-cyan-50 text-cyan-800 border border-cyan-200/80 font-semibold flex items-center gap-1.5 shadow-2xs">
+                      <Globe className="w-3.5 h-3.5 text-cyan-600" />
+                      <span>Workplace: {workplaceType}</span>
+                    </span>
+                    {(minExp != null || maxExp != null) && (
+                      <span className="px-3 py-1 rounded-xl bg-blue-50 text-blue-800 border border-blue-200/80 font-semibold flex items-center gap-1.5 shadow-2xs">
+                        <Award className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Experience: {minExp ? `${minExp}${maxExp ? `-${maxExp}` : '+'} yrs` : `<${maxExp} yrs`}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Matched & Required Tech Stack */}
+                  {matchedSkills.length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 block">
+                        Matched Technologies ({matchedSkills.length})
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {matchedSkills.map((tech) => (
+                          <span
+                            key={tech}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-white text-zinc-800 border border-zinc-200/90 shadow-2xs flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                            <span>{tech}</span>
+                          </span>
+                        ))}
+                        {missingSkills.map((tech) => (
+                          <span
+                            key={tech}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-zinc-50 text-zinc-500 border border-dashed border-zinc-300 flex items-center gap-1"
+                            title="Bonus or missing requirement"
+                          >
+                            <span>{tech}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Company Snapshot */}
                   {company && (
                     <div className="liquid-glass rounded-2xl p-4 border border-white/90 shadow-2xs space-y-2">
@@ -424,43 +588,90 @@ export function JobDetailDrawer({
 
               {activeTab === 'scoring' && (
                 <div className="space-y-4">
-                  <div className="liquid-glass-elevated rounded-2xl p-5 border border-white/90 shadow-xs space-y-3">
+                  <div className="liquid-glass-elevated rounded-2xl p-5 border border-white/90 shadow-xs space-y-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                        4-Factor Local Matcher Engine
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Target className="w-5 h-5 text-emerald-600" />
+                        <span className="text-sm font-bold text-zinc-900">
+                          Candidate Resume Match Analysis
+                        </span>
+                      </div>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getScoreBadgeClass(job?.fit_score)}`}>
-                        Total Score: {job?.fit_score ?? 0} / 10
+                        {matchPct != null ? `${matchPct}% Match (${job?.fit_score ?? 0}/10)` : `${job?.fit_score ?? 0} / 10`}
                       </span>
                     </div>
 
-                    <div className="space-y-3 pt-2 text-xs">
-                      <div className="p-3 rounded-xl bg-white/80 border border-zinc-200/60 shadow-2xs">
-                        <div className="font-semibold text-zinc-800 mb-1 flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-cyan-600" />
-                          Deterministic Matching Breakdown
+                    {/* Candidate Comparison Banner */}
+                    <div className="p-3.5 rounded-xl bg-white/90 border border-zinc-200/80 shadow-2xs space-y-2">
+                      <div className="text-xs font-bold text-zinc-900 flex items-center justify-between">
+                        <span>Evaluated Candidate Profile</span>
+                        <span className="text-emerald-700 font-mono text-[11px] font-semibold">Sameer Bagul (2.5y Exp)</span>
+                      </div>
+                      <p className="text-xs text-zinc-600 leading-relaxed">
+                        {resumeMatch?.reasoning || job?.match_reasoning || 'Algorithmic 4-factor scoring pass evaluating role alignment, tech matrix, experience, and remote/location authorization.'}
+                      </p>
+                    </div>
+
+                    {/* Matched vs Missing Skills Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200/70 space-y-2">
+                        <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[3]" />
+                          Matched Skills ({matchedSkills.length})
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {matchedSkills.length > 0 ? (
+                            matchedSkills.map((s) => (
+                              <span key={s} className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-white text-emerald-800 border border-emerald-200 shadow-2xs">
+                                {s}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-zinc-400 italic">No specific tech tokens parsed.</span>
+                          )}
                         </div>
-                        <p className="text-zinc-600 leading-relaxed">
-                          {job?.match_reasoning || 'No algorithmic match reasoning recorded yet. Run `applypilot match-jobs` to run the 4-factor deterministic scoring pass.'}
-                        </p>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2.5 text-[11px] text-zinc-600">
-                        <div className="p-2.5 rounded-xl bg-white/60 border border-zinc-200/50">
-                          <span className="font-semibold block text-zinc-800">Factor 1: Role Relevance</span>
-                          <span>Evaluates title tokens, AI/SWE alignment (0-4 pts)</span>
+                      <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 space-y-2">
+                        <span className="text-xs font-bold text-zinc-700 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                          Missing / Bonus Reqs ({missingSkills.length})
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {missingSkills.length > 0 ? (
+                            missingSkills.map((s) => (
+                              <span key={s} className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-white text-zinc-600 border border-zinc-200">
+                                {s}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-emerald-700 font-medium">None! All detected skills matched.</span>
+                          )}
                         </div>
-                        <div className="p-2.5 rounded-xl bg-white/60 border border-zinc-200/50">
+                      </div>
+                    </div>
+
+                    {/* 4-Factor Breakdown */}
+                    <div className="space-y-2 pt-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 block">
+                        4-Factor Deterministic Breakdown
+                      </span>
+                      <div className="grid grid-cols-2 gap-2.5 text-[11px] text-zinc-600">
+                        <div className="p-2.5 rounded-xl bg-white/80 border border-zinc-200/60">
+                          <span className="font-semibold block text-zinc-800">Factor 1: Role Relevance</span>
+                          <span>Software/AI title matching & non-tech rejection (0-4 pts)</span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white/80 border border-zinc-200/60">
                           <span className="font-semibold block text-zinc-800">Factor 2: Tech Matrix</span>
                           <span>Python, TypeScript, React, Next.js, AI Agents (0-3 pts)</span>
                         </div>
-                        <div className="p-2.5 rounded-xl bg-white/60 border border-zinc-200/50">
-                          <span className="font-semibold block text-zinc-800">Factor 3: Seniority</span>
-                          <span>Staff, Lead, Senior Engineer requirements (0-2 pts)</span>
+                        <div className="p-2.5 rounded-xl bg-white/80 border border-zinc-200/60">
+                          <span className="font-semibold block text-zinc-800">Factor 3: Seniority Fit</span>
+                          <span>Targeting 2.5y sweet spot (Mid-level 1-4y) (0-2 pts)</span>
                         </div>
-                        <div className="p-2.5 rounded-xl bg-white/60 border border-zinc-200/50">
+                        <div className="p-2.5 rounded-xl bg-white/80 border border-zinc-200/60">
                           <span className="font-semibold block text-zinc-800">Factor 4: Location & Remote</span>
-                          <span>Remote first, hybrid, or target hub city (0-1 pt)</span>
+                          <span>Remote first, hybrid, or India tech hubs (0-1 pt)</span>
                         </div>
                       </div>
                     </div>
@@ -558,7 +769,7 @@ export function JobDetailDrawer({
                       </div>
                       {job?.proof_video_path && (
                         <a
-                          href={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=video&download=1`}
+                          href={`/api/proofs/video?url=${encodeURIComponent(jobUrl)}&download=1`}
                           className="liquid-pill px-3 py-1 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
                           download
                         >
@@ -575,7 +786,7 @@ export function JobDetailDrawer({
                             controls
                             preload="metadata"
                             className="w-full h-full object-contain"
-                            src={`/api/proofs?url=${encodeURIComponent(jobUrl)}&type=video`}
+                            src={`/api/proofs/video?url=${encodeURIComponent(jobUrl)}`}
                           >
                             Your browser does not support HTML5 video streaming.
                           </video>
@@ -791,7 +1002,9 @@ export function JobDetailDrawer({
                           <option value="discovered">Discovered</option>
                           <option value="enriching">Enriching</option>
                           <option value="scored">Scored</option>
+                          <option value="ready_to_apply">Ready to Apply</option>
                           <option value="applied">Applied</option>
+                          <option value="submission_unconfirmed">Submission Unconfirmed</option>
                           <option value="rejected">Rejected</option>
                           <option value="dead">Dead (Closed)</option>
                         </select>
@@ -921,33 +1134,46 @@ export function JobDetailDrawer({
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-zinc-500">
               <span className="font-semibold text-zinc-800 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-600" />
-                Autonomous Engine
+                <Sparkles className="w-3.5 h-3.5 text-zinc-600" />
+                Direct Application
               </span>
-              <span className="text-[11px] text-zinc-400">Playwright stealth + candidate profile fill</span>
+              <span className="text-[11px] text-zinc-400">Autofill with candidate profile and tailored resume</span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {(job?.state === 'applied' || job?.apply_status === 'applied' || job?.state === 'submission_unconfirmed') && (
+                <button
+                  type="button"
+                  disabled={reverting}
+                  onClick={handleRevert}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50 mr-1"
+                  title="Mark as Not Applied: restores state to Ready to Apply for re-submission"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${reverting ? 'animate-spin' : ''}`} />
+                  <span>{reverting ? 'Reverting...' : 'Mark as Not Applied'}</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 disabled={applyingMode !== null}
-                onClick={() => handleApply('headed')}
-                className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 cursor-pointer shadow-2xs transition disabled:opacity-50"
-                title="Launch visible browser window for live interaction"
+                onClick={() => handleApply('assist')}
+                className="liquid-pill px-3.5 py-2 rounded-xl text-xs font-semibold text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-200/80 flex items-center gap-1.5 cursor-pointer shadow-2xs transition disabled:opacity-50"
+                title="Assist Mode: Natural human typing, fills details, attaches resume, chimes & pauses on Hyprland Workspace 11 for you to solve CAPTCHA & submit"
               >
                 <Monitor className="w-3.5 h-3.5 text-indigo-600" />
-                {applyingMode === 'headed' ? 'Running Headed...' : 'Apply Headed'}
+                {applyingMode === 'assist' ? 'Running Assist...' : 'Assist Mode (Fill & Review)'}
               </button>
 
               <button
                 type="button"
                 disabled={applyingMode !== null}
-                onClick={() => handleApply('headless')}
+                onClick={() => handleApply('auto_verify')}
                 className="liquid-pill-dark px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                title="Execute application in background without visible window"
+                title="Auto-Verify Mode: Autonomous stealth fill & submit with multi-layer OCR + HTTP 200 proof verification"
               >
                 <Play className="w-3.5 h-3.5 text-cyan-300 fill-cyan-300" />
-                {applyingMode === 'headless' ? 'Applying (Headless)...' : 'Apply Headless'}
+                {applyingMode === 'auto_verify' ? 'Auto-Verifying...' : 'Auto-Verify Mode'}
               </button>
             </div>
           </div>

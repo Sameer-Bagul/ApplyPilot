@@ -5,8 +5,8 @@ import { BackgroundProvider, LiquidBackdrop } from '@/components/ui/LiquidBackgr
 import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
-  title: 'ApplyPilot | Autonomous Job Intelligence & Acquisition Studio',
-  description: 'Minimalist iOS liquid-glass workspace for autonomous job discovery, multi-agent evaluation, and high-conversion recruiter outreach.',
+  title: 'ApplyPilot — Recruiter Outreach & Job Application Pipeline',
+  description: 'Unified workspace for automated ATS job discovery, verified recruiter outreach, and application tracking.',
 };
 
 export default function RootLayout({

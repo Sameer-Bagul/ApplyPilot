@@ -31,3 +31,4 @@ def test_format_portfolio_pitch_fallback():
     pitch = format_portfolio_pitch([])
     assert "Athena" in pitch
     assert "ApplyPilot" in pitch
+

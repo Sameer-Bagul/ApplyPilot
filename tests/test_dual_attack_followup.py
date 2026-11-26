@@ -59,3 +59,4 @@ def test_fallback_draft_hr_job_citation():
     assert "Full Stack Engineer" in draft["subject"]
     assert "https://jobs.ashbyhq.com/acme/123" in draft["body_text"]
     assert draft["followup_subject"].startswith("Re: ")
+

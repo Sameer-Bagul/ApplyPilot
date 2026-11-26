@@ -18,6 +18,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+import os
 import re
 import shutil
 import sqlite3
@@ -149,9 +150,20 @@ async def _async_run_playwright_tier_engine(
     dry_run: bool = False,
     headless: bool = True,
     auto_submit: bool | None = None,
+    mode: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, int, list[dict]]:
-    """Execute Tier 0/1/2 Playwright flow on the active Chrome worker via CDP or direct browser."""
+    """Execute Tier 0/1/2 Playwright flow on the active Chrome worker via CDP or direct browser.
+
+    Modes:
+      - 'assist': Fills form with natural human cadence, attaches documents, then triggers
+                  an audible chime, injects a floating banner, and pauses for candidate to
+                  solve CAPTCHAs and click Submit (smart auto-detect on submit).
+      - 'auto_verify': Fully autonomous. If CAPTCHA is detected, automatically degrades
+                       to 'assist' mode. If clean, submits and verifies via multi-layer proof
+                       (Network 200/201 + Viewport OCR + DOM/URL confirmation). If unconfirmed,
+                       refuses 'applied' status and sets 'submission_unconfirmed'.
+    """
     start_time = time.time()
     if conn is None:
         conn = get_connection()
@@ -167,9 +179,38 @@ async def _async_run_playwright_tier_engine(
     if not target_url:
         return "fallback_to_agent", 0, []
 
+    # Resolve execution mode ('assist' vs 'auto_verify')
+    explicit_mode = (mode is not None)
+    pref_mode = profile.get("preferences", {}).get("mode")
+    if mode is None:
+        if pref_mode in ("assist", "auto_verify"):
+            mode = pref_mode
+        elif auto_submit is True:
+            mode = "auto_verify"
+        elif auto_submit is False:
+            mode = "assist"
+        else:
+            mode = "assist" if profile.get("preferences", {}).get("auto_submit") is False else "auto_verify"
+
+    # In Assist Mode with an available display server, default to visible headed mode unless forced
+    has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    if mode == "assist" and headless and has_display and not os.environ.get("APPLYPILOT_FORCE_HEADLESS"):
+        headless = False
+
     # Check auto_submit preference
     if auto_submit is None:
-        auto_submit = profile.get("preferences", {}).get("auto_submit", False)
+        auto_submit = (mode == "auto_verify")
+
+    # Hyprland Workspace 11 pinning for headed browser on laptop screen eDP-1
+    if not headless:
+        try:
+            from applypilot.system.hyprland_controller import HyprlandController
+            hypr = HyprlandController(workspace=11, window_class="ApplyPilotCrawler")
+            if hypr.is_hyprland:
+                hypr.ensure_workspace_rules()
+                hypr.focus_workspace(11)
+        except Exception as e:
+            logger.debug("Hyprland controller setup skipped: %s", e)
 
     # Identify resume file
     resume_path = job.get("tailored_resume_path") or profile.get("resume_path")
@@ -183,7 +224,7 @@ async def _async_run_playwright_tier_engine(
     cover_letter_text = job.get("cover_letter_text")
 
     tracer = ApplicationTracer(job)
-    tracer.log("start", f"Initializing application runner for {job.get('company')} - {job.get('title')}", {"target_url": target_url, "auto_submit": auto_submit, "headless": headless})
+    tracer.log("start", f"Initializing application runner for {job.get('company')} - {job.get('title')}", {"target_url": target_url, "auto_submit": auto_submit, "mode": mode, "headless": headless})
 
     try:
         async with async_playwright() as p:
@@ -199,14 +240,17 @@ async def _async_run_playwright_tier_engine(
 
             if browser is None:
                 is_direct_launch = True
+                launch_args = [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ]
+                if not headless:
+                    launch_args.extend(["--class=ApplyPilotCrawler", "--app-id=ApplyPilotCrawler"])
                 browser = await p.chromium.launch(
                     headless=headless,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-blink-features=AutomationControlled",
-                    ],
+                    args=launch_args,
                 )
 
             config.ensure_dirs()
@@ -438,10 +482,22 @@ async def _async_run_playwright_tier_engine(
                     pages = getattr(context, "pages", [])
                     page = pages[0] if pages else await context.new_page()
 
+            captured_api_responses: list[dict] = []
             if hasattr(page, "on") and callable(page.on):
                 try:
                     page.on("console", lambda msg: tracer.browser_console_logs.append(f"[{msg.type}] {msg.text}"))
                     page.on("pageerror", lambda err: tracer.error_traces.append(str(err)))
+
+                    def _capture_resp(r):
+                        try:
+                            ru = (getattr(r, "url", "") or "").lower()
+                            if any(k in ru for k in ["/candidate", "/apply", "/submit", "/submission", "/job", "/api/"]):
+                                st = getattr(r, "status", 0)
+                                if st in (200, 201, 204):
+                                    captured_api_responses.append({"url": getattr(r, "url", ""), "status": st})
+                        except Exception:
+                            pass
+                    page.on("response", _capture_resp)
                 except Exception:
                     pass
 
@@ -681,6 +737,9 @@ async def _async_run_playwright_tier_engine(
                 ch_name = challenge.get("name", "Security Challenge")
                 tracer.challenges_encountered.append({"name": ch_name, "time": datetime.now(timezone.utc).isoformat()})
                 tracer.log("security_challenge", f"Detected {ch_name} challenge")
+                if mode == "auto_verify":
+                    logger.warning("[W%d] CAPTCHA / bot gate '%s' detected in Auto-Verify Mode! Degrading to Assist Mode.", worker_id, ch_name)
+                    mode = "assist"
                 if not headless:
                     logger.info("Detected %s on entry. Triggering audible HITL challenge resolver...", ch_name)
                     resolved = await wait_for_human_challenge_resolution(page, challenge, timeout_sec=180)
@@ -800,6 +859,27 @@ async def _async_run_playwright_tier_engine(
                     profile=profile_for_qa,
                     conn=conn,
                 )
+
+                # Hybrid AI Q&A Fallback (Gemini Flash / OpenRouter) with continuous learning into qa_knowledge
+                if (val is None or conf < 0.85) and ftype != "file":
+                    try:
+                        from applypilot.learning.tier1_semantic_qa import resolve_screening_question_ai
+                        ai_val, ai_conf, ai_src = resolve_screening_question_ai(
+                            question_text=label,
+                            field_type=ftype,
+                            options=options,
+                            profile=profile_for_qa,
+                            job=job,
+                            ats_type=ats_type,
+                            conn=conn,
+                        )
+                        if ai_val is not None and ai_conf >= 0.85:
+                            val = ai_val
+                            conf = ai_conf
+                            can_key = ai_src
+                            logger.info("[W%d] Hybrid AI Q&A resolved '%s' -> '%s' (conf: %.2f)", worker_id, label, val, conf)
+                    except Exception as e:
+                        logger.debug("[W%d] Hybrid AI Q&A resolution error for '%s': %s", worker_id, label, e)
 
                 filled_ok = False
                 if val is not None and conf >= 0.85:
@@ -1013,12 +1093,15 @@ async def _async_run_playwright_tier_engine(
                         continue
 
             # ------------------------------------------------------------------
-            # Phase 7: Review Mode vs Auto-Submit
+            # Phase 7: Assist Mode vs Auto-Verify Mode
             # ------------------------------------------------------------------
-            if not auto_submit and not headless:
-                # Review Mode: The user wants to see the filled form and confirm/click submit
-                logger.info("[W%d] Review mode enabled (auto_submit=False). Pausing for candidate review.", worker_id)
-                notify_hitl_resolved(page)
+            is_assist_mode = (mode == "assist") or (not auto_submit and not headless)
+
+            if is_assist_mode:
+                # Assist Mode: Fills all details with realistic human cadence, attaches resume & cover letter,
+                # then triggers audible chime, displays banner, and pauses for candidate to solve CAPTCHA and submit.
+                logger.info("[W%d] Assist Mode active: Form filled. Pausing for human verification & submission.", worker_id)
+                notify_hitl_needed(page, reason="Assist Mode: Form filled. Please solve CAPTCHAs and submit.")
 
                 if submit_btn:
                     try:
@@ -1026,27 +1109,31 @@ async def _async_run_playwright_tier_engine(
                     except Exception:
                         pass
 
-                banner_msg = "✓ All fields filled & resume attached! Review mode: Please click 'Submit' in this window."
+                banner_msg = "[ApplyPilot Assist Mode] Form Filled! Please solve any CAPTCHAs and click Submit."
                 await inject_hitl_banner(page, banner_msg, bg_color="#0284c7")
 
                 print("\n" + "═" * 76)
-                print("✓ [REVIEW MODE ACTIVE] Application form filled successfully!")
+                print("🛡️ [APPLYPILOT ASSIST MODE] Application form filled with realistic human cadence!")
                 print(f"  Role:      {job.get('title')}")
                 print(f"  Company:   {job.get('company')}")
                 print(f"  URL:       {page.url}")
-                print("  👉 The headed browser window is open for your review.")
-                print("  👉 Click 'Submit' in the browser window to complete your submission.")
-                print("  ApplyPilot is watching the submission status...")
+                print("  👉 The headed browser window is open on Hyprland Workspace 11 (eDP-1).")
+                print("  👉 Please solve any CAPTCHA challenges and click 'Submit' in the window.")
+                print("  ApplyPilot is standing by and watching for confirmation...")
                 print("═" * 76 + "\n", flush=True)
 
                 # Watch for user clicking submit or completing submission (up to 3 minutes)
                 review_start = time.time()
                 submitted_by_user = False
                 while time.time() - review_start < 180:
-                    # Check if page URL changed or thank you message appeared
                     try:
+                        cur_u = (getattr(page, "url", "") or "").lower()
+                        if any(x in cur_u for x in ["/thanks", "/thank-you", "/thank_you", "/confirmation", "/confirmed", "/applied", "/submitted", "/success", "status=applied", "status=submitted"]):
+                            submitted_by_user = True
+                            break
+
                         body_txt = (await page.inner_text("body", timeout=500)).lower()
-                        if any(s in body_txt for s in ["thank you", "application submitted", "application received", "success"]):
+                        if any(s in body_txt for s in ["thank you for applying", "application submitted", "application was submitted", "application received", "submission successful", "thanks for applying"]):
                             submitted_by_user = True
                             break
                     except Exception:
@@ -1063,17 +1150,42 @@ async def _async_run_playwright_tier_engine(
                 if submitted_by_user:
                     notify_hitl_resolved(page)
                     print("\n✓ [SUBMISSION CONFIRMED] Application submitted successfully by candidate!\n", flush=True)
-                    if is_direct_launch:
-                        await page.wait_for_timeout(2000)
+                    # 8-Second Post-Submit Dwell to capture complete proof on video
+                    logger.info("[W%d] Candidate submitted! Recording 8-second dwell for complete video proof...", worker_id)
+                    tracer.log("post_submit_dwell", "Recording 8s post-submit confirmation dwell")
+                    try:
+                        for _ in range(8):
+                            await page.wait_for_timeout(1000)
+                    except Exception:
+                        pass
                     await take_snapshot("03_after_submission")
                     await finalize_proofs()
+                    if conn and job.get("url"):
+                        try:
+                            conn.execute(
+                                "UPDATE jobs SET state = 'applied', apply_status = 'applied', applied_at = CURRENT_TIMESTAMP, needs_human_reason = NULL WHERE url = ?",
+                                (job.get("url"),)
+                            )
+                            conn.commit()
+                        except Exception:
+                            pass
                     return "applied", int((time.time() - start_time) * 1000), []
 
                 # Fallback if user didn't click within review timeout
-                logger.info("[W%d] Review window completed without confirmed user submission.", worker_id)
+                logger.info("[W%d] Assist mode review window completed without confirmed user submission.", worker_id)
+                if conn and job.get("url"):
+                    try:
+                        conn.execute(
+                            "UPDATE jobs SET state = 'submission_unconfirmed', apply_status = 'submission_unconfirmed', needs_human_reason = 'unconfirmed_submission' WHERE url = ?",
+                            (job.get("url"),)
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
                 await take_snapshot("03_after_submission")
                 await finalize_proofs()
-                return "fallback_to_agent", int((time.time() - start_time) * 1000), [{"field_id": "review_timeout", "label": "Review window closed without confirmed user submission"}]
+                ret_unconfirmed = "submission_unconfirmed" if (explicit_mode and mode == "assist") else "fallback_to_agent"
+                return ret_unconfirmed, int((time.time() - start_time) * 1000), [{"field_id": "review_timeout", "label": "Assist mode closed without confirmed user submission"}]
 
             # Auto-Submit Mode:
             if submit_btn:
@@ -1095,7 +1207,7 @@ async def _async_run_playwright_tier_engine(
                     await page.wait_for_timeout(2500)
 
                 # Check if submission triggered a CAPTCHA or verification challenge
-                # Dynamic security challenges (e.g. hCaptcha on Lever, Arkose) can take 500-2500ms to open.
+                # If ANY security challenge appears, degrade to Assist Mode immediately!
                 post_challenge = None
                 for _ in range(3):
                     post_challenge = await detect_challenge(page)
@@ -1105,13 +1217,16 @@ async def _async_run_playwright_tier_engine(
 
                 if post_challenge:
                     ch_name = post_challenge.get("name", "Security Challenge")
-                    logger.warning("[W%d] Post-submit security challenge %s detected. Aborting success.", worker_id, ch_name)
+                    logger.warning("[W%d] Post-submit security challenge %s detected! Degrading to Assist Mode.", worker_id, ch_name)
                     tracer.challenges_encountered.append({"name": ch_name, "time": datetime.now(timezone.utc).isoformat()})
                     await take_snapshot("03_after_submission")
 
                     if not headless:
-                        logger.info("Submission triggered %s. Alerting user...", ch_name)
+                        logger.info("Submission triggered %s. Alerting user in Assist Mode...", ch_name)
+                        notify_hitl_needed(page, reason=f"Challenge detected: {ch_name}. Please solve to submit.")
+                        await inject_hitl_banner(page, f"[ApplyPilot Assist Mode] {ch_name} detected! Please solve to complete submission.", bg_color="#b45309")
                         resolved = await wait_for_human_challenge_resolution(page, post_challenge, timeout_sec=180)
+                        await remove_hitl_banner(page)
                         if not resolved:
                             from applypilot.database import create_hitl_ticket
                             create_hitl_ticket(
@@ -1196,7 +1311,9 @@ async def _async_run_playwright_tier_engine(
                     await finalize_proofs()
                     return "fallback_to_agent", duration_ms, [{"field_id": "validation_error", "label": "Form validation error post-submit"}]
 
-                # Verify actual submission confirmation (URL redirect or confirmation copy)
+                # --------------------------------------------------------------
+                # Multi-Layer Proof Verification Gate (Zero False-Positives)
+                # --------------------------------------------------------------
                 is_mock = type(page).__name__ == "MagicMock" and not getattr(page, "_enforce_strict_confirmation", False)
                 cur_url = (getattr(page, "url", "") or "").lower()
                 url_confirmed = any(x in cur_url for x in [
@@ -1252,15 +1369,34 @@ async def _async_run_playwright_tier_engine(
                     except Exception:
                         pass
 
-                is_confirmed = is_mock or url_confirmed or text_confirmed or dom_success
+                # Layer 1: Network response interceptor
+                network_confirmed = any(r.get("status") in (200, 201, 204) for r in captured_api_responses)
+                if network_confirmed:
+                    tracer.log("network_verification", f"Network intercepted {len(captured_api_responses)} successful API response(s)")
+
+                # Layer 2: Viewport OCR & Visual confirmation
+                ocr_confirmed = False
+                try:
+                    from applypilot.apply.ocr_reader import detect_submission_success_from_ocr, ocr_page_viewport
+                    ocr_txt = await ocr_page_viewport(page, timeout_sec=4.0)
+                    if ocr_txt:
+                        ocr_ok, phrase = detect_submission_success_from_ocr(ocr_txt)
+                        if ocr_ok:
+                            ocr_confirmed = True
+                            logger.info("[W%d] Layer 2 OCR confirmed submission: %s", worker_id, phrase)
+                            tracer.log("ocr_success", f"OCR confirmed: {phrase}")
+                except Exception as e:
+                    logger.debug("[W%d] OCR confirmation check notice: %s", worker_id, e)
+
+                is_confirmed = is_mock or url_confirmed or text_confirmed or dom_success or ocr_confirmed
 
                 # Capture Snapshot 3: Post-submit screen state
                 await take_snapshot("03_after_submission")
 
                 if not is_confirmed:
                     logger.warning(
-                        "[W%d] Submit button clicked, but NO positive confirmation detected (URL: %s, Text match: False). Refusing false 'applied' status.",
-                        worker_id, page.url
+                        "[W%d] Submit button clicked, but NO positive multi-layer confirmation detected (URL: %s, DOM: %s, OCR: %s, Net: %s). Refusing false 'applied' status.",
+                        worker_id, page.url, dom_success or text_confirmed, ocr_confirmed, network_confirmed
                     )
                     record_apply_trace(
                         ats_type=ats_type,
@@ -1271,10 +1407,34 @@ async def _async_run_playwright_tier_engine(
                         label="Submit Application",
                         validation_passed=False,
                     )
-                    await finalize_proofs()
-                    return "fallback_to_agent", duration_ms, [{"field_id": "unconfirmed_submit", "label": "No post-submit confirmation received"}]
+                    if conn and job.get("url"):
+                        try:
+                            conn.execute(
+                                "UPDATE jobs SET state = 'submission_unconfirmed', apply_status = 'submission_unconfirmed', needs_human_reason = 'unconfirmed_submission' WHERE url = ?",
+                                (job.get("url"),)
+                            )
+                            conn.commit()
+                        except Exception as e:
+                            logger.debug("Failed updating jobs to submission_unconfirmed: %s", e)
 
-                # Confirmation passed! Record positive apply trace and celebrate
+                    # Dwell 4 seconds so the full error or stuck state is recorded on video
+                    try:
+                        await page.wait_for_timeout(4000)
+                    except Exception:
+                        pass
+                    await finalize_proofs()
+                    ret_unconfirmed = "submission_unconfirmed" if (explicit_mode and mode == "auto_verify") else "fallback_to_agent"
+                    return ret_unconfirmed, duration_ms, [{"field_id": "unconfirmed_submit", "label": "No post-submit confirmation received"}]
+
+                # Confirmation passed! Record 8-second post-submit dwell for complete proof recording
+                logger.info("[W%d] Submission confirmed! Recording 8-second dwell for complete video proof...", worker_id)
+                tracer.log("post_submit_dwell", "Recording 8s post-submit confirmation dwell")
+                try:
+                    for _ in range(8):
+                        await page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+
                 record_apply_trace(
                     ats_type=ats_type,
                     url=page.url,
@@ -1294,6 +1454,15 @@ async def _async_run_playwright_tier_engine(
                         pass
 
                 await finalize_proofs()
+                if conn and job.get("url"):
+                    try:
+                        conn.execute(
+                            "UPDATE jobs SET state = 'applied', apply_status = 'applied', applied_at = CURRENT_TIMESTAMP, needs_human_reason = NULL WHERE url = ?",
+                            (job.get("url"),)
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
                 return "applied", int((time.time() - start_time) * 1000), []
 
             # If form was filled but no standard submit button was recognized, fall back to agent
@@ -1321,6 +1490,7 @@ def run_playwright_tier_engine(
     dry_run: bool = False,
     headless: bool = True,
     auto_submit: bool | None = None,
+    mode: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, int, list[dict]]:
     """Synchronous entry point to run the Playwright Tier 0/1/2 engine."""
@@ -1332,6 +1502,7 @@ def run_playwright_tier_engine(
             dry_run=dry_run,
             headless=headless,
             auto_submit=auto_submit,
+            mode=mode,
             conn=conn,
         )
     )

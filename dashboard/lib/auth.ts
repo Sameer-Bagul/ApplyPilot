@@ -1,4 +1,5 @@
 import type { AuthOptions } from 'next-auth';
+import { getServerSession } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 
@@ -7,6 +8,17 @@ export const authOptions: AuthOptions = {
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' ? '__Secure-next-auth.session-token' : 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
   },
   providers: [
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -86,4 +98,29 @@ export const authOptions: AuthOptions = {
     error: '/login',
   },
 };
+
+/**
+ * Helper to retrieve the active server session in Server Components and API Routes
+ */
+export async function getServerAuth() {
+  return await getServerSession(authOptions);
+}
+
+/**
+ * Guard utility for API routes and Server Actions
+ */
+export async function requireApiAuth() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return { authorized: false, session: null, error: 'Unauthorized: No active session' };
+  }
+  const allowedEmails = (process.env.ALLOWED_EMAILS || 'sameerbagul2004@gmail.com')
+    .split(',')
+    .map((e) => e.trim().toLowerCase());
+  const userEmail = session.user.email.toLowerCase().trim();
+  if (!allowedEmails.includes(userEmail)) {
+    return { authorized: false, session, error: 'Forbidden: Account is not authorized' };
+  }
+  return { authorized: true, session, error: null };
+}
 

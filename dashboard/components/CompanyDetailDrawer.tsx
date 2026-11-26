@@ -48,6 +48,8 @@ export function CompanyDetailDrawer({
   const [activeTab, setActiveTab] = useState<'overview' | 'projects' | 'roles' | 'leads' | 'edit'>('overview');
   const [looping, setLooping] = useState(false);
   const [investigating, setInvestigating] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichStatus, setEnrichStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
 
@@ -152,6 +154,43 @@ export function CompanyDetailDrawer({
     }
   };
 
+  const handleEnrichEmails = async () => {
+    if (!company?.company_name) return;
+    setEnriching(true);
+    setEnrichStatus(`Harvesting verified emails & OSINT for ${company.company_name}...`);
+    try {
+      const res = await fetch('/api/companies/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyName: company.company_name,
+          domain: company.official_domain,
+          minEmails: 5,
+          mode: 'single',
+        }),
+      });
+      const resJson = await res.json();
+      if (resJson.success || resJson.status === 'running_in_background') {
+        setEnrichStatus(resJson.message || 'Discovery complete! Dossier refreshed.');
+        const queryParam = `name=${encodeURIComponent(company.company_name)}`;
+        const refRes = await fetch(`/api/companies/drilldown?${queryParam}`);
+        const refJson = await refRes.json();
+        if (refJson.success) {
+          setData(refJson.data);
+          setActiveTab('leads');
+        }
+        if (onCompanyUpdated) onCompanyUpdated();
+      } else {
+        setEnrichStatus(resJson.error || 'Enrichment failed');
+      }
+    } catch (err: any) {
+      setEnrichStatus(err.message || 'Enrichment failed');
+    } finally {
+      setEnriching(false);
+      setTimeout(() => setEnrichStatus(null), 4000);
+    }
+  };
+
   const handleSave = async () => {
     if (!company?.company_id) return;
     setSaving(true);
@@ -242,6 +281,11 @@ export function CompanyDetailDrawer({
               {company?.ats_provider && (
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-50 text-cyan-800 border border-cyan-200 capitalize">
                   ATS: {company.ats_provider}
+                </span>
+              )}
+              {company?.pune_cluster && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs">
+                  <span>📍 {company.pune_cluster}</span>
                 </span>
               )}
               <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-700 border border-zinc-200">
@@ -442,15 +486,15 @@ export function CompanyDetailDrawer({
                     </div>
                   )}
 
-                  {/* Dual-Attack Readiness */}
-                  <div className="liquid-glass rounded-2xl p-5 border border-white/90 shadow-2xs space-y-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 block">
-                      Autonomous Dual-Attack Status
+                  {/* Outreach & Application Readiness */}
+                  <div className="saas-card rounded-xl p-4.5 border border-zinc-200 space-y-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500 block">
+                      Outreach &amp; Application Status
                     </span>
                     <p className="text-xs text-zinc-600 leading-relaxed">
                       {jobs.length > 0 && leads.length > 0
-                        ? `Ready for Dual-Attack. ApplyPilot has mapped official ATS postings alongside verified recruiter contacts. High-fit applications will trigger parallel portal submission and warm email dispatch.`
-                        : `Partial readiness. ApplyPilot is monitoring for both official career board openings and verified recruiter leads.`}
+                        ? `Ready for paired outreach. ApplyPilot mapped live ATS postings with verified recruiter contacts for simultaneous application and founder pitch.`
+                        : `Monitoring active career board openings and verified recruiter contacts.`}
                     </p>
                   </div>
                 </div>

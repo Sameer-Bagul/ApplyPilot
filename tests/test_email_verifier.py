@@ -71,3 +71,4 @@ def test_smtp_handshake_simulation():
         assert deliverable is True
         assert code == 250
         assert "confirmed" in details.lower()
+

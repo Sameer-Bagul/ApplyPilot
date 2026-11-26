@@ -12,10 +12,13 @@ export async function GET(request: NextRequest) {
     const minScore = searchParams.get('minScore') ? parseInt(searchParams.get('minScore')!, 10) : undefined;
     const location = searchParams.get('location') || undefined;
     const ats = searchParams.get('ats') || searchParams.get('source') || undefined;
+    const workplace = searchParams.get('workplace') || undefined;
+    const category = searchParams.get('category') || undefined;
+    const sort = searchParams.get('sort') || undefined;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '25', 10);
 
-    const result = getJobs({ search, route, state, minScore, location, ats, page, limit });
+    const result = getJobs({ search, route, state, minScore, location, ats, workplace, category, sort, page, limit });
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
     return NextResponse.json(
