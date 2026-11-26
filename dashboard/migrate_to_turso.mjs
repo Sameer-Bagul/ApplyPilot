@@ -6,7 +6,7 @@ import os from 'node:os';
 const TURSO_URL = process.env.TURSO_DATABASE_URL || 'libsql://applypilot-sameerbagul.aws-ap-south-1.turso.io';
 const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTM4MDkzMDUsImlkIjoiMDFhMWE3NWQtN2EwMS03NTk5LTg5OGYtOTg4MWY1N2FlMjRhIiwia2lkIjoiZmtnelNtNjktVnVWdGFTR2NRMDdoOE1BY3hFdHdlejY1bUFYLUVQN2QxQSIsInJpZCI6ImFmMmNkNWQwLTZkNjktNDc1OS05MDBkLWI4NDE5MDdjOGNhNyJ9.yDxxHO64H7nit7LdfJRLYMgGwgSs-lMoGMyD-eYkqzW0CbGHut-svUfaW3VMjtMFDF-DS3BtVN4FXx8o30UjAA';
 
-const localDbPath = '/home/sameer/Projects/ApplyPilot/applypilot.db';
+const localDbPath = process.env.LOCAL_DB_PATH || path.join(os.homedir(), '.applypilot', 'applypilot.db');
 console.log('Connecting to local SQLite:', localDbPath);
 const localDb = new DatabaseSync(localDbPath);
 
