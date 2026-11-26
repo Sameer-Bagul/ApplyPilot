@@ -29,6 +29,27 @@ shopt -u nullglob
 # Ensure database tables and config directory exist
 applypilot status >/dev/null 2>&1 || true
 
+# If TURSO_DATABASE_URL and TURSO_AUTH_TOKEN are provided, auto-sync data down on container boot
+if [ -n "$TURSO_DATABASE_URL" ] && [ -n "$TURSO_AUTH_TOKEN" ]; then
+    echo "[ApplyPilot] Connecting to Turso Cloud DB (${TURSO_DATABASE_URL})..."
+    python3 -c "
+import os
+import libsql_experimental as libsql
+turso_url = os.environ.get('TURSO_DATABASE_URL')
+turso_token = os.environ.get('TURSO_AUTH_TOKEN')
+db_path = os.environ.get('APPLYPILOT_DB_PATH', os.path.expanduser('~/.applypilot/applypilot.db'))
+os.makedirs(os.path.dirname(db_path), exist_ok=True)
+try:
+    print(f'[ApplyPilot] Syncing cloud database to local replica at {db_path}...')
+    conn = libsql.connect(db_path, sync_url=turso_url, auth_token=turso_token)
+    conn.sync()
+    count = conn.execute('SELECT COUNT(*) FROM jobs').fetchone()[0]
+    print(f'[ApplyPilot] ✓ Synced successfully! {count} jobs available locally.')
+except Exception as e:
+    print(f'[ApplyPilot] Warning: Could not sync from Turso cloud: {e}')
+" || true
+fi
+
 TARGET_PORT="${PORT:-3000}"
 
 # If START_UI or START_DASHBOARD is enabled, launch Next.js in background
