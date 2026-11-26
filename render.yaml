@@ -1,16 +1,12 @@
 services:
-  # Option A: Full Docker Container (Python Engine + Next.js UI + Background Workers + Playwright)
+  # Option A: Full Docker Container (Python Engine + Next.js UI + Background Workers)
   - type: web
     name: applypilot-app
     runtime: docker
-    plan: starter
+    plan: free
     region: oregon
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
-    disk:
-      name: applypilot-data
-      mountPath: /home/applypilot/data
-      sizeGB: 5
     envVars:
       - key: PORT
         value: 10000
@@ -29,8 +25,10 @@ services:
         value: sameerbagul2004@gmail.com
       - key: ADMIN_PASSCODE
         sync: false
-      - key: APPLYPILOT_DB_PATH
-        value: /home/applypilot/data/applypilot.db
+      - key: TURSO_DATABASE_URL
+        value: libsql://applypilot-sameerbagul.aws-ap-south-1.turso.io
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: RESEND_API_KEY
