@@ -46,7 +46,9 @@ dashboard/node_modules/
 
 # Python venv & testing
 .venv/
+.venv
 venv/
+venv
 .pytest_cache/
 .coverage
 htmlcov/
