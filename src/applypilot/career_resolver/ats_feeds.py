@@ -10,8 +10,12 @@ from applypilot.discovery.ats_direct_feeds import (
     poll_bamboohr_board,
     poll_board,
     poll_breezy_board,
+    poll_freshteam_board,
     poll_greenhouse_board,
+    poll_jobvite_board,
+    poll_keka_board,
     poll_lever_board,
+    poll_param_board,
     poll_personio_board,
     poll_recruitee_board,
     poll_smartrecruiters_board,
@@ -19,6 +23,7 @@ from applypilot.discovery.ats_direct_feeds import (
     poll_watchlist,
     poll_workable_board,
     poll_workday_board,
+    poll_zohorecruit_board,
 )
 
 __all__ = [
@@ -33,6 +38,11 @@ __all__ = [
     "poll_teamtailor_board",
     "poll_breezy_board",
     "poll_personio_board",
+    "poll_freshteam_board",
+    "poll_zohorecruit_board",
+    "poll_keka_board",
+    "poll_param_board",
+    "poll_jobvite_board",
     "poll_board",
     "poll_watchlist",
 ]

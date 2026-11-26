@@ -1340,12 +1340,16 @@ def sync_execution_routes(conn: sqlite3.Connection | None = None) -> dict[str, i
 
     c = conn.cursor()
 
-    # 1. Materialize EMAIL_ONLY leads into jobs table
+    # 1. Materialize EMAIL_ONLY leads that represent real job-postings (not generic cold-outreach personas) into jobs table
     email_leads = c.execute("""
         SELECT lead_id, company_name, company_domain, role_title, contact_email, 
                contact_type, source_platform, source_post_url, evidence_snippet, created_at
         FROM recruiter_leads
         WHERE execution_route = 'EMAIL_ONLY'
+          AND (
+              source_platform IN ('hackernews', 'reddit', 'x_twitter', 'linkedin_posts', 'social_discovery')
+              OR (source_post_url IS NOT NULL AND source_post_url LIKE 'http%')
+          )
     """).fetchall()
 
     for l in email_leads:
@@ -1354,7 +1358,13 @@ def sync_execution_routes(conn: sqlite3.Connection | None = None) -> dict[str, i
         clean_company = (company or "Startup").strip()
 
         if post_url and post_url.startswith("http"):
-            url = post_url
+            from urllib.parse import urlparse as _urlparse
+            _path = (_urlparse(post_url).path or "").rstrip("/").lower()
+            _is_generic_index = _path in ("", "/careers", "/career", "/jobs", "/join", "/join-us", "/openings", "/about/careers", "/company/careers")
+            if not _is_generic_index:
+                url = post_url
+            else:
+                url = f"mailto:{email}?subject=Application:%20{clean_title}%20-%20ApplyPilot"
         else:
             url = f"mailto:{email}?subject=Application:%20{clean_title}%20-%20ApplyPilot"
 
@@ -1375,10 +1385,11 @@ def sync_execution_routes(conn: sqlite3.Connection | None = None) -> dict[str, i
         UPDATE jobs
         SET execution_route = 'DUAL_ATTACK'
         WHERE (execution_route IS NULL OR execution_route = 'PORTAL_ONLY')
-          AND company IN (
-              SELECT DISTINCT company_name 
+          AND LOWER(company) IN (
+              SELECT DISTINCT LOWER(company_name)
               FROM recruiter_leads 
               WHERE contact_email NOT LIKE '%@connect.linkedin.com'
+                AND company_name IS NOT NULL
           )
     """)
 
@@ -1603,9 +1614,9 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
 
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (url, job.get("title"), job.get("salary"), job.get("description"),
+                    "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, discovered_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (url, job.get("title"), job.get("company"), job.get("salary"), job.get("description"),
                      job.get("location"), site, strategy, now),
                 )
                 counts["new"] += 1
@@ -3007,9 +3018,51 @@ def store_recruiter_lead(
     import uuid
     if conn is None:
         conn = get_connection()
-    lid = lead_id or f"lead_{uuid.uuid4().hex[:12]}"
+    clean_email = (contact_email or "").strip().lower()
     now = datetime.now(timezone.utc).isoformat()
     eff_persona = persona or contact_type
+
+    existing = (
+        conn.execute(
+            "SELECT lead_id FROM recruiter_leads WHERE LOWER(TRIM(contact_email)) = ? LIMIT 1",
+            (clean_email,),
+        ).fetchone()
+        if clean_email
+        else None
+    )
+    if existing and existing[0]:
+        existing_lid = existing[0]
+        conn.execute(
+            """
+            UPDATE recruiter_leads
+            SET role_title = COALESCE(NULLIF(TRIM(role_title), ''), ?),
+                company_name = COALESCE(?, company_name),
+                company_domain = COALESCE(?, company_domain),
+                job_id = COALESCE(?, job_id),
+                contact_name = COALESCE(?, contact_name),
+                contact_linkedin_url = COALESCE(?, contact_linkedin_url),
+                linkedin_connection_note = COALESCE(?, linkedin_connection_note),
+                contact_type = COALESCE(?, contact_type),
+                persona = COALESCE(?, persona),
+                source_platform = COALESCE(?, source_platform),
+                source_post_url = COALESCE(?, source_post_url),
+                evidence_snippet = COALESCE(?, evidence_snippet),
+                special_instructions_json = COALESCE(?, special_instructions_json),
+                execution_route = COALESCE(?, execution_route)
+            WHERE lead_id = ?
+            """,
+            (
+                role_title, company_name, company_domain, job_id,
+                contact_name, contact_linkedin_url, linkedin_connection_note,
+                contact_type, eff_persona, source_platform, source_post_url,
+                evidence_snippet, special_instructions_json, execution_route,
+                existing_lid,
+            ),
+        )
+        commit_with_retry(conn)
+        return existing_lid
+
+    lid = lead_id or f"lead_{uuid.uuid4().hex[:12]}"
     conn.execute(
         """
         INSERT INTO recruiter_leads (
@@ -3035,15 +3088,15 @@ def store_recruiter_lead(
         (
             lid, job_id, company_name, company_domain, role_title,
             contact_name, contact_linkedin_url, linkedin_connection_note,
-            contact_email, contact_type, eff_persona, source_platform, source_post_url,
+            clean_email, contact_type, eff_persona, source_platform, source_post_url,
             evidence_snippet, special_instructions_json, execution_route,
             outreach_status, now,
         ),
     )
     commit_with_retry(conn)
     row = conn.execute(
-        "SELECT lead_id FROM recruiter_leads WHERE contact_email = ? AND role_title = ?",
-        (contact_email, role_title),
+        "SELECT lead_id FROM recruiter_leads WHERE LOWER(TRIM(contact_email)) = ? LIMIT 1",
+        (clean_email,),
     ).fetchone()
     return row[0] if row else lid
 
@@ -3128,23 +3181,33 @@ def upsert_career_watchlist(
     referrer_name: str | None = None,
     referrer_linkedin: str | None = None,
     company_id: str | None = None,
+    metadata_json: str | None = None,
     conn: sqlite3.Connection | None = None,
 ) -> str:
     """Add or update a company career site entry in the watchlist."""
     import uuid
+    from applypilot.learning.migrations import _clean_domain_token, is_aggregator_or_ats_domain
+
     if conn is None:
         conn = get_connection()
+
+    clean_name = (company_name or "").strip()
+    clean_dom = _clean_domain_token(official_domain) if official_domain else None
+    if clean_dom and is_aggregator_or_ats_domain(clean_dom):
+        if not careers_page_url:
+            careers_page_url = official_domain if str(official_domain).startswith(("http://", "https://")) else f"https://{clean_dom}"
+        clean_dom = None
 
     # If company_id not explicitly provided, find existing company by name or domain
     if not company_id:
         existing = conn.execute(
             """
             SELECT company_id FROM career_watchlist 
-            WHERE LOWER(company_name) = LOWER(?)
-               OR (official_domain IS NOT NULL AND official_domain != '' AND LOWER(official_domain) = LOWER(?))
+            WHERE LOWER(TRIM(company_name)) = LOWER(?)
+               OR (? IS NOT NULL AND ? != '' AND LOWER(official_domain) = LOWER(?))
             LIMIT 1
             """,
-            (company_name.strip(), (official_domain or "").strip()),
+            (clean_name, clean_dom, clean_dom, clean_dom or ""),
         ).fetchone()
         if existing and existing[0]:
             cid = existing[0]
@@ -3152,6 +3215,14 @@ def upsert_career_watchlist(
             cid = f"comp_{uuid.uuid4().hex[:10]}"
     else:
         cid = company_id
+
+    if clean_dom:
+        dom_conflict = conn.execute(
+            "SELECT company_id FROM career_watchlist WHERE LOWER(official_domain) = LOWER(?) AND company_id != ? LIMIT 1",
+            (clean_dom, cid),
+        ).fetchone()
+        if dom_conflict:
+            clean_dom = None
 
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -3161,14 +3232,14 @@ def upsert_career_watchlist(
             stage, sector, area, location, team_size, total_funding,
             official_domain, careers_page_url, ats_provider, ats_board_token,
             founders_json, hr_contacts_json, open_roles_count,
-            referral_available, referrer_name, referrer_linkedin, last_checked_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            referral_available, referrer_name, referrer_linkedin, metadata_json, last_checked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(company_id) DO UPDATE SET
             company_name = excluded.company_name,
             slug = COALESCE(excluded.slug, career_watchlist.slug),
-            priority_tier = excluded.priority_tier,
-            is_vip = excluded.is_vip,
-            stage = COALESCE(excluded.stage, career_watchlist.stage),
+            priority_tier = CASE WHEN career_watchlist.stage = 'gtm_excluded' THEN 2 ELSE excluded.priority_tier END,
+            is_vip = CASE WHEN career_watchlist.stage = 'gtm_excluded' THEN 0 ELSE excluded.is_vip END,
+            stage = CASE WHEN career_watchlist.stage = 'gtm_excluded' THEN 'gtm_excluded' ELSE COALESCE(excluded.stage, career_watchlist.stage) END,
             sector = COALESCE(excluded.sector, career_watchlist.sector),
             area = COALESCE(excluded.area, career_watchlist.area),
             location = COALESCE(excluded.location, career_watchlist.location),
@@ -3184,14 +3255,15 @@ def upsert_career_watchlist(
             referral_available = CASE WHEN excluded.referral_available = 1 THEN 1 ELSE career_watchlist.referral_available END,
             referrer_name = COALESCE(excluded.referrer_name, career_watchlist.referrer_name),
             referrer_linkedin = COALESCE(excluded.referrer_linkedin, career_watchlist.referrer_linkedin),
+            metadata_json = COALESCE(excluded.metadata_json, career_watchlist.metadata_json),
             last_checked_at = excluded.last_checked_at
         """,
         (
-            cid, company_name, slug, priority_tier, is_vip,
+            cid, clean_name, slug, priority_tier, is_vip,
             stage, sector, area, location, team_size, total_funding,
-            official_domain, careers_page_url, ats_provider, ats_board_token,
+            clean_dom, careers_page_url, ats_provider, ats_board_token,
             founders_json, hr_contacts_json, open_roles_count,
-            referral_available, referrer_name, referrer_linkedin, now,
+            referral_available, referrer_name, referrer_linkedin, metadata_json, now,
         ),
     )
     commit_with_retry(conn)

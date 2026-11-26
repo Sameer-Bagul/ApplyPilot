@@ -1,0 +1,101 @@
+name: Scheduled Cloud Scrape & Turso Sync
+
+on:
+  schedule:
+    # 10:00 AM IST (04:30 UTC) and 8:00 PM IST (14:30 UTC)
+    - cron: "30 4 * * *"
+    - cron: "30 14 * * *"
+  workflow_dispatch:
+    inputs:
+      company_limit:
+        description: "Max companies to loop per run"
+        required: false
+        default: "250"
+      sources_limit:
+        description: "Max discovery sources to crawl per run"
+        required: false
+        default: "30"
+
+concurrency:
+  group: scheduled-cloud-scrape
+  cancel-in-progress: false
+
+jobs:
+  cloud-scrape-and-sync:
+    name: Scrape ATS, Custom Careers & Directories -> Turso Cloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install Python & Node dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . libsql-experimental
+          cd dashboard && npm ci
+
+      - name: Verify Turso Secrets Configured
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ -z "$TURSO_DATABASE_URL" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            echo "ERROR: TURSO_DATABASE_URL and TURSO_AUTH_TOKEN secrets must be configured."
+            exit 1
+          fi
+
+      - name: Pull Turso Cloud Replica to Local Runner SQLite
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          python - << 'EOF'
+          import os
+          import libsql_experimental as libsql
+
+          db_path = "/tmp/applypilot_ci.db"
+          conn = libsql.connect(
+              db_path,
+              sync_url=os.environ["TURSO_DATABASE_URL"],
+              auth_token=os.environ["TURSO_AUTH_TOKEN"],
+          )
+          conn.sync()
+          jobs_cnt = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+          comp_cnt = conn.execute("SELECT COUNT(*) FROM career_watchlist").fetchone()[0]
+          print(f"Pulled Turso replica: {comp_cnt} companies, {jobs_cnt} jobs")
+          EOF
+
+      - name: Run Migrations, Deep Looper, Directory Crawler & Zero-Token Scorer
+        env:
+          APPLYPILOT_DB_PATH: /tmp/applypilot_ci.db
+          COMPANY_LIMIT: ${{ github.event.inputs.company_limit || '250' }}
+          SOURCES_LIMIT: ${{ github.event.inputs.sources_limit || '30' }}
+        run: |
+          python -c "from applypilot.database import get_connection, init_db; c = get_connection(); init_db(c)"
+          python scripts/run_all_companies_looper.py --limit "${COMPANY_LIMIT}" --workers 12 --minutes-ago 360
+          python scripts/crawl_discovery_sources.py --limit "${SOURCES_LIMIT}" --global-remote-cap 200
+          applypilot score-backlog --limit 500 --archive-non-tech || true
+          python -c "from applypilot.database import get_connection, sync_execution_routes; print(sync_execution_routes(get_connection()))"
+
+      - name: Reconcile & Sync Updated Database Back to Turso Cloud
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          LOCAL_DB_PATH: /tmp/applypilot_ci.db
+        run: |
+          node dashboard/sync_all_to_turso.mjs

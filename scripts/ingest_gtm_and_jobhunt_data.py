@@ -592,6 +592,20 @@ def ingest_career_watchlist(
         for rec in company_records.values():
             founders_str = json.dumps(rec["founders"], ensure_ascii=False) if rec["founders"] else None
             hr_str = json.dumps(rec["hr_contacts"], ensure_ascii=False) if rec["hr_contacts"] else None
+            dom_val = rec["official_domain"]
+            if dom_val:
+                from applypilot.learning.migrations import is_aggregator_or_ats_domain
+                if is_aggregator_or_ats_domain(dom_val):
+                    if not rec["careers_page_url"]:
+                        rec["careers_page_url"] = f"https://{dom_val}"
+                    dom_val = None
+            if dom_val:
+                dom_conflict = cursor.execute(
+                    "SELECT company_id FROM career_watchlist WHERE LOWER(official_domain) = LOWER(?) AND company_id != ? LIMIT 1",
+                    (dom_val, rec["company_id"]),
+                ).fetchone()
+                if dom_conflict:
+                    dom_val = None
             cursor.execute(
                 """
                 INSERT INTO career_watchlist (
@@ -621,7 +635,7 @@ def ingest_career_watchlist(
                 (
                     rec["company_id"],
                     rec["company_name"],
-                    rec["official_domain"],
+                    dom_val,
                     rec["careers_page_url"],
                     rec["ats_provider"],
                     rec["ats_board_token"],
@@ -668,7 +682,7 @@ def ingest_recruiter_leads(
 
     tavilo_master_path = data_dir / "tavilo-data" / "Tavilo prospect list - Master (all rows).csv"
     leads_to_ingest: List[Dict[str, Any]] = []
-    seen_pairs: Set[Tuple[str, str]] = set()
+    seen_emails: Set[str] = set()
 
     personal_email_count = 0
     corporate_email_count = 0
@@ -734,9 +748,9 @@ def ingest_recruiter_leads(
                     channel = "corporate"
 
                 persona = "founder" if any(w in dm_title.lower() for w in ["founder", "ceo", "owner", "cto", "co-founder"]) else "executive"
-                pair = (contact_email, dm_title)
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
+                email_key = contact_email.lower().strip()
+                if email_key not in seen_emails:
+                    seen_emails.add(email_key)
                     leads_to_ingest.append({
                         "lead_id": f"lead_{uuid.uuid4().hex[:12]}",
                         "company_name": comp_name,
@@ -800,9 +814,9 @@ def ingest_recruiter_leads(
                     sec_channel = "corporate"
 
                 sec_persona = "talent_acquisition" if any(w in sec_title.lower() for w in ["hr", "recruiter", "talent", "people"]) else "executive"
-                pair = (sec_email, sec_title)
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
+                sec_email_key = sec_email.lower().strip()
+                if sec_email_key not in seen_emails:
+                    seen_emails.add(sec_email_key)
                     leads_to_ingest.append({
                         "lead_id": f"lead_{uuid.uuid4().hex[:12]}",
                         "company_name": comp_name,
@@ -883,16 +897,16 @@ def ingest_recruiter_leads(
     ]
 
     for rm in recruiter_messages:
-        pair = (rm["email"], rm["role"])
-        if pair not in seen_pairs:
-            seen_pairs.add(pair)
+        em_key = rm["email"].lower().strip()
+        if em_key not in seen_emails:
+            seen_emails.add(em_key)
             leads_to_ingest.append({
                 "lead_id": f"lead_{uuid.uuid4().hex[:12]}",
                 "company_name": rm["company"],
                 "company_domain": rm["domain"],
                 "role_title": rm["role"],
                 "contact_name": rm["name"],
-                "contact_email": rm["email"],
+                "contact_email": em_key,
                 "contact_linkedin_url": rm["linkedin"],
                 "contact_type": "inbound_recruiter",
                 "source_platform": "linkedin_messages",
@@ -916,6 +930,40 @@ def ingest_recruiter_leads(
         now_iso = datetime.now(timezone.utc).isoformat()
         cursor = conn.cursor()
         for ld in leads_to_ingest:
+            clean_em = (ld["contact_email"] or "").strip().lower()
+            existing_ld = cursor.execute(
+                "SELECT lead_id FROM recruiter_leads WHERE LOWER(TRIM(contact_email)) = ? LIMIT 1",
+                (clean_em,),
+            ).fetchone()
+            if existing_ld:
+                cursor.execute(
+                    """
+                    UPDATE recruiter_leads
+                    SET company_name = COALESCE(?, company_name),
+                        company_domain = COALESCE(?, company_domain),
+                        contact_name = COALESCE(?, contact_name),
+                        contact_linkedin_url = COALESCE(?, contact_linkedin_url),
+                        evidence_snippet = COALESCE(?, evidence_snippet),
+                        preferred_channel = COALESCE(?, preferred_channel),
+                        execution_route = COALESCE(?, execution_route),
+                        priority_score = MAX(?, COALESCE(priority_score, 0)),
+                        personal_email = COALESCE(?, personal_email)
+                    WHERE lead_id = ?
+                    """,
+                    (
+                        ld["company_name"],
+                        ld["company_domain"],
+                        ld["contact_name"],
+                        ld["contact_linkedin_url"],
+                        ld["evidence_snippet"],
+                        ld["preferred_channel"],
+                        ld["execution_route"],
+                        ld["priority_score"],
+                        ld.get("personal_email"),
+                        existing_ld[0],
+                    ),
+                )
+                continue
             cursor.execute(
                 """
                 INSERT INTO recruiter_leads (
@@ -942,7 +990,7 @@ def ingest_recruiter_leads(
                     ld["company_domain"],
                     ld["role_title"],
                     ld["contact_name"],
-                    ld["contact_email"],
+                    clean_em,
                     ld["contact_linkedin_url"],
                     ld["contact_type"],
                     ld["source_platform"],

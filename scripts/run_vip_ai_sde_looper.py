@@ -29,14 +29,23 @@ from urllib.parse import urlparse
 
 import httpx
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+if str(PROJECT_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
 from applypilot.career_resolver.ats_feeds import poll_board
 from applypilot.career_resolver.jsonld_parser import extract_jsonld_jobpostings
-from applypilot.database import get_connection, store_jobs, store_recruiter_lead
+from applypilot.career_resolver.resolver import resolve_company_career_page
+from applypilot.database import commit_with_retry, get_connection, store_jobs, store_recruiter_lead
 from applypilot.discovery.email_hunter import (
     clean_domain,
     check_domain_mx_provider,
     harvest_company_emails_cascade,
 )
+from applypilot.discovery.url_normalize import canonicalize_application_url
+from applypilot.learning.migrations import _clean_domain_token, is_aggregator_or_ats_domain
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,7 +85,6 @@ DOMAIN_OVERRIDES = {
     "beacons": "beacons.ai",
     "berriai": "berri.ai",
     "bland ai": "bland.ai",
-    "bolt ai": "bolt.earth",
     "botpress": "botpress.com",
     "chroma": "trychroma.com",
     "civitai": "civitai.com",
@@ -120,75 +128,79 @@ AI_SDE_KEYWORDS = [
 ]
 
 def is_ai_sde_role(title: str, description: str = "") -> bool:
-    """Determine if a job title or description matches AI or SDE roles."""
-    text = f"{title} {description[:300]}".lower()
-    return any(kw in text for kw in AI_SDE_KEYWORDS)
+    """Determine if a job title matches genuine AI, Data, or Software Engineering roles."""
+    from run_all_companies_looper import is_ai_sde_role as _is_ai_sde
+    return _is_ai_sde(title, description)
 
 def resolve_ats_from_url(url: str | None) -> tuple[str | None, str | None]:
     """Extract ATS provider and board token from URL."""
-    if not url:
-        return None, None
-    url_str = url.strip()
-    if "greenhouse.io" in url_str:
-        m = re.search(r'greenhouse\.io/([^/?#]+)', url_str)
-        return "greenhouse", m.group(1) if m else None
-    elif "lever.co" in url_str:
-        m = re.search(r'lever\.co/([^/?#]+)', url_str)
-        return "lever", m.group(1) if m else None
-    elif "ashbyhq.com" in url_str:
-        m = re.search(r'ashbyhq\.com/([^/?#]+)', url_str)
-        return "ashby", m.group(1) if m else None
-    elif "workable.com" in url_str:
-        m = re.search(r'apply\.workable\.com/([^/?#]+)', url_str)
-        return "workable", m.group(1) if m else None
-    elif "smartrecruiters.com" in url_str:
-        m = re.search(r'smartrecruiters\.com/([^/?#]+)', url_str)
-        return "smartrecruiters", m.group(1) if m else None
-    elif "bamboohr.com" in url_str:
-        m = re.search(r'([^./]+)\.bamboohr\.com', url_str)
-        return "bamboohr", m.group(1) if m else None
-    elif "myworkdayjobs.com" in url_str:
-        parsed = urlparse(url_str)
-        host = parsed.netloc
-        tenant = host.split(".")[0]
-        return "workday", f"{host}/{tenant}/External"
-    return None, None
+    from run_all_companies_looper import resolve_ats_from_url as _resolve
+    return _resolve(url)
 
-def process_company(company: dict[str, Any], client: httpx.Client | None = None) -> dict[str, Any]:
+
+def process_company(company: dict[str, Any], client: httpx.Client | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     """Execute complete deep loop on a single VIP company."""
-    conn = get_connection()
-    c_name = company.get("company_name", "").strip()
-    c_domain = company.get("official_domain") or ""
+    from run_all_companies_looper import verify_domain_with_http, crawl_custom_careers_page
+    if conn is None:
+        conn = get_connection()
+    c_name = (company.get("company_name") or "").strip()
+    if company.get("stage") == "gtm_excluded" or c_name.lower() == "revcloud":
+        return {
+            "company": c_name,
+            "domain": company.get("official_domain"),
+            "skipped": "gtm_excluded",
+            "mx_valid": False,
+            "mx_provider": "none",
+            "ats_provider": company.get("ats_provider"),
+            "ats_token": company.get("ats_board_token"),
+            "emails_added": 0,
+            "total_emails": 0,
+            "total_jobs_polled": 0,
+            "ai_sde_roles_found": 0,
+            "new_jobs_stored": 0,
+            "sample_ai_sde_roles": [],
+        }
+
+    c_domain = _clean_domain_token(company.get("official_domain")) or ""
+    if c_domain and is_aggregator_or_ats_domain(c_domain):
+        c_domain = ""
     careers_url = company.get("careers_page_url") or ""
     ats_prov = company.get("ats_provider")
     ats_token = company.get("ats_board_token")
 
-    # 1. Normalize domain
+    # 1. Resolve verified non-aggregator domain (NO blind {slug}.com guessing)
     c_name_lower = c_name.lower().strip()
     if c_name_lower in DOMAIN_OVERRIDES:
         c_domain = DOMAIN_OVERRIDES[c_name_lower]
-    elif not c_domain or any(p in c_domain for p in ["wellfound", "cutshort", "linkedin", "naukri", "ycombinator"]):
+    elif not c_domain:
         if careers_url and "://" in careers_url:
-            parsed = urlparse(careers_url)
-            netloc = parsed.netloc.lower().replace("www.", "")
-            if not any(ats in netloc for ats in ["greenhouse.io", "ashbyhq.com", "lever.co", "myworkdayjobs.com", "smartrecruiters.com", "wellfound.com", "cutshort.io"]):
-                c_domain = netloc
+            cand = _clean_domain_token(careers_url)
+            if cand and "." in cand and not is_aggregator_or_ats_domain(cand):
+                c_domain = cand
         if not c_domain:
-            clean_slug = re.sub(r'[^a-z0-9]', '', c_name_lower)
-            c_domain = f"{clean_slug}.com"
+            try:
+                resolved_url = resolve_company_career_page(c_name)
+                if resolved_url:
+                    cand = _clean_domain_token(resolved_url)
+                    if cand and "." in cand and not is_aggregator_or_ats_domain(cand) and verify_domain_with_http(cand, c_name, client=client):
+                        c_domain = cand
+                        if not careers_url:
+                            careers_url = resolved_url
+            except Exception:
+                pass
 
-    # 2. Check MX Deliverability
-    mx_valid, mx_provider = check_domain_mx_provider(c_domain)
+    # 2. Check MX Deliverability only on verified non-aggregator domain
+    mx_valid, mx_provider = check_domain_mx_provider(c_domain) if (c_domain and not is_aggregator_or_ats_domain(c_domain)) else (False, "none")
 
     # 3. Harvest Corporate & Decision-Maker Inboxes via Cascade
     existing_leads = conn.execute(
         "SELECT contact_email FROM recruiter_leads WHERE LOWER(company_name) = ? AND contact_email NOT LIKE '%@connect.linkedin.com'",
         (c_name.lower(),),
     ).fetchall()
-    existing_emails = {r[0] for r in existing_leads}
+    existing_emails = {r[0].lower().strip() for r in existing_leads if r[0]}
     emails_added = 0
 
-    if len(existing_emails) < 5:
+    if c_domain and len(existing_emails) < 5:
         try:
             h_res = harvest_company_emails_cascade(
                 domain=c_domain,
@@ -198,12 +210,11 @@ def process_company(company: dict[str, Any], client: httpx.Client | None = None)
                 conn=conn,
             )
             emails_added = h_res.get("leads_stored_to_db", 0)
-            # Refresh existing emails
             existing_leads = conn.execute(
                 "SELECT contact_email FROM recruiter_leads WHERE LOWER(company_name) = ? AND contact_email NOT LIKE '%@connect.linkedin.com'",
                 (c_name.lower(),),
             ).fetchall()
-            existing_emails = {r[0] for r in existing_leads}
+            existing_emails = {r[0].lower().strip() for r in existing_leads if r[0]}
         except Exception as e:
             logger.debug("Cascade email notice for %s: %s", c_name, e)
 
@@ -214,7 +225,6 @@ def process_company(company: dict[str, Any], client: httpx.Client | None = None)
             ats_prov = detected_prov
             ats_token = detected_token
         elif not ats_prov:
-            # Try guessing common ATS tokens
             slug = re.sub(r'[^a-z0-9]', '', c_name_lower)
             for prov in ["greenhouse", "ashby", "lever"]:
                 test_jobs = poll_board(prov, slug, client=client)
@@ -223,7 +233,7 @@ def process_company(company: dict[str, Any], client: httpx.Client | None = None)
                     ats_token = slug
                     break
 
-    # 5. Poll Open Jobs (ATS or JSON-LD parsing)
+    # 5. Poll Open Jobs (ATS or Custom /careers HTML crawl)
     discovered_jobs: list[dict[str, Any]] = []
     if ats_prov and ats_token:
         try:
@@ -231,16 +241,50 @@ def process_company(company: dict[str, Any], client: httpx.Client | None = None)
         except Exception:
             pass
     elif careers_url and "://" in careers_url:
-        try:
-            resp = client.get(careers_url, timeout=6.0) if client else None
-            if resp and resp.status_code == 200:
-                discovered_jobs = extract_jsonld_jobpostings(resp.text, base_url=careers_url)
-        except Exception:
-            pass
+        c_jobs, c_emails, embedded_ats_url = crawl_custom_careers_page(careers_url, c_name, client=client)
+        if embedded_ats_url:
+            e_prov, e_tok = resolve_ats_from_url(embedded_ats_url)
+            if e_prov and e_tok:
+                ats_prov, ats_token = e_prov, e_tok
+                try:
+                    discovered_jobs = poll_board(ats_prov, ats_token, client=client)
+                except Exception:
+                    pass
+        if not discovered_jobs:
+            discovered_jobs = c_jobs
+        for em in c_emails:
+            if em not in existing_emails:
+                existing_emails.add(em)
+                try:
+                    store_recruiter_lead(
+                        contact_email=em,
+                        role_title=f"Careers Page Contact at {c_name}",
+                        company_name=c_name,
+                        company_domain=c_domain or em.split("@", 1)[1],
+                        contact_name=f"{c_name} Hiring Team",
+                        contact_type="recruiter",
+                        source_platform="careers_page_scrape",
+                        evidence_snippet=f"Extracted directly from {careers_url}",
+                        execution_route="DUAL_ATTACK",
+                        outreach_status="queued",
+                        persona="Talent & Recruiting",
+                        conn=conn,
+                    )
+                    emails_added += 1
+                except Exception as e:
+                    logger.warning("Failed storing scraped email %s for %s: %s", em, c_name, e)
 
-    # Filter for AI and SDE roles
+    # Filter for AI and SDE roles and deduplicate
     ai_sde_jobs = [j for j in discovered_jobs if is_ai_sde_role(j.get("title", ""), j.get("description", ""))]
     new_jobs_stored = 0
+
+    existing_ct = {
+        (r[0].strip().lower(), re.sub(r"\s+", " ", r[1].strip().lower()))
+        for r in conn.execute(
+            "SELECT company, title FROM jobs WHERE LOWER(company) = ? AND title IS NOT NULL",
+            (c_name.lower(),),
+        ).fetchall()
+    }
 
     has_email = len(existing_emails) > 0
     route = "DUAL_ATTACK" if has_email else "PORTAL_ONLY"
@@ -250,48 +294,64 @@ def process_company(company: dict[str, Any], client: httpx.Client | None = None)
         j_title = j.get("title")
         if not j_url or not j_title:
             continue
+        ct_key = (c_name.lower(), re.sub(r"\s+", " ", j_title.strip().lower()))
+        if ct_key in existing_ct:
+            continue
+        existing_ct.add(ct_key)
         try:
+            canon_url = canonicalize_application_url(j_url)
             new_cnt, _ = store_jobs(
                 conn=conn,
                 jobs=[{
                     "url": j_url,
                     "title": j_title,
+                    "company": c_name,
                     "location": j.get("location", "Remote / Hybrid"),
                     "description": j.get("description", "")[:1000],
                 }],
                 site=ats_prov or "vip_deep_looper",
                 strategy="vip_deep_looper",
             )
-            conn.execute(
-                "UPDATE jobs SET company = ?, execution_route = ? WHERE url = ?",
-                (c_name, route, j_url),
-            )
-            conn.commit()
             if new_cnt > 0:
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(company, ?), execution_route = ? WHERE url = ?",
+                    (c_name, route, canon_url),
+                )
+                commit_with_retry(conn)
                 new_jobs_stored += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed storing job %s for %s: %s", j_url, c_name, e)
 
-    # 6. Update Watchlist Entry
+    # 6. Update Watchlist Entry safely
     now_iso = datetime.now(timezone.utc).isoformat()
     total_roles = len(discovered_jobs) if discovered_jobs else company.get("open_roles_count", 0)
+    safe_domain = c_domain or None
+    if safe_domain:
+        conflict = conn.execute(
+            "SELECT company_id FROM career_watchlist WHERE LOWER(official_domain) = ? AND company_id != ? LIMIT 1",
+            (safe_domain.lower(), company["company_id"]),
+        ).fetchone()
+        if conflict:
+            safe_domain = None
+
     conn.execute(
         """
         UPDATE career_watchlist
-        SET official_domain = ?,
+        SET official_domain = COALESCE(official_domain, ?),
+            careers_page_url = COALESCE(careers_page_url, ?),
             ats_provider = COALESCE(ats_provider, ?),
             ats_board_token = COALESCE(ats_board_token, ?),
             open_roles_count = ?,
             last_checked_at = ?
         WHERE company_id = ?
         """,
-        (c_domain, ats_prov, ats_token, total_roles, now_iso, company["company_id"]),
+        (safe_domain, careers_url or None, ats_prov, ats_token, total_roles, now_iso, company["company_id"]),
     )
-    conn.commit()
+    commit_with_retry(conn)
 
     return {
         "company": c_name,
-        "domain": c_domain,
+        "domain": safe_domain or company.get("official_domain"),
         "mx_valid": mx_valid,
         "mx_provider": mx_provider,
         "ats_provider": ats_prov,
@@ -412,7 +472,9 @@ def main():
     logger.info("=" * 60)
 
     # Save summary report artifact
-    report_path = Path("/home/sameer/Projects/ApplyPilot/data-we-can-use/vip_100_ai_sde_looper_report.json")
+    data_dir = PROJECT_ROOT / "data-we-can-use"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    report_path = data_dir / "vip_100_ai_sde_looper_report.json"
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(
             {

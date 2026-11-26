@@ -2791,7 +2791,7 @@ def score_backlog_cmd(
             strong_matches += 1
             table.add_row(
                 result["badge"],
-                f"{job_dict.get('title', '')[:22]} @ {job_dict.get('company', '')[:10]}",
+                f"{(job_dict.get('title') or '')[:22]} @ {(job_dict.get('company') or 'Unknown')[:10]}",
                 meta.get("workplace_type", "Onsite"),
                 meta.get("experience", {}).get("raw_text", "N/A"),
                 ", ".join(result["matched_skills"][:4]) or "General",

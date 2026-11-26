@@ -473,9 +473,226 @@ def poll_personio_board(board_token: str, client: httpx.Client | None = None, ti
             client.close()
 
 
+# 12. Freshteam (HTML / JSON-LD)
+def poll_freshteam_board(board_token: str, client: httpx.Client | None = None, timeout: float = 10.0) -> list[dict[str, Any]]:
+    """Fetch active jobs from Freshteam career board."""
+    url = f"https://{board_token}.freshteam.com/jobs"
+    should_close = False
+    if client is None:
+        client = _get_client(timeout)
+        should_close = True
+    try:
+        resp = client.get(url)
+        if resp.status_code != 200:
+            return []
+        from applypilot.career_resolver.jsonld_parser import extract_jsonld_jobpostings
+        jobs = extract_jsonld_jobpostings(resp.text, base_url=url)
+        if jobs:
+            for j in jobs:
+                j["ats_provider"] = "freshteam"
+                j["site"] = "freshteam"
+            return jobs
+        normalized = []
+        seen: set[str] = set()
+        for m in re.finditer(r'<a[^>]+href=["\']([^"\']*/jobs/[^"\']+)["\'][^>]*>(.*?)</a>', resp.text, re.I | re.S):
+            href, raw_title = m.group(1), re.sub(r"<[^>]+>", " ", m.group(2)).strip()
+            full_u = href if href.startswith("http") else f"https://{board_token}.freshteam.com{href}"
+            if full_u not in seen and len(raw_title) >= 3:
+                seen.add(full_u)
+                normalized.append({
+                    "title": re.sub(r"\s+", " ", raw_title),
+                    "url": full_u,
+                    "company": board_token,
+                    "location": "India / Remote",
+                    "description": "",
+                    "ats_provider": "freshteam",
+                    "execution_route": "PORTAL_ONLY",
+                    "site": "freshteam",
+                })
+        return normalized
+    except Exception as e:
+        logger.debug("Failed to poll Freshteam board '%s': %s", board_token, e)
+        return []
+    finally:
+        if should_close:
+            client.close()
+
+
+# 13. Zoho Recruit
+def poll_zohorecruit_board(board_token: str, client: httpx.Client | None = None, timeout: float = 10.0) -> list[dict[str, Any]]:
+    """Fetch active jobs from Zoho Recruit career portal (.in / .com)."""
+    should_close = False
+    if client is None:
+        client = _get_client(timeout)
+        should_close = True
+    try:
+        from applypilot.career_resolver.jsonld_parser import extract_jsonld_jobpostings
+        for tld in ("in", "com"):
+            url = f"https://{board_token}.zohorecruit.{tld}/jobs/Careers"
+            try:
+                resp = client.get(url)
+            except Exception:
+                continue
+            if resp.status_code != 200:
+                continue
+            jobs = extract_jsonld_jobpostings(resp.text, base_url=url)
+            if jobs:
+                for j in jobs:
+                    j["ats_provider"] = "zohorecruit"
+                    j["site"] = "zohorecruit"
+                return jobs
+            normalized = []
+            seen: set[str] = set()
+            for m in re.finditer(r'<a[^>]+href=["\']([^"\']*/jobs/Careers/\d+[^"\']*)["\'][^>]*>(.*?)</a>', resp.text, re.I | re.S):
+                href, raw_title = m.group(1), re.sub(r"<[^>]+>", " ", m.group(2)).strip()
+                full_u = href if href.startswith("http") else f"https://{board_token}.zohorecruit.{tld}{href}"
+                if full_u not in seen and len(raw_title) >= 3:
+                    seen.add(full_u)
+                    normalized.append({
+                        "title": re.sub(r"\s+", " ", raw_title),
+                        "url": full_u,
+                        "company": board_token,
+                        "location": "India",
+                        "description": "",
+                        "ats_provider": "zohorecruit",
+                        "execution_route": "PORTAL_ONLY",
+                        "site": "zohorecruit",
+                    })
+            if normalized:
+                return normalized
+        return []
+    except Exception as e:
+        logger.debug("Failed to poll Zoho Recruit board '%s': %s", board_token, e)
+        return []
+    finally:
+        if should_close:
+            client.close()
+
+
+# 14. Keka Hire
+def poll_keka_board(board_token: str, client: httpx.Client | None = None, timeout: float = 10.0) -> list[dict[str, Any]]:
+    """Fetch active jobs from Keka Careers portal."""
+    url = f"https://{board_token}.keka.com/careers"
+    should_close = False
+    if client is None:
+        client = _get_client(timeout)
+        should_close = True
+    try:
+        resp = client.get(url)
+        if resp.status_code != 200:
+            return []
+        from applypilot.career_resolver.jsonld_parser import extract_jsonld_jobpostings
+        jobs = extract_jsonld_jobpostings(resp.text, base_url=url)
+        if jobs:
+            for j in jobs:
+                j["ats_provider"] = "keka"
+                j["site"] = "keka"
+            return jobs
+        normalized = []
+        seen: set[str] = set()
+        for m in re.finditer(r'<a[^>]+href=["\']([^"\']*/careers/\d+[^"\']*)["\'][^>]*>(.*?)</a>', resp.text, re.I | re.S):
+            href, raw_title = m.group(1), re.sub(r"<[^>]+>", " ", m.group(2)).strip()
+            full_u = href if href.startswith("http") else f"https://{board_token}.keka.com{href}"
+            if full_u not in seen and len(raw_title) >= 3:
+                seen.add(full_u)
+                normalized.append({
+                    "title": re.sub(r"\s+", " ", raw_title),
+                    "url": full_u,
+                    "company": board_token,
+                    "location": "India",
+                    "description": "",
+                    "ats_provider": "keka",
+                    "execution_route": "PORTAL_ONLY",
+                    "site": "keka",
+                })
+        return normalized
+    except Exception as e:
+        logger.debug("Failed to poll Keka board '%s': %s", board_token, e)
+        return []
+    finally:
+        if should_close:
+            client.close()
+
+
+# 15. Param.ai
+def poll_param_board(board_token: str, client: httpx.Client | None = None, timeout: float = 10.0) -> list[dict[str, Any]]:
+    """Fetch active jobs from Param.ai career board."""
+    url = f"https://{board_token}.param.ai/jobs"
+    should_close = False
+    if client is None:
+        client = _get_client(timeout)
+        should_close = True
+    try:
+        resp = client.get(url)
+        if resp.status_code != 200:
+            return []
+        from applypilot.career_resolver.jsonld_parser import extract_jsonld_jobpostings
+        jobs = extract_jsonld_jobpostings(resp.text, base_url=url)
+        for j in jobs:
+            j["ats_provider"] = "param"
+            j["site"] = "param"
+        return jobs
+    except Exception as e:
+        logger.debug("Failed to poll Param board '%s': %s", board_token, e)
+        return []
+    finally:
+        if should_close:
+            client.close()
+
+
+# 16. Jobvite
+def poll_jobvite_board(board_token: str, client: httpx.Client | None = None, timeout: float = 10.0) -> list[dict[str, Any]]:
+    """Fetch active jobs from Jobvite career portal."""
+    should_close = False
+    if client is None:
+        client = _get_client(timeout)
+        should_close = True
+    try:
+        from applypilot.career_resolver.jsonld_parser import extract_jsonld_jobpostings
+        for url in (f"https://jobs.jobvite.com/{board_token}/jobs", f"https://jobs.jobvite.com/careers/{board_token}/jobs"):
+            try:
+                resp = client.get(url)
+            except Exception:
+                continue
+            if resp.status_code != 200:
+                continue
+            jobs = extract_jsonld_jobpostings(resp.text, base_url=url)
+            if jobs:
+                for j in jobs:
+                    j["ats_provider"] = "jobvite"
+                    j["site"] = "jobvite"
+                return jobs
+            normalized = []
+            seen: set[str] = set()
+            for m in re.finditer(r'<a[^>]+href=["\']([^"\']*/job/[^"\']+)["\'][^>]*>(.*?)</a>', resp.text, re.I | re.S):
+                href, raw_title = m.group(1), re.sub(r"<[^>]+>", " ", m.group(2)).strip()
+                full_u = href if href.startswith("http") else f"https://jobs.jobvite.com{href}"
+                if full_u not in seen and len(raw_title) >= 3:
+                    seen.add(full_u)
+                    normalized.append({
+                        "title": re.sub(r"\s+", " ", raw_title),
+                        "url": full_u,
+                        "company": board_token,
+                        "location": "Remote / India",
+                        "description": "",
+                        "ats_provider": "jobvite",
+                        "execution_route": "PORTAL_ONLY",
+                        "site": "jobvite",
+                    })
+            if normalized:
+                return normalized
+        return []
+    except Exception as e:
+        logger.debug("Failed to poll Jobvite board '%s': %s", board_token, e)
+        return []
+    finally:
+        if should_close:
+            client.close()
+
+
 # Master Dispatcher
 def poll_board(ats_provider: str, board_token: str, client: httpx.Client | None = None) -> list[dict[str, Any]]:
-    """Poll jobs for any of the 11 supported ATS platforms."""
+    """Poll jobs for any supported ATS platform."""
     provider = ats_provider.lower().strip()
     if provider == "greenhouse":
         return poll_greenhouse_board(board_token, client)
@@ -497,6 +714,16 @@ def poll_board(ats_provider: str, board_token: str, client: httpx.Client | None 
         return poll_breezy_board(board_token, client)
     elif provider == "personio":
         return poll_personio_board(board_token, client)
+    elif provider == "freshteam":
+        return poll_freshteam_board(board_token, client)
+    elif provider == "zohorecruit":
+        return poll_zohorecruit_board(board_token, client)
+    elif provider == "keka":
+        return poll_keka_board(board_token, client)
+    elif provider == "param":
+        return poll_param_board(board_token, client)
+    elif provider == "jobvite":
+        return poll_jobvite_board(board_token, client)
     elif provider == "workday":
         # token is expected as "host/tenant/site" or "host/tenant"
         parts = board_token.split("/")

@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Layers,
   Flame,
+  Compass,
 } from 'lucide-react';
 
 interface SourceStatItem {
@@ -29,6 +30,19 @@ interface SourceStatItem {
   top_companies: string[];
   status: 'ACTIVE' | 'CONNECTED';
   description: string;
+}
+
+interface DiscoverySourceItem {
+  url: string;
+  name: string;
+  region: string;
+  source_type: string;
+  requires_login: number;
+  scope_notes: string | null;
+  priority_tier: number;
+  last_crawled_at: string | null;
+  companies_found: number;
+  jobs_found: number;
 }
 
 interface SourcesViewProps {
@@ -97,6 +111,8 @@ function SourcePlatformIcon({ id, className = "w-5 h-5" }: { id: string; classNa
 
 export function SourcesView({ onSelectJob }: SourcesViewProps) {
   const [sources, setSources] = useState<SourceStatItem[]>([]);
+  const [discoverySources, setDiscoverySources] = useState<DiscoverySourceItem[]>([]);
+  const [regionFilter, setRegionFilter] = useState<string>('ALL');
   const [totalJobs, setTotalJobs] = useState(0);
   const [totalPlatforms, setTotalPlatforms] = useState(0);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -118,6 +134,7 @@ export function SourcesView({ onSelectJob }: SourcesViewProps) {
         const json = await res.json();
         if (json.success) {
           setSources(json.sources || []);
+          setDiscoverySources(json.discoverySources || []);
           setTotalJobs(json.totalJobs || 0);
           setTotalPlatforms(json.totalPlatforms || 0);
         }
@@ -456,6 +473,83 @@ export function SourcesView({ onSelectJob }: SourcesViewProps) {
           )}
         </div>
       </div>
+
+      {/* ---------------- Curated Discovery Directories & Ecosystem Lists ---------------- */}
+      {discoverySources.length > 0 && (
+        <div className="liquid-glass rounded-3xl p-5 border border-white/90 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-200/60">
+            <div>
+              <h3 className="font-bold text-sm text-zinc-900 flex items-center gap-2">
+                <Compass className="w-4 h-4 text-emerald-600" />
+                Curated Discovery Directories & Ecosystem Lists
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                  {discoverySources.length} directories
+                </span>
+              </h3>
+              <p className="text-xs text-zinc-500">
+                Pune, Bengaluru, India-Remote, and Global-Remote startup directories &amp; GitHub lists continuously crawled by ApplyPilot.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {['ALL', 'Pune', 'Bengaluru', 'India-Remote', 'Global-Remote'].map((reg) => (
+                <button
+                  key={reg}
+                  onClick={() => setRegionFilter(reg)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
+                    regionFilter === reg
+                      ? 'bg-zinc-900 text-white shadow-2xs'
+                      : 'bg-white/80 text-zinc-600 border border-zinc-200 hover:bg-zinc-100'
+                  }`}
+                >
+                  {reg === 'ALL' ? `All (${discoverySources.length})` : reg}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[420px] overflow-y-auto pr-1">
+            {discoverySources
+              .filter((ds) => regionFilter === 'ALL' || ds.region === regionFilter)
+              .map((ds) => (
+                <a
+                  key={ds.url}
+                  href={ds.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="liquid-card rounded-2xl p-3.5 border border-white/80 hover:border-blue-300 hover:bg-white/95 transition flex flex-col justify-between gap-2 group"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-xs text-zinc-900 truncate group-hover:text-blue-600 flex items-center gap-1">
+                        <span className="truncate">{ds.name}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+                      </div>
+                      <div className="text-[10px] text-zinc-500 truncate">{ds.url}</div>
+                    </div>
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                      {ds.region}
+                    </span>
+                  </div>
+
+                  {ds.scope_notes && (
+                    <p className="text-[11px] text-zinc-600 line-clamp-2">{ds.scope_notes}</p>
+                  )}
+
+                  <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[10px] text-zinc-500">
+                    <span className="font-semibold uppercase tracking-wider text-zinc-700">
+                      {ds.source_type.replace('_', ' ')}
+                      {ds.requires_login ? ' • Login Req' : ''}
+                    </span>
+                    <span className="font-bold text-zinc-800">
+                      +{ds.companies_found} cos • +{ds.jobs_found} jobs
+                    </span>
+                  </div>
+                </a>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

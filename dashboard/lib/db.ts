@@ -1997,10 +1997,24 @@ export interface SourceStatItem {
   description: string;
 }
 
+export interface DiscoverySourceItem {
+  url: string;
+  name: string;
+  region: string;
+  source_type: string;
+  requires_login: number;
+  scope_notes: string | null;
+  priority_tier: number;
+  last_crawled_at: string | null;
+  companies_found: number;
+  jobs_found: number;
+}
+
 export function getSourcesStats(): {
   sources: SourceStatItem[];
   totalJobs: number;
   totalPlatforms: number;
+  discoverySources: DiscoverySourceItem[];
 } {
   const db = getDb();
 
@@ -2168,10 +2182,41 @@ export function getSourcesStats(): {
   // Sort by total jobs descending
   sources.sort((a, b) => b.total_jobs - a.total_jobs);
 
+  let discoverySources: DiscoverySourceItem[] = [];
+  try {
+    discoverySources = db.prepare(`
+      SELECT
+        url,
+        name,
+        region,
+        source_type,
+        COALESCE(requires_login, 0) as requires_login,
+        scope_notes,
+        COALESCE(priority_tier, 2) as priority_tier,
+        last_crawled_at,
+        COALESCE(companies_found, 0) as companies_found,
+        COALESCE(jobs_found, 0) as jobs_found
+      FROM discovery_sources
+      ORDER BY
+        CASE region
+          WHEN 'Pune' THEN 1
+          WHEN 'Bengaluru' THEN 2
+          WHEN 'India-Remote' THEN 3
+          ELSE 4
+        END,
+        priority_tier ASC,
+        companies_found DESC,
+        name ASC
+    `).all() as unknown as DiscoverySourceItem[];
+  } catch {
+    discoverySources = [];
+  }
+
   return {
     sources,
     totalJobs: grandTotal,
     totalPlatforms: sources.length,
+    discoverySources,
   };
 }
 

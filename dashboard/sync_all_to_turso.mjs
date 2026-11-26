@@ -16,7 +16,23 @@ const turso = createClient({
   authToken: TURSO_TOKEN,
 });
 
+async function ensureTableExists(tableName) {
+  const localTable = localDb.prepare(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`
+  ).get(tableName);
+  if (!localTable || !localTable.sql) return;
+  try {
+    const createSql = localTable.sql.replace(/^CREATE TABLE\s+/i, 'CREATE TABLE IF NOT EXISTS ');
+    await turso.execute(createSql);
+  } catch (e) {
+    if (!e.message?.includes('already exists')) {
+      console.warn(`Table ensure notice for ${tableName}:`, e.message);
+    }
+  }
+}
+
 async function syncTableColumns(tableName) {
+  await ensureTableExists(tableName);
   const localCols = localDb.prepare(`PRAGMA table_info("${tableName}")`).all();
   const remoteColsRes = await turso.execute(`PRAGMA table_info("${tableName}")`);
   const remoteColNames = new Set(remoteColsRes.rows.map(r => r.name));
@@ -33,6 +49,35 @@ async function syncTableColumns(tableName) {
   }
 }
 
+async function reconcileRemotePrimaryKeys(tableName, pkCol, localRows) {
+  const localPkSet = new Set(localRows.map(r => r[pkCol]).filter(v => v !== null && v !== undefined));
+  const remoteRes = await turso.execute(`SELECT "${pkCol}" AS pk FROM "${tableName}"`);
+  const stalePks = remoteRes.rows
+    .map(r => r.pk)
+    .filter(pk => pk === null || pk === undefined || !localPkSet.has(pk));
+
+  if (stalePks.length === 0) {
+    console.log(`  [${tableName}] PK reconciliation: 0 stale remote rows.`);
+    return 0;
+  }
+
+  console.log(`  [${tableName}] PK reconciliation: deleting ${stalePks.length} stale/duplicate remote rows...`);
+  const nonNullStale = stalePks.filter(pk => pk !== null && pk !== undefined);
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < nonNullStale.length; i += BATCH_SIZE) {
+    const batch = nonNullStale.slice(i, i + BATCH_SIZE);
+    const statements = batch.map(pk => ({
+      sql: `DELETE FROM "${tableName}" WHERE "${pkCol}" = ?`,
+      args: [pk],
+    }));
+    await turso.batch(statements, 'write');
+  }
+  if (stalePks.length > nonNullStale.length) {
+    await turso.execute(`DELETE FROM "${tableName}" WHERE "${pkCol}" IS NULL`);
+  }
+  return stalePks.length;
+}
+
 async function main() {
   await turso.execute('PRAGMA foreign_keys = OFF;');
 
@@ -40,6 +85,7 @@ async function main() {
     'jobs',
     'career_watchlist',
     'recruiter_leads',
+    'discovery_sources',
     'qa_knowledge',
     'company_intel',
     'ats_selector_cache',
@@ -47,12 +93,24 @@ async function main() {
     'hitl_tickets'
   ];
 
+  const reconciledPks = {
+    jobs: 'url',
+    career_watchlist: 'company_id',
+    recruiter_leads: 'lead_id',
+    discovery_sources: 'url',
+  };
+
   for (const tableName of tables) {
     console.log(`\n=== Processing table: ${tableName} ===`);
     await syncTableColumns(tableName);
 
     const rows = localDb.prepare(`SELECT * FROM "${tableName}"`).all();
     console.log(`Local rows to sync: ${rows.length}`);
+
+    if (reconciledPks[tableName]) {
+      await reconcileRemotePrimaryKeys(tableName, reconciledPks[tableName], rows);
+    }
+
     if (rows.length === 0) continue;
 
     const BATCH_SIZE = 100;
@@ -75,15 +133,33 @@ async function main() {
     console.log(`\n✓ Successfully synced ${rows.length} rows for ${tableName}.`);
   }
 
+  // Ensure partial unique indexes exist on Turso as well
+  try {
+    await turso.execute(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlist_unique_domain
+        ON career_watchlist(LOWER(official_domain))
+        WHERE official_domain IS NOT NULL AND official_domain != ''
+    `);
+    await turso.execute(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_unique_email
+        ON recruiter_leads(LOWER(contact_email))
+        WHERE contact_email IS NOT NULL AND contact_email != ''
+    `);
+  } catch (e) {
+    console.warn('Partial unique index notice on Turso:', e.message);
+  }
+
   console.log('\n=============================================');
   console.log('FINAL REMOTE TURSO VERIFICATION:');
   const jobCount = await turso.execute('SELECT COUNT(*) as cnt FROM jobs');
   const compCount = await turso.execute('SELECT COUNT(*) as cnt FROM career_watchlist');
   const leadCount = await turso.execute('SELECT COUNT(*) as cnt FROM recruiter_leads');
+  const srcCount = await turso.execute('SELECT COUNT(*) as cnt FROM discovery_sources');
 
   console.log(`✓ Remote Turso Jobs: ${jobCount.rows[0].cnt}`);
   console.log(`✓ Remote Turso Watchlist Companies: ${compCount.rows[0].cnt}`);
   console.log(`✓ Remote Turso Recruiter Leads: ${leadCount.rows[0].cnt}`);
+  console.log(`✓ Remote Turso Discovery Sources: ${srcCount.rows[0].cnt}`);
   console.log('=============================================');
 }
 
